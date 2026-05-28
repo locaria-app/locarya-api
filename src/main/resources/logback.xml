@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- Console appender with JSON output -->
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeContext>true</includeContext>
+            <includeMdc>true</includeMdc>
+            <includeTags>true</includeTags>
+            <includeCallerData>false</includeCallerData>
+            <timeZone>UTC</timeZone>
+            <customFields>{"application":"locarya-api"}</customFields>
+        </encoder>
+    </appender>
+
+    <!-- Root logger -->
+    <root level="INFO">
+        <appender-ref ref="STDOUT" />
+    </root>
+
+    <!-- Application logger -->
+    <logger name="com.locarya" level="DEBUG" />
+
+    <!-- Suppress verbose logging from libraries -->
+    <logger name="org.flywaydb" level="INFO" />
+    <logger name="com.zaxxer.hikari" level="INFO" />
+    <logger name="org.http4s" level="INFO" />
+</configuration>

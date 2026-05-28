@@ -1,0 +1,152 @@
+# Locarya API .gitignore
+# Generated for: Scala 3 + sbt + Typelevel stack + Docker Compose + git worktrees
+
+# ============================================================================
+# Scala / sbt build artifacts
+# ============================================================================
+target/
+project/target/
+project/project/target/
+*.class
+*.log
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# sbt specific
+.lib/
+dist/*
+lib_managed/
+src_managed/
+project/boot/
+project/plugins/project/
+.history
+.cache
+.classpath
+.project
+.settings/
+
+# ============================================================================
+# Metals / Bloop / BSP (Scala language server / build server)
+# ============================================================================
+.metals/
+.bloop/
+.bsp/
+metals.sbt
+.scala-build/
+
+# ============================================================================
+# IDEs
+# ============================================================================
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# VS Code
+# NOTE: Keeping .vscode/settings.json (team shared config for target watcher)
+# Add .vscode/ to this section if you want to ignore it entirely
+.vscode/*
+!.vscode/settings.json
+
+# Eclipse
+bin/
+.classpath
+.project
+.settings/
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# Vim / Emacs
+*.swp
+*~
+.*.swp
+.*.swo
+\#*\#
+.\#*
+
+# ============================================================================
+# Environment / secrets / local overrides
+# ============================================================================
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Local config overrides (application.conf is committed; local overrides are not)
+*.local.conf
+application-local.conf
+local.conf
+
+# sbt credentials (if you store them; build.sbt Flyway creds are dev-only)
+.credentials
+credentials.sbt
+
+# Database connection strings with production credentials
+*-prod.conf
+*-production.conf
+
+# ============================================================================
+# Docker / Postgres
+# ============================================================================
+# docker-compose.yml uses named volume "postgres_data" — no host path to ignore
+# If you later add host-mounted volumes (e.g., ./pgdata), add them here:
+# pgdata/
+# postgres-data/
+
+# ============================================================================
+# OS artifacts
+# ============================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*~
+
+# ============================================================================
+# Test / coverage artifacts
+# ============================================================================
+# scoverage
+target/scala-*/scoverage-data/
+target/scala-*/scoverage-report/
+
+# Test output
+test-output/
+*.log
+
+# ============================================================================
+# CI / deployment artifacts (keep .github/workflows/ — those are committed)
+# ============================================================================
+# Nothing to ignore here; GitHub Actions runs remotely
+
+# ============================================================================
+# Worktrees
+# ============================================================================
+# Worktrees are kept outside the repo tree (../<repo>-wt/), so nothing to ignore
+# If you symlink or mount worktrees inside the main repo, add them here
+
+# ============================================================================
+# Flyway
+# ============================================================================
+# Flyway CLI state (if you run Flyway CLI locally outside sbt)
+.flywaydb/
+
+# ============================================================================
+# Optional: local-only JVM tuning (check before ignoring)
+# ============================================================================
+# .jvmopts — only ignore if it contains secrets or machine-specific tuning
+# .sbtopts — only ignore if it contains secrets
+# If these are shared team config, DO NOT ignore them
+.jvmopts
+.sbtopts

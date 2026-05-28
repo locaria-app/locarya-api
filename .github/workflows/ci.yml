@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: locarya_test
+          POSTGRES_USER: locarya
+          POSTGRES_PASSWORD: locarya_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'sbt'
+
+      - name: Compile
+        run: sbt compile
+
+      - name: Run tests
+        run: sbt test
+        env:
+          DATABASE_URL: jdbc:postgresql://localhost:5432/locarya_test
+          DATABASE_USER: locarya
+          DATABASE_PASSWORD: locarya_test_password
+
+      - name: Check formatting
+        run: sbt scalafmtCheckAll || true
