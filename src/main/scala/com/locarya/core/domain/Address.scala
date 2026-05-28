@@ -17,7 +17,7 @@ object Address {
     "RN", "RS", "RO", "RR", "SC", "SE", "TO"
   )
 
-  def fromFields(
+  def create(
     street: String,
     number: String,
     neighborhood: String,
