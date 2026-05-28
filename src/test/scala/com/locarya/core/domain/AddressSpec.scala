@@ -5,7 +5,7 @@ import munit.FunSuite
 class AddressSpec extends FunSuite {
 
   test("create Address with valid fields succeeds") {
-    val result = Address.fromFields(
+    val result = Address.create(
       street = "Rua das Flores",
       number = "123",
       neighborhood = "Centro",
@@ -28,7 +28,7 @@ class AddressSpec extends FunSuite {
   }
 
   test("create Address with CEP without dash succeeds") {
-    val result = Address.fromFields(
+    val result = Address.create(
       street = "Av. Paulista",
       number = "1000",
       neighborhood = "Bela Vista",
@@ -45,7 +45,7 @@ class AddressSpec extends FunSuite {
   }
 
   test("create Address with invalid CEP format fails") {
-    val result = Address.fromFields(
+    val result = Address.create(
       street = "Rua das Flores",
       number = "123",
       neighborhood = "Centro",
@@ -62,7 +62,7 @@ class AddressSpec extends FunSuite {
   }
 
   test("create Address with empty street fails") {
-    val result = Address.fromFields(
+    val result = Address.create(
       street = "",
       number = "123",
       neighborhood = "Centro",
@@ -79,7 +79,7 @@ class AddressSpec extends FunSuite {
   }
 
   test("create Address with empty number fails") {
-    val result = Address.fromFields(
+    val result = Address.create(
       street = "Rua das Flores",
       number = "",
       neighborhood = "Centro",
@@ -96,7 +96,7 @@ class AddressSpec extends FunSuite {
   }
 
   test("create Address with empty neighborhood fails") {
-    val result = Address.fromFields(
+    val result = Address.create(
       street = "Rua das Flores",
       number = "123",
       neighborhood = "",
@@ -113,7 +113,7 @@ class AddressSpec extends FunSuite {
   }
 
   test("create Address with empty city fails") {
-    val result = Address.fromFields(
+    val result = Address.create(
       street = "Rua das Flores",
       number = "123",
       neighborhood = "Centro",
@@ -130,7 +130,7 @@ class AddressSpec extends FunSuite {
   }
 
   test("create Address with invalid state code fails") {
-    val result = Address.fromFields(
+    val result = Address.create(
       street = "Rua das Flores",
       number = "123",
       neighborhood = "Centro",
@@ -152,7 +152,7 @@ class AddressSpec extends FunSuite {
                            "RN", "RS", "RO", "RR", "SC", "SE", "TO")
 
     validStates.foreach { state =>
-      val result = Address.fromFields(
+      val result = Address.create(
         street = "Rua das Flores",
         number = "123",
         neighborhood = "Centro",
@@ -167,7 +167,7 @@ class AddressSpec extends FunSuite {
   }
 
   test("create Address without complement succeeds") {
-    val result = Address.fromFields(
+    val result = Address.create(
       street = "Rua das Flores",
       number = "123",
       neighborhood = "Centro",
@@ -184,7 +184,7 @@ class AddressSpec extends FunSuite {
   }
 
   test("create Address with CEP containing non-digits fails") {
-    val result = Address.fromFields(
+    val result = Address.create(
       street = "Rua das Flores",
       number = "123",
       neighborhood = "Centro",
