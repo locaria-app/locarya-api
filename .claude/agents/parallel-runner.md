@@ -48,12 +48,30 @@ git worktree list
 
 Summarize which issues are in progress, which look done (committed, tests referenced), which are stale.
 
+## Re-syncing branches between merges (squash-aware)
+
+This repo merges PRs with **squash**, and branch protection has `strict=true` (a branch must be up to date with main before it can merge). Both facts shape how parallel branches re-sync after one of them merges.
+
+When merging a batch one PR at a time, every PR merged rewrites main. The still-open worktrees are now behind and `strict=true` will block their merge until updated. **Do not use `git merge main` to catch up** — squash replaced the merged branch's commits with a single new commit that the open branches don't recognize as an ancestor, so a merge produces noisy/false conflicts. Use rebase instead:
+
+```bash
+# inside the out-of-date worktree, e.g. issue-18
+git fetch origin
+git rebase origin/main
+# resolve real conflicts if any (same-file edits), then:
+git push --force-with-lease
+```
+
+Rebase replays the branch's commits on top of current main cleanly. Because rebase rewrites the branch's commits, the push must be `--force-with-lease` (NEVER plain `--force` — lease refuses if the remote moved unexpectedly, protecting against clobbering work). If there are no real conflicts, the rebase passes through untouched.
+
+Sequence for a batch: merge PR #1 (squash) → for each remaining open worktree, `fetch` + `rebase origin/main` + `--force-with-lease` → merge PR #2 → repeat. `strict=true` is the backstop: if a stale branch is somehow not re-synced, GitHub blocks its merge rather than letting a behind branch land.
+
 ## Migration-aware merge ordering (critical)
 
 When worktrees come back to merge, migrations must be linearized:
 
-- Merge non-migration branches first (any order).
-- For the at-most-one migration branch, hand off to `migration-guard` to verify its version doesn't collide with what's now on base, renumber if needed, THEN merge.
+- Merge non-migration branches first (any order), re-syncing each remaining branch via rebase (above) after every merge.
+- For the at-most-one migration branch, hand off to `migration-guard` to verify its version doesn't collide with what's now on base, renumber if needed, THEN merge. Migrations especially must be rebased onto current main before this check, so the version comparison reflects what actually landed.
 - Never merge two migration-bearing branches without re-running migration-guard between them.
 
 ## Teardown
@@ -83,9 +101,11 @@ git worktree prune
 ### Next step for the human
 Open one Claude Code session per path above and run /tdd on the issue there.
 
-### Merge plan (when done)
-1. Merge #A, #B (no migrations)
-2. migration-guard on #C → renumber if needed → merge
+### Merge plan (when done — squash + strict, so re-sync between each)
+1. Merge #A (squash).
+2. Re-sync #B onto main: in its worktree, `git fetch origin && git rebase origin/main && git push --force-with-lease`. Then merge #B.
+3. migration-guard on #C → rebase #C onto main → verify/renumber version → merge.
+   (Each merge rewrites main; rebase every still-open branch before merging it. strict=true will block any branch that wasn't re-synced.)
 ```
 
 ## Rules
@@ -93,5 +113,6 @@ Open one Claude Code session per path above and run /tdd on the issue there.
 - Git/worktree operations only. Never edit application source or test files.
 - Always verify a clean, fetched base before creating worktrees.
 - Refuse unsafe batches explicitly rather than degrading silently.
+- To catch a branch up after a squash merge, use `git rebase origin/main`, never `git merge main`. Re-push only with `--force-with-lease`, never plain `--force`, and only after the human confirms.
 - Use `-D` / force only when the human confirmed abandonment; otherwise prefer safe variants and report.
-- Never push or open PRs unless explicitly asked — leave that to the human / git-guardrails skill.
+- Never push or open PRs unless explicitly asked — leave that to the human / pr-runner.
