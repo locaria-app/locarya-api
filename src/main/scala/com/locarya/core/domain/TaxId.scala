@@ -19,22 +19,16 @@ object TaxId {
     override def value: String = cnpj.value
   }
 
+  def create(cpfOpt: Option[CPF], cnpjOpt: Option[CNPJ]): Either[ValidationError, TaxId] = {
+    (cpfOpt, cnpjOpt) match {
+      case (Some(cpf), None) => Right(CPFTaxId(cpf))
+      case (None, Some(cnpj)) => Right(CNPJTaxId(cnpj))
+      case (Some(_), Some(_)) => Left(InvalidTaxId("Provider cannot have both CPF and CNPJ"))
+      case (None, None) => Left(InvalidTaxId("Provider must have either CPF or CNPJ"))
+    }
+  }
+
   def fromCPF(cpf: CPF): TaxId = CPFTaxId(cpf)
 
   def fromCNPJ(cnpj: CNPJ): TaxId = CNPJTaxId(cnpj)
-
-  def fromString(value: String): Either[ValidationError, TaxId] = {
-    // Try CPF first (11 digits)
-    CPF.fromString(value) match {
-      case Right(cpf) => Right(fromCPF(cpf))
-      case Left(_) =>
-        // Try CNPJ (14 digits)
-        CNPJ.fromString(value) match {
-          case Right(cnpj) => Right(fromCNPJ(cnpj))
-          case Left(_) =>
-            // Neither worked
-            Left(InvalidTaxId(s"Value is neither a valid CPF nor a valid CNPJ: $value"))
-        }
-    }
-  }
 }
