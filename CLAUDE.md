@@ -25,6 +25,22 @@ sbt flywayMigrate    # apply DB migrations
 
 Ver `docs/adr/0002-scala-typelevel-stack.md` para justificativa completa da escolha de stack.
 
+### Layering — Hexagonal (Ports & Adapters)
+
+The backend follows Hexagonal Architecture. **Dependency rule: dependencies point inward — the domain core depends on nothing; adapters depend on the core through ports. No inward layer imports an outward one.** See `docs/adr/0005-hexagonal-architecture.md`.
+
+| Hexagon role | Package | Effects? |
+|---|---|---|
+| Domain core (entities, value objects, ADTs, pure logic) | `com.locarya.core.domain` | ❌ Pure — no `F[_]`, no `IO` |
+| Application core — use-case services (**inbound ports**) + the **outbound port** traits they need | `com.locarya.services` | ⚠️ Abstract `F[_]` only — never concrete `IO`, no doobie/http4s |
+| Driving (inbound) adapters — http4s routes, DTOs, JSON codecs | `com.locarya.http` | ✅ Concrete |
+| Driven (outbound) adapters — doobie repos, Asaas client, config, DB | `com.locarya.infrastructure` | ✅ Concrete |
+| Composition root — instantiates adapters, injects into services, wires routes | `com.locarya.app` | ✅ Concrete |
+
+- **Ports are `F[_]` traits and live in `services`, never in `core.domain`** (a port mentions `F[_]`; the domain core must stay effect-free). Inbound port = the use-case service trait (e.g. `trait BookingService[F[_]]`); outbound port = a dependency the core needs but doesn't own (e.g. `trait BookingRepository[F[_]]`, `trait PaymentGateway[F[_]]`).
+- **Only `app.Main` names concrete types** (`IO`, the doobie `Transactor`, the Asaas client). `core.domain` and `services` must not import `doobie`, `org.http4s`, or `cats.effect.IO`.
+- **Exception:** `HealthEndpoints` calling `Database` directly is allowed — it's an operational probe with no domain logic. Hexagonal discipline applies to *business* use cases.
+
 ### Domain Language
 
 O domínio está completamente documentado em `CONTEXT.md` no root do repositório. Leia antes de trabalhar no código — define termos canônicos como Locador, Cliente, Reserva, Item, Combo, Pagamento, Monitor, etc.
@@ -33,6 +49,8 @@ Decisões arquiteturais importantes estão em `docs/adr/`:
 - **ADR #1:** Split payment direto via Asaas (vs custódia na plataforma)
 - **ADR #2:** Scala + Typelevel (vs Node.js/Java/Kotlin)
 - **ADR #3:** Observability & Structured Logging (log4cats + JSON, correlation tracking)
+- **ADR #4:** Support for individual providers (CPF or CNPJ, exactly one)
+- **ADR #5:** Hexagonal Architecture (Ports & Adapters) — dependency rule and package→hexagon mapping
 
 ## Agent skills
 
