@@ -32,8 +32,8 @@ object Booking {
   ): Either[ValidationError, Booking] = {
     if (items.isEmpty) {
       Left(InvalidBooking("Booking must contain at least one item"))
-    } else if (!startDate.isBefore(endDate)) {
-      Left(InvalidBooking("Start date must be before end date"))
+    } else if (startDate.isAfter(endDate)) {
+      Left(InvalidBooking("Start date cannot be after end date"))
     } else if (items.exists {
       case BookedIndividualItem(_, qty) => qty <= 0
       case BookedCombo(_, qty) => qty <= 0

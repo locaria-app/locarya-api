@@ -14,3 +14,4 @@ case class InvalidItem(message: String) extends ValidationError
 case class InvalidCombo(message: String) extends ValidationError
 case class InvalidBooking(message: String) extends ValidationError
 case class InvalidAddress(message: String) extends ValidationError
+case class InvalidURL(message: String) extends ValidationError
