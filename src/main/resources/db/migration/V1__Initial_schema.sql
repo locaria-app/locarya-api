@@ -60,11 +60,11 @@ CREATE TABLE item_images (
     display_order INT NOT NULL,
     is_primary BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    CONSTRAINT unique_item_primary UNIQUE (item_id, is_primary) WHERE is_primary = TRUE,
     CONSTRAINT unique_item_display_order UNIQUE (item_id, display_order)
 );
 
 CREATE INDEX idx_item_images_item ON item_images(item_id);
+CREATE UNIQUE INDEX unique_item_primary ON item_images(item_id) WHERE is_primary = TRUE;
 
 -- Combos
 CREATE TABLE combos (
