@@ -238,4 +238,65 @@ class BookingSpec extends FunSuite {
 
     assertEquals(updatedBooking.attendantId, Some(attendantId))
   }
+
+  test("create Booking with delivery address for delivery succeeds") {
+    val bookingId = BookingId.generate
+    val providerId = ProviderId.generate
+    val customerId = CustomerId.generate
+    val itemId = ItemId.generate
+    val totalAmount = Money.fromAmount(BigDecimal("200.00")).toOption.get
+    val startDate = LocalDate.of(2026, 6, 1)
+    val endDate = LocalDate.of(2026, 6, 5)
+
+    val deliveryAddress = Address.create(
+      street = "Rua das Flores",
+      number = "123",
+      neighborhood = "Centro",
+      city = "São Paulo",
+      state = "SP",
+      cep = "01310-100",
+      complement = Some("Apto 45")
+    ).toOption.get
+
+    val result = Booking.create(
+      id = bookingId,
+      providerId = providerId,
+      customerId = customerId,
+      items = List(BookedIndividualItem(itemId, 2)),
+      startDate = startDate,
+      endDate = endDate,
+      totalAmount = totalAmount,
+      deliveryAddress = Some(deliveryAddress)
+    )
+
+    assert(result.isRight, "Should create Booking with delivery address")
+    result.foreach { booking =>
+      assertEquals(booking.deliveryAddress, Some(deliveryAddress))
+    }
+  }
+
+  test("create Booking without delivery address for pickup succeeds") {
+    val bookingId = BookingId.generate
+    val providerId = ProviderId.generate
+    val customerId = CustomerId.generate
+    val itemId = ItemId.generate
+    val totalAmount = Money.fromAmount(BigDecimal("150.00")).toOption.get
+    val startDate = LocalDate.of(2026, 6, 1)
+    val endDate = LocalDate.of(2026, 6, 5)
+
+    val result = Booking.create(
+      id = bookingId,
+      providerId = providerId,
+      customerId = customerId,
+      items = List(BookedIndividualItem(itemId, 1)),
+      startDate = startDate,
+      endDate = endDate,
+      totalAmount = totalAmount
+    )
+
+    assert(result.isRight, "Should create Booking without delivery address for pickup")
+    result.foreach { booking =>
+      assertEquals(booking.deliveryAddress, None)
+    }
+  }
 }
