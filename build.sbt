@@ -55,6 +55,9 @@ lazy val root = project
       "com.dimafeng" %% "testcontainers-scala-postgresql" % "0.41.0" % Test
     ),
 
+    // Test configuration
+    Test / classLoaderLayeringStrategy := ClassLoaderLayeringStrategy.Flat,
+
     // Flyway configuration
     flywayUrl := "jdbc:postgresql://localhost:5432/locarya",
     flywayUser := "locarya",
