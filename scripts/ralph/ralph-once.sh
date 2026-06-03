@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+#
+# Ralph loop — single iteration (human-in-the-loop).
+#
+# Picks the next ready issue and drives it through ONE pass of your agent stack:
+#   1. context-gatherer  (subagent) -> implementation brief in session context
+#      + migration-guard (subagent) when the issue touches the DB schema
+#   2. /tdd              (skill, invoked explicitly) -> red-green-refactor
+#   3. pr-runner         (subagent) -> branch + commit + push + open PR (no merge)
+#
+# Steps 1-3 share ONE Claude Code session (--session-id / --resume) so the brief
+# from context-gatherer is still in context when /tdd runs — mirroring the manual
+# flow of "run the gatherer, then type /tdd in the same session".
+#
+# `/tdd` is invoked as a LITERAL slash input (it lives at ~/.claude/skills/tdd/).
+# Skills are model-invocable, but being explicit makes the load deterministic in
+# an unattended run. If your /tdd skill takes an argument, change the line below
+# to e.g.  -p "/tdd #$N".
+#
+# permission-mode acceptEdits: auto-accepts file edits; the repo's
+# .claude/settings.json allow/deny list still applies (gh pr merge, push to main,
+# and --force stay DENIED), so this is safe without --dangerously-skip-permissions.
+#
+# Portability: Bash 3.2 (macOS) + BSD tools — parsing uses sed -E, not grep -P.
+#
+# Exit codes (consumed by afk-ralph.sh):
+#   0  issue processed, PR opened (or pr-runner reported nothing to do)
+#   2  backlog empty (<complete/>)
+#   3  frontier exhausted (<blocked/>) — merge open PRs, then re-run
+#   4  migration-guard halted this issue (now labeled "blocked")
+#   1  precondition failed (dirty tree, etc.) — stop and inspect
+#
+# Usage:  REPO=owner/repo ./scripts/ralph/ralph-once.sh
+
+set -uo pipefail   # intentionally NO -e: a single failed step shouldn't be fatal
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$ROOT"   # run from repo root so Claude Code picks up .claude/ and the project
+
+# --- Start every issue from a clean main -------------------------------------
+# pr-runner leaves you on the issue's feature branch. Without resetting, the NEXT
+# serial run would stack its work onto the previous issue's branch. Untracked
+# files (e.g. not-yet-committed tooling) are fine; tracked uncommitted changes
+# are not — those would carry across branches.
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+  echo ">> tracked changes present — commit or stash before running. Aborting." >&2
+  exit 1
+fi
+git switch main >/dev/null 2>&1 || git checkout main
+git pull --ff-only --quiet || true
+# -----------------------------------------------------------------------------
+
+export REPO="${REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+
+DECISION="$(./scripts/ralph/next-issue.sh)"
+echo ">> decision: $DECISION"
+case "$DECISION" in
+  *"<complete/>"*) echo ">> backlog empty."; exit 2 ;;
+  *"<blocked/>"*)  echo ">> frontier exhausted — merge open PRs, then re-run."; exit 3 ;;
+esac
+
+# Parse the sigil with sed -E (BSD-safe; no grep -P).
+N="$(printf '%s' "$DECISION"  | sed -nE 's/.*<next issue=([0-9]+).*/\1/p')"
+MIG="$(printf '%s' "$DECISION" | sed -nE 's/.*migration=([a-z]+).*/\1/p')"
+SID="$(uuidgen)"
+echo ">> issue #$N (migration=$MIG) session=$SID"
+
+CTX_LOG="$(mktemp "${TMPDIR:-/tmp}/ralph-$N-ctx.XXXXXX")"
+
+# 1. Context (+ migration guard when relevant). The guard only REVIEWS; we act on
+#    its verdict here by labeling the issue "blocked" and halting this iteration.
+GUARD=""
+if [ "$MIG" = "true" ]; then
+  GUARD="Then use the migration-guard subagent on issue #$N. If its verdict is \
+\"NEEDS HUMAN DECISION\" or it reports any Blocking finding, run \
+\`gh issue edit $N --add-label blocked\` and then reply with exactly <halt/> and nothing else."
+fi
+
+claude --session-id "$SID" --permission-mode acceptEdits \
+  -p "Use the context-gatherer subagent on issue #$N to produce the implementation brief. $GUARD" \
+  | tee "$CTX_LOG"
+
+if grep -q '<halt/>' "$CTX_LOG"; then
+  echo ">> migration-guard halted #$N; labeled 'blocked'. Skipping."
+  rm -f "$CTX_LOG"
+  exit 4
+fi
+rm -f "$CTX_LOG"
+
+# 2. TDD — explicit skill invocation, SAME session (brief is in context).
+claude --resume "$SID" --permission-mode acceptEdits -p "/tdd"
+
+# 3. Open the PR. pr-runner never merges and never pushes to main (enforced by settings.json).
+claude --resume "$SID" --permission-mode acceptEdits \
+  -p "Use the pr-runner subagent for issue #$N. Open the PR and stop — do not merge."
+
+echo ">> #$N done. Review the PR; merge when CI is green."
+exit 0

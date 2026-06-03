@@ -124,6 +124,50 @@ docker-compose down -v
 docker-compose up -d
 ```
 
+## Autonomous backlog workflow (Ralph)
+
+Drives `ready-for-agent` GitHub issues through the project's agent stack — one
+issue per pull request, which a human merges. The dependency order lives in each
+issue's `## Blocked by` section; the loop recomputes what's ready on every pass.
+
+**Prerequisites**
+- `claude` CLI authenticated; `gh` CLI authenticated for this repo.
+- The `tdd` skill installed at `~/.claude/skills/tdd/`.
+- Project agents present in `.claude/agents/` (context-gatherer, migration-guard, pr-runner).
+- Issues use the template's `## Acceptance criteria` and `## Blocked by` sections,
+  and carry the `ready-for-agent` label when implementable.
+
+**Setup**
+```bash
+chmod +x scripts/ralph/*.sh
+```
+
+**Run**
+```bash
+# See which issue is next (read-only, deterministic):
+./scripts/ralph/next-issue.sh
+
+# Implement the next ready issue and open its PR (watch it):
+./scripts/ralph/ralph-once.sh
+
+# Run unattended for up to N iterations (default 15):
+./scripts/ralph/afk-ralph.sh 10
+```
+
+**What a single pass does**
+1. `context-gatherer` builds an implementation brief for the issue.
+2. `migration-guard` reviews DB changes (only when the issue touches the schema).
+3. `/tdd` implements it red-green-refactor.
+4. `pr-runner` opens a PR (`Closes #N`) on branch `issue-<N>-<slug>` — never merges.
+
+**An issue is "ready" when** it is open, labeled `ready-for-agent`, not labeled
+`blocked`/`needs-design`, has a `## Acceptance criteria` section, has no open PR,
+and every `#N` under its `## Blocked by` is closed.
+
+**Human gate**: PRs are never auto-merged. Merge a PR (which closes its issue) to
+unblock the next ones, then run again. `ralph-once.sh` resets to a clean `main`
+at the start, so serial runs don't stack work across branches.
+
 ## Documentation
 
 - **Domain Language:** See `CONTEXT.md` for canonical domain terms
