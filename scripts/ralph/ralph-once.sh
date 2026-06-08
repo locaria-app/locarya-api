@@ -28,6 +28,7 @@
 #   2  backlog empty (<complete/>)
 #   3  frontier exhausted (<blocked/>) — merge open PRs, then re-run
 #   4  migration-guard halted this issue (now labeled "blocked")
+#   5  /tdd escalated a genuine blocker (now labeled "needs-design")
 #   1  precondition failed (dirty tree, etc.) — stop and inspect
 #
 # Usage:  REPO=owner/repo ./scripts/ralph/ralph-once.sh
@@ -87,8 +88,30 @@ if grep -q '<halt/>' "$CTX_LOG"; then
 fi
 rm -f "$CTX_LOG"
 
-# 2. TDD — explicit skill invocation, SAME session (brief is in context).
-claude --resume "$SID" --permission-mode acceptEdits -p "/tdd"
+# 2. TDD — unattended: decide and document, don't ask; escalate only genuine
+#    blockers via the <needs-human> sentinel (then comment, label, and skip).
+TDD_LOG="$(mktemp "${TMPDIR:-/tmp}/ralph-$N-tdd.XXXXXX")"
+claude --resume "$SID" --permission-mode acceptEdits -p "/tdd
+
+UNATTENDED RUN — no human is available to answer questions. Do not pause to ask. For \
+each decision, choose the option most consistent with the PRD, the ADRs, CONTEXT.md and \
+CLAUDE.md, and list every such choice under a '## Assumptions' heading in the PR body. \
+Stay tests-first and follow the project's established testing approach; fully cover the \
+tracer-bullet slice before widening scope. Always COMMIT the tests you write — never drop \
+a test because it can't run in the current environment. Only if a choice is a business \
+rule with no basis in the docs and is unsafe to guess, STOP before writing any code and \
+reply with exactly: <needs-human>one-line question</needs-human>" \
+  | tee "$TDD_LOG"
+
+if grep -q '<needs-human>' "$TDD_LOG"; then
+  Q="$(sed -nE 's@.*<needs-human>(.*)</needs-human>.*@\1@p' "$TDD_LOG")"
+  gh issue comment "$N" --body "Ralph paused — needs a human decision: $Q"
+  gh issue edit "$N" --add-label needs-design
+  echo ">> #$N escalated for a human decision; commented + labeled 'needs-design'. Skipping PR."
+  rm -f "$TDD_LOG"
+  exit 5
+fi
+rm -f "$TDD_LOG"
 
 # 3. Open the PR. pr-runner never merges and never pushes to main (enforced by settings.json).
 claude --resume "$SID" --permission-mode acceptEdits \
