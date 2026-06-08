@@ -33,6 +33,7 @@ for ((i = 1; i <= MAX; i++)); do
     2) echo "DONE — backlog empty after $i iteration(s)."; exit 0 ;;
     3) echo "BLOCKED — waiting on human merges. Merge PRs and re-run."; exit 0 ;;
     4) echo "migration-guard halted an issue; continuing to the next." ;;
+    5) echo "an issue was escalated for a human decision; continuing to the next." ;;
     *) echo "FAILED (rc=$rc) — stopping for inspection."; exit 1 ;;
   esac
 done
