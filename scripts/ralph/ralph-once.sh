@@ -31,9 +31,18 @@
 #   5  /tdd escalated a genuine blocker (now labeled "needs-design")
 #   1  precondition failed (dirty tree, etc.) — stop and inspect
 #
-# Usage:  REPO=owner/repo ./scripts/ralph/ralph-once.sh
+# Usage:  REPO=owner/repo ./scripts/ralph/ralph-once.sh [--verbose|-v]
 
 set -uo pipefail   # intentionally NO -e: a single failed step shouldn't be fatal
+
+# --- Verbose flag -----------------------------------------------------------
+VERBOSE=0
+for arg in "$@"; do
+  case "$arg" in --verbose|-v) VERBOSE=1 ;; esac
+done
+vlog() { [ "$VERBOSE" -eq 1 ] && echo "[$(date '+%H:%M:%S')] $*" >&2 || true; }
+elapsed() { local s=$(( $(date +%s) - $1 )); printf '%dm%02ds' $(( s/60 )) $(( s%60 )); }
+# ----------------------------------------------------------------------------
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"   # run from repo root so Claude Code picks up .claude/ and the project
@@ -53,6 +62,7 @@ git pull --ff-only --quiet || true
 
 export REPO="${REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
 
+LOOP_START=$(date +%s)
 DECISION="$(./scripts/ralph/next-issue.sh)"
 echo ">> decision: $DECISION"
 case "$DECISION" in
@@ -65,6 +75,7 @@ N="$(printf '%s' "$DECISION"  | sed -nE 's/.*<next issue=([0-9]+).*/\1/p')"
 MIG="$(printf '%s' "$DECISION" | sed -nE 's/.*migration=([a-z]+).*/\1/p')"
 SID="$(uuidgen)"
 echo ">> issue #$N (migration=$MIG) session=$SID"
+vlog "start: $(date '+%Y-%m-%d %H:%M:%S') | session $SID"
 
 CTX_LOG="$(mktemp "${TMPDIR:-/tmp}/ralph-$N-ctx.XXXXXX")"
 
@@ -77,9 +88,12 @@ if [ "$MIG" = "true" ]; then
 \`gh issue edit $N --add-label blocked\` and then reply with exactly <halt/> and nothing else."
 fi
 
+vlog "step 1/3: context-gatherer$([ "$MIG" = true ] && echo ' + migration-guard' || true)..."
+STEP_START=$(date +%s)
 claude --session-id "$SID" --permission-mode acceptEdits \
   -p "Use the context-gatherer subagent on issue #$N to produce the implementation brief. $GUARD" \
   | tee "$CTX_LOG"
+vlog "step 1/3 done ($(elapsed $STEP_START))"
 
 if grep -q '<halt/>' "$CTX_LOG"; then
   echo ">> migration-guard halted #$N; labeled 'blocked'. Skipping."
@@ -90,6 +104,8 @@ rm -f "$CTX_LOG"
 
 # 2. TDD — unattended: decide and document, don't ask; escalate only genuine
 #    blockers via the <needs-human> sentinel (then comment, label, and skip).
+vlog "step 2/3: /tdd..."
+STEP_START=$(date +%s)
 TDD_LOG="$(mktemp "${TMPDIR:-/tmp}/ralph-$N-tdd.XXXXXX")"
 claude --resume "$SID" --permission-mode acceptEdits -p "/tdd
 
@@ -102,6 +118,7 @@ a test because it can't run in the current environment. Only if a choice is a bu
 rule with no basis in the docs and is unsafe to guess, STOP before writing any code and \
 reply with exactly: <needs-human>one-line question</needs-human>" \
   | tee "$TDD_LOG"
+vlog "step 2/3 done ($(elapsed $STEP_START))"
 
 if grep -q '<needs-human>' "$TDD_LOG"; then
   Q="$(sed -nE 's@.*<needs-human>(.*)</needs-human>.*@\1@p' "$TDD_LOG")"
@@ -114,8 +131,12 @@ fi
 rm -f "$TDD_LOG"
 
 # 3. Open the PR. pr-runner never merges and never pushes to main (enforced by settings.json).
+vlog "step 3/3: pr-runner..."
+STEP_START=$(date +%s)
 claude --resume "$SID" --permission-mode acceptEdits \
   -p "Use the pr-runner subagent for issue #$N. Open the PR and stop — do not merge."
+vlog "step 3/3 done ($(elapsed $STEP_START))"
+vlog "total: $(elapsed $LOOP_START)"
 
 echo ">> #$N done. Review the PR; merge when CI is green."
 exit 0

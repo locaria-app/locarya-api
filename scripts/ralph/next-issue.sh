@@ -82,8 +82,8 @@ for n in "${CANDS[@]}"; do
   # merely mention migrations. Tighten to a label (e.g. "area:db-migration") or
   # to detecting an actual V__.sql in scope if the false positives bite.
   mig=false
-  if gh issue view "$n" --repo "$REPO" --json labels,body -q '.labels[].name, .body' \
-       | grep -qiE 'flyway|migration|V[0-9]+__'; then
+  if gh issue view "$n" --repo "$REPO" --json labels \
+       -q '.labels[].name' | grep -q 'area:db-migration'; then
     mig=true
   fi
 
