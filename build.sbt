@@ -1,4 +1,6 @@
-val scala3Version = "3.3.1"
+// 3.3.7 LTS — 3.3.4+ is required for scoverage's `coverageExcludedPackages`
+// (the compiler's -coverage-exclude-* flags were backported to the 3.3 LTS line).
+val scala3Version = "3.3.7"
 
 enablePlugins(FlywayPlugin)
 
@@ -47,13 +49,14 @@ lazy val root = project
       // PostgreSQL driver
       "org.postgresql" % "postgresql" % "42.7.3",
 
-      // Test
-      "org.scalameta" %% "munit" % "0.7.29" % Test,
-      "org.typelevel" %% "munit-cats-effect-3" % "1.0.7" % Test,
-      "org.tpolecat" %% "doobie-munit" % "1.0.0-RC5" % Test,
-      "com.dimafeng" %% "testcontainers-scala-munit" % "0.41.0" % Test,
-      "com.dimafeng" %% "testcontainers-scala-postgresql" % "0.41.0" % Test
+      // Test — in-memory port impls + stub gateways (no Testcontainers). See ADR 0007.
+      "org.scalameta" %% "munit" % "1.1.0" % Test,
+      "org.typelevel" %% "munit-cats-effect" % "2.1.0" % Test
     ),
+
+    // Coverage: exclude driven/driving adapters, the composition root and config —
+    // covered by the deferred integration suite, not unit-covered. See ADR 0007.
+    coverageExcludedPackages := "com\\.locarya\\.adapters\\..*;com\\.locarya\\.Main;com\\.locarya\\.config\\..*",
 
     // Flyway configuration
     flywayUrl := "jdbc:postgresql://localhost:5432/locarya",
