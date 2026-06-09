@@ -9,10 +9,11 @@ This is the **Locarya API** project - currently in initial setup phase.
 ## Development Commands
 
 ```bash
-sbt compile          # compile
-sbt test             # run all tests (unit + integration via Testcontainers)
-sbt run              # start server
-sbt flywayMigrate    # apply DB migrations
+sbt compile                              # compile
+sbt test                                 # run all tests (in-memory port impls + stubs — no Docker/Testcontainers)
+sbt clean coverage test coverageReport   # tests with scoverage report (adapters/config/Main excluded — see ADR 0007)
+sbt run                                  # start server
+sbt flywayMigrate                        # apply DB migrations
 ```
 
 ## Architecture
@@ -27,19 +28,21 @@ Ver `docs/adr/0002-scala-typelevel-stack.md` para justificativa completa da esco
 
 ### Layering — Hexagonal (Ports & Adapters)
 
-The backend follows Hexagonal Architecture. **Dependency rule: dependencies point inward — the domain core depends on nothing; adapters depend on the core through ports. No inward layer imports an outward one.** See `docs/adr/0005-hexagonal-architecture.md`.
+The backend follows Hexagonal Architecture. **Dependency rule: dependencies point inward — the domain core depends on nothing; adapters depend on the core through ports. No inward layer imports an outward one.** The rule is in `docs/adr/0005-hexagonal-architecture.md`; the package layout below is in `docs/adr/0006-hexagonal-package-layout.md`.
 
 | Hexagon role | Package | Effects? |
 |---|---|---|
-| Domain core (entities, value objects, ADTs, pure logic) | `com.locarya.core.domain` | ❌ Pure — no `F[_]`, no `IO` |
-| Application core — use-case services (**inbound ports**) + the **outbound port** traits they need | `com.locarya.services` | ⚠️ Abstract `F[_]` only — never concrete `IO`, no doobie/http4s |
-| Driving (inbound) adapters — http4s routes, DTOs, JSON codecs | `com.locarya.http` | ✅ Concrete |
-| Driven (outbound) adapters — doobie repos, Asaas client, config, DB | `com.locarya.infrastructure` | ✅ Concrete |
-| Composition root — instantiates adapters, injects into services, wires routes | `com.locarya.app` | ✅ Concrete |
+| Domain core (entities, value objects, ADTs, pure logic) | `com.locarya.domain.models` | ❌ Pure — no `F[_]`, no `IO`, no `cats.effect` |
+| Ports — use-case service traits (**inbound ports**) + the **outbound port** traits they need | `com.locarya.domain.ports` | ⚠️ Abstract `F[_]` only — never concrete `IO`, no doobie/http4s |
+| Use-case services — implementations orchestrating domain logic over outbound ports | `com.locarya.domain.services` | ⚠️ Abstract `F[_]` only |
+| Driving (inbound) adapter — http4s routes, DTOs, JSON codecs, middleware | `com.locarya.adapters.http` | ✅ Concrete |
+| Driven (outbound) adapters — doobie repos & DB (`persistence`), Asaas & third-party clients (`external`) | `com.locarya.adapters.persistence` / `com.locarya.adapters.external` | ✅ Concrete |
+| Configuration | `com.locarya.config` | ✅ Concrete |
+| Composition root — instantiates adapters, injects into services, wires routes | `com.locarya.Main` | ✅ Concrete |
 
-- **Ports are `F[_]` traits and live in `services`, never in `core.domain`** (a port mentions `F[_]`; the domain core must stay effect-free). Inbound port = the use-case service trait (e.g. `trait BookingService[F[_]]`); outbound port = a dependency the core needs but doesn't own (e.g. `trait BookingRepository[F[_]]`, `trait PaymentGateway[F[_]]`).
-- **Only `app.Main` names concrete types** (`IO`, the doobie `Transactor`, the Asaas client). `core.domain` and `services` must not import `doobie`, `org.http4s`, or `cats.effect.IO`.
-- **Exception:** `HealthEndpoints` calling `Database` directly is allowed — it's an operational probe with no domain logic. Hexagonal discipline applies to *business* use cases.
+- **Ports are `F[_]` traits and live in `domain.ports`, never in `domain.models`** (a port mentions `F[_]`; the domain model layer must stay effect-free). Inbound port = the use-case service trait (e.g. `trait BookingService[F[_]]`); outbound port = a dependency the core needs but doesn't own (e.g. `trait BookingRepository[F[_]]`, `trait PaymentGateway[F[_]]`). Use-case service implementations live in `domain.services`.
+- **Only `Main` names concrete types** (`IO`, the doobie `Transactor`, the Asaas client). `domain.models`, `domain.ports`, and `domain.services` must not import `doobie`, `org.http4s`, or `cats.effect.IO`; `domain.models` must not import `cats.effect` at all. Enforced by `scripts/check-architecture.sh`.
+- **Exception:** `HealthEndpoints` (`adapters.http`) calling `Database` (`adapters.persistence`) directly is allowed — it's an operational probe with no domain logic. Hexagonal discipline applies to *business* use cases.
 
 ### Domain Language
 
@@ -50,7 +53,9 @@ Decisões arquiteturais importantes estão em `docs/adr/`:
 - **ADR #2:** Scala + Typelevel (vs Node.js/Java/Kotlin)
 - **ADR #3:** Observability & Structured Logging (log4cats + JSON, correlation tracking)
 - **ADR #4:** Support for individual providers (CPF or CNPJ, exactly one)
-- **ADR #5:** Hexagonal Architecture (Ports & Adapters) — dependency rule and package→hexagon mapping
+- **ADR #5:** Hexagonal Architecture (Ports & Adapters) — the inward dependency rule
+- **ADR #6:** Hexagonal package layout — `domain.{models,ports,services}` / `adapters.*` / `config` / `Main` (supersedes #5's package mapping)
+- **ADR #7:** Testing strategy — in-memory port impls + stub gateways, no Testcontainers in `sbt test`, coverage exclusions
 
 ## Agent skills
 
@@ -68,7 +73,7 @@ Single-context repository with CONTEXT.md and docs/adr/ at the root. See `docs/a
 
 ## Domain Coding Conventions
 
-All domain code lives in `com.locarya.core.domain`. The layer is **pure** — no IO, no Future, no effects.
+All domain model code lives in `com.locarya.domain.models`. The layer is **pure** — no `F[_]`, no `IO`, no `cats.effect`, no Future, no effects. Port traits (abstract `F[_]`) live in `com.locarya.domain.ports`; use-case service implementations (abstract `F[_]`) live in `com.locarya.domain.services`. None of the three may import `doobie`, `org.http4s`, or `cats.effect.IO`.
 
 ### Value object construction
 
@@ -117,9 +122,13 @@ Add a new `case class Invalid*(message: String)` variant for each new domain typ
 
 ### Testing conventions
 
-- Framework: **munit** (`org.scalameta:munit`) + **munit-cats-effect** for IO tests
-- Integration tests use **Testcontainers** (PostgreSQL) — they run in `sbt test` automatically
-- Test files mirror source paths: `AddressSpec` → `src/test/scala/com/locarya/core/domain/AddressSpec.scala`
+See `docs/adr/0007-testing-strategy.md`.
+
+- Framework: **munit** (`org.scalameta:munit` 1.x) + **munit-cats-effect** (2.x) for IO tests
+- **No Testcontainers / no Docker in `sbt test`.** Service, route, and use-case tests run against **in-memory implementations of the port traits** and **stub gateways** — shared helpers live in `src/test/scala/com/locarya/helpers/`. Domain-model specs construct values and assert on smart-constructor results directly.
+- Coverage: `sbt clean coverage test coverageReport`. Excluded packages (thin wiring, covered by the deferred integration suite): `com.locarya.adapters.*`, `com.locarya.config.*`, `com.locarya.Main` — see `coverageExcludedPackages` in `build.sbt`.
+- A **minimal real-DB integration suite (Testcontainers)** is deferred to a single end-of-backlog tech-debt issue — it is *not* part of the default test path.
+- Test files mirror source paths: `AddressSpec` → `src/test/scala/com/locarya/domain/models/AddressSpec.scala`
 - Cover: valid happy path, each validation rule's rejection, and boundary/edge values
 
 ## Notes

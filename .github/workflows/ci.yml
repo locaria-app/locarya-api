@@ -8,7 +8,7 @@ on:
 
 jobs:
   architecture:
-    name: Hexagonal dependency rule (ADR 0005)
+    name: Hexagonal dependency rule (ADR 0005/0006)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,20 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: architecture
 
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_DB: locarya_test
-          POSTGRES_USER: locarya
-          POSTGRES_PASSWORD: locarya_test_password
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+    # No database service: tests run against in-memory port implementations and
+    # stub gateways (ADR 0007). The deferred real-DB integration suite is tracked
+    # as separate tech debt.
 
     steps:
       - uses: actions/checkout@v4
@@ -55,12 +44,8 @@ jobs:
       - name: Compile
         run: sbt compile
 
-      - name: Run tests
-        run: sbt test
-        env:
-          DATABASE_URL: jdbc:postgresql://localhost:5432/locarya_test
-          DATABASE_USER: locarya
-          DATABASE_PASSWORD: locarya_test_password
+      - name: Run tests with coverage
+        run: sbt clean coverage test coverageReport
 
       - name: Check formatting
         run: sbt scalafmtCheckAll || true

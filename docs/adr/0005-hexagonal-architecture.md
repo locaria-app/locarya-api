@@ -29,6 +29,8 @@ The domain itself justifies the rigor: Locarya has non-trivial business rules th
 
 > **Dependencies point inward. The domain core depends on nothing; adapters depend on the core through ports. No inward layer may import an outward one.**
 
+> **Package mapping superseded by [ADR 0006](0006-hexagonal-package-layout.md); the dependency rule below still holds.** The table immediately below records the *original* `core.domain / services / http / infrastructure / app` layout. The inward-dependency rule is unchanged and authoritative; only the package→hexagon mapping moved to ADR 0006 (`domain.models / domain.ports / domain.services / adapters.* / config / Main`).
+
 The hexagon maps onto the existing packages as follows:
 
 | Hexagon concept | Package | Contains | Effects? |
