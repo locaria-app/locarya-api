@@ -15,18 +15,25 @@
 # Run inside a Docker sandbox (`docker sandbox run ...`) if you want filesystem
 # isolation and are comfortable raising the permission mode.
 #
-# Usage:  REPO=owner/repo ./scripts/ralph/afk-ralph.sh [max_iterations]   # default 15
+# Usage:  REPO=owner/repo ./scripts/ralph/afk-ralph.sh [max_iterations] [--verbose|-v]   # default 15
 
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
-MAX="${1:-15}"
+MAX=15
+VERBOSE_FLAG=""
+for arg in "$@"; do
+  case "$arg" in
+    --verbose|-v) VERBOSE_FLAG="--verbose" ;;
+    [0-9]*)       MAX="$arg" ;;
+  esac
+done
 
 for ((i = 1; i <= MAX; i++)); do
   echo "==================== iteration $i/$MAX ===================="
-  ./scripts/ralph/ralph-once.sh
+  ./scripts/ralph/ralph-once.sh $VERBOSE_FLAG
   rc=$?
   case "$rc" in
     0) : ;;                                                  # PR opened -> next issue
