@@ -3,12 +3,14 @@ package com.locarya
 import cats.effect._
 import cats.syntax.all._
 import com.comcast.ip4s._
-import com.locarya.adapters.http.HealthEndpoints
+import com.locarya.adapters.http.{AuthRoutes, HealthEndpoints}
 import com.locarya.adapters.http.middleware.CorrelationIdMiddleware
+import com.locarya.adapters.persistence.{Database, ProviderRepositoryLive}
 import com.locarya.config.AppConfig
-import com.locarya.adapters.persistence.Database
+import com.locarya.domain.services.ProviderServiceImpl
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.server.Server
+import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.LoggerFactory
 import org.typelevel.log4cats.slf4j.Slf4jFactory
 
@@ -17,7 +19,7 @@ object Main extends IOApp.Simple {
   implicit val loggerFactory: LoggerFactory[IO] = Slf4jFactory.create[IO]
 
   def run: IO[Unit] = {
-    val logger = loggerFactory.getLogger
+    implicit val logger: Logger[IO] = loggerFactory.getLogger
 
     (for {
       config <- AppConfig.load[IO]
@@ -29,7 +31,13 @@ object Main extends IOApp.Simple {
         config.database.password
       )
 
-      routes = CorrelationIdMiddleware(HealthEndpoints.routes[IO](xa))
+      providerRepo    = ProviderRepositoryLive.make[IO](xa)
+      providerService = ProviderServiceImpl[IO](providerRepo)
+
+      routes = CorrelationIdMiddleware(
+                 HealthEndpoints.routes[IO](xa) <+>
+                 AuthRoutes.routes[IO](providerService)
+               )
 
       server <- EmberServerBuilder
         .default[IO]

@@ -94,6 +94,38 @@ class ProviderSpec extends FunSuite {
     }
   }
 
+  test("create Provider defaults to Freemium plan") {
+    val email = Email.fromString("provider@example.com").toOption.get
+    val cnpj  = CNPJ.fromString("11.222.333/0001-81").toOption.get
+    val taxId = TaxId.fromCNPJ(cnpj)
+
+    val result = Provider.create(
+      id = ProviderId.generate, email = email, taxId = taxId,
+      businessName = "Festa Fácil Locações", tradeName = "Festa Fácil",
+      city = "São Paulo", state = "SP"
+    )
+
+    assert(result.isRight)
+    assertEquals(result.toOption.get.plan, Plan.Freemium)
+  }
+
+  test("create Provider with explicit storefrontSlug stores it") {
+    val email = Email.fromString("provider@example.com").toOption.get
+    val cnpj  = CNPJ.fromString("11.222.333/0001-81").toOption.get
+    val taxId = TaxId.fromCNPJ(cnpj)
+    val slug  = StorefrontSlug.fromString("festa-facil-abc123").toOption.get
+
+    val result = Provider.create(
+      id = ProviderId.generate, email = email, taxId = taxId,
+      businessName = "Festa Fácil Locações", tradeName = "Festa Fácil",
+      city = "São Paulo", state = "SP",
+      storefrontSlug = slug
+    )
+
+    assert(result.isRight)
+    assertEquals(result.toOption.get.storefrontSlug, slug)
+  }
+
   test("reject Provider with empty state") {
     val email = Email.fromString("provider@example.com").toOption.get
     val cnpj = CNPJ.fromString("11.222.333/0001-81").toOption.get

@@ -10,15 +10,19 @@ class ProviderRepositorySpec extends CatsEffectSuite:
   private def makeRepo: IO[ProviderRepository[IO]] =
     InMemoryProviderRepository.make[IO]
 
-  private def makeProvider(email: String = "provider@example.com"): Provider =
+  private def makeProvider(
+    email: String = "provider@example.com",
+    storefrontSlug: StorefrontSlug = StorefrontSlug.fromString("test-slug-000000").toOption.get
+  ): Provider =
     Provider.create(
-      id = ProviderId.generate,
-      email = Email.fromString(email).toOption.get,
-      taxId = TaxId.fromCNPJ(CNPJ.fromString("11.222.333/0001-81").toOption.get),
-      businessName = "Test Locações",
-      tradeName = "Test",
-      city = "São Paulo",
-      state = "SP"
+      id             = ProviderId.generate,
+      email          = Email.fromString(email).toOption.get,
+      taxId          = TaxId.fromCNPJ(CNPJ.fromString("11.222.333/0001-81").toOption.get),
+      businessName   = "Test Locações",
+      tradeName      = "Test",
+      city           = "São Paulo",
+      state          = "SP",
+      storefrontSlug = storefrontSlug
     ).toOption.get
 
   test("create stores provider and findById retrieves it") {
@@ -75,4 +79,35 @@ class ProviderRepositorySpec extends CatsEffectSuite:
       _      <- repo.create(p)
       result <- repo.create(p).attempt
     yield assert(result.isLeft, "Expected duplicate create to fail")
+  }
+
+  test("findBySlug returns Some for matching provider") {
+    val slug = StorefrontSlug.fromString("festa-facil-abc123").toOption.get
+    for
+      repo  <- makeRepo
+      p      = makeProvider(storefrontSlug = slug)
+      _     <- repo.create(p)
+      found <- repo.findBySlug(slug)
+    yield assertEquals(found, Some(p))
+  }
+
+  test("findBySlug returns None when slug not found") {
+    val slug = StorefrontSlug.fromString("nonexistent-aabbcc").toOption.get
+    for
+      repo  <- makeRepo
+      found <- repo.findBySlug(slug)
+    yield assertEquals(found, None)
+  }
+
+  test("findBySlug distinguishes between different slugs") {
+    val slug1 = StorefrontSlug.fromString("slug-one-aaa111").toOption.get
+    val slug2 = StorefrontSlug.fromString("slug-two-bbb222").toOption.get
+    for
+      repo  <- makeRepo
+      p1     = makeProvider("p1@example.com", storefrontSlug = slug1)
+      p2     = makeProvider("p2@example.com", storefrontSlug = slug2)
+      _     <- repo.create(p1)
+      _     <- repo.create(p2)
+      found <- repo.findBySlug(slug1)
+    yield assertEquals(found, Some(p1))
   }
