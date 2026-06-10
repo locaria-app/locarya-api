@@ -27,6 +27,9 @@ final class InMemoryProviderRepository[F[_]: Async] private (
   def findByEmail(email: Email): F[Option[Provider]] =
     state.get.map(_.values.find(_.email == email))
 
+  def findBySlug(slug: StorefrontSlug): F[Option[Provider]] =
+    state.get.map(_.values.find(_.storefrontSlug == slug))
+
 object InMemoryProviderRepository:
   def make[F[_]: Async]: F[InMemoryProviderRepository[F]] =
     Ref.of[F, Map[ProviderId, Provider]](Map.empty).map(new InMemoryProviderRepository(_))

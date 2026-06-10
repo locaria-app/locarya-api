@@ -49,6 +49,9 @@ lazy val root = project
       // PostgreSQL driver
       "org.postgresql" % "postgresql" % "42.7.3",
 
+      // Password hashing
+      "org.mindrot" % "jbcrypt" % "0.4",
+
       // Test — in-memory port impls + stub gateways (no Testcontainers). See ADR 0007.
       "org.scalameta" %% "munit" % "1.1.0" % Test,
       "org.typelevel" %% "munit-cats-effect" % "2.1.0" % Test
