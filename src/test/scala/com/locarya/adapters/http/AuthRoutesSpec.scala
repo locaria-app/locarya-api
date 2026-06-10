@@ -44,7 +44,7 @@ class AuthRoutesSpec extends CatsEffectSuite:
     yield assertEquals(response.status, Status.Created)
   }
 
-  test("POST /auth/signup response body contains providerId and storefrontUrl") {
+  test("POST /auth/signup response body contains providerId and storefrontSlug") {
     for
       routes   <- makeRoutes
       request   = Request[IO](Method.POST, uri"/auth/signup")
@@ -54,10 +54,10 @@ class AuthRoutesSpec extends CatsEffectSuite:
       body     <- response.as[String]
       json      = parse(body).toOption.get
     yield
-      assert(json.hcursor.downField("providerId").focus.isDefined,   "response must contain providerId")
-      assert(json.hcursor.downField("storefrontUrl").focus.isDefined, "response must contain storefrontUrl")
-      val url = json.hcursor.downField("storefrontUrl").as[String].toOption.get
-      assert(url.startsWith("https://locarya.com.br/loja/"), s"storefrontUrl must use /loja/ path: $url")
+      assert(json.hcursor.downField("providerId").focus.isDefined,    "response must contain providerId")
+      assert(json.hcursor.downField("storefrontSlug").focus.isDefined, "response must contain storefrontSlug")
+      val slug = json.hcursor.downField("storefrontSlug").as[String].toOption.get
+      assert(slug.nonEmpty, s"storefrontSlug must not be empty: $slug")
   }
 
   test("POST /auth/signup echoes X-Correlation-ID header") {

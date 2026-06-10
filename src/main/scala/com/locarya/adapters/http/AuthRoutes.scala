@@ -23,8 +23,8 @@ object AuthRoutes:
   )
 
   private case class SignupResponseBody(
-    providerId:    String,
-    storefrontUrl: String
+    providerId:     String,
+    storefrontSlug: String
   )
 
   private case class ErrorResponseBody(error: String)
@@ -52,8 +52,7 @@ object AuthRoutes:
                 )
               )
               .flatMap { result =>
-                val url = s"https://locarya.com.br/loja/${result.storefrontSlug.value}"
-                Created(SignupResponseBody(result.providerId.value, url).asJson)
+                Created(SignupResponseBody(result.providerId.value, result.storefrontSlug.value).asJson)
               }
               .handleErrorWith {
                 case SignupError.DuplicateEmail(email) =>
