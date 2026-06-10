@@ -52,10 +52,13 @@ is_closed() {
   [ "$(gh issue view "$1" --repo "$REPO" --json state -q .state)" = "CLOSED" ]
 }
 
-# pr-runner names branches "issue-<N>-<slug>" — match that, not "feat/...".
+# Cache all open PR branch names once — avoids repeated gh calls and
+# intermittent auth/keychain failures on rapid successive requests.
+OPEN_PR_BRANCHES="$(gh pr list --repo "$REPO" --state open --json headRefName \
+  -q '.[].headRefName' 2>/dev/null || true)"
+
 has_open_pr() {
-  gh pr list --repo "$REPO" --state open --json headRefName -q '.[].headRefName' \
-    | grep -qE "^issue-$1(-|$)"
+  printf '%s\n' "$OPEN_PR_BRANCHES" | grep -qE "^(feat/)?issue-$1(-|$)"
 }
 
 # Extract the "#N" references found under the "## Blocked by" heading only.
