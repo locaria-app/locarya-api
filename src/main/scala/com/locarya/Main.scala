@@ -7,7 +7,7 @@ import com.locarya.adapters.http.{AuthRoutes, HealthEndpoints}
 import com.locarya.adapters.http.middleware.CorrelationIdMiddleware
 import com.locarya.adapters.persistence.{Database, ProviderRepositoryLive}
 import com.locarya.config.AppConfig
-import com.locarya.domain.services.ProviderServiceImpl
+import com.locarya.domain.services.{AuthServiceImpl, ProviderServiceImpl}
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.server.Server
 import org.typelevel.log4cats.Logger
@@ -33,10 +33,11 @@ object Main extends IOApp.Simple {
 
       providerRepo    = ProviderRepositoryLive.make[IO](xa)
       providerService = ProviderServiceImpl[IO](providerRepo)
+      authService     = AuthServiceImpl[IO](providerRepo, config.jwt.secret)
 
       routes = CorrelationIdMiddleware(
                  HealthEndpoints.routes[IO](xa) <+>
-                 AuthRoutes.routes[IO](providerService)
+                 AuthRoutes.routes[IO](providerService, authService)
                )
 
       server <- EmberServerBuilder

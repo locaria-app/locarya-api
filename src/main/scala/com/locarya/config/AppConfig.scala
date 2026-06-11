@@ -17,9 +17,12 @@ case class HttpConfig(
   port: Int
 )
 
+case class JwtConfig(secret: String)
+
 case class AppConfig(
   database: DatabaseConfig,
-  http: HttpConfig
+  http:     HttpConfig,
+  jwt:      JwtConfig
 )
 
 object AppConfig {
@@ -38,6 +41,9 @@ object AppConfig {
         http = HttpConfig(
           host = config.getString("locarya.http.host"),
           port = config.getInt("locarya.http.port")
+        ),
+        jwt = JwtConfig(
+          secret = config.getString("locarya.jwt.secret")
         )
       )
     })

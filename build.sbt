@@ -52,6 +52,9 @@ lazy val root = project
       // Password hashing
       "org.mindrot" % "jbcrypt" % "0.4",
 
+      // JWT
+      "com.github.jwt-scala" %% "jwt-circe" % "9.4.6",
+
       // Test — in-memory port impls + stub gateways (no Testcontainers). See ADR 0007.
       "org.scalameta" %% "munit" % "1.1.0" % Test,
       "org.typelevel" %% "munit-cats-effect" % "2.1.0" % Test
