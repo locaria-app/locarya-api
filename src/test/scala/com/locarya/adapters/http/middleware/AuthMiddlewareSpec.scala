@@ -74,3 +74,50 @@ class AuthMiddlewareSpec extends CatsEffectSuite:
       response <- wrapped.orNotFound(request)
     yield assertEquals(response.status, Status.Unauthorized)
   }
+
+  // ── withProviderId ───────────────────────────────────────────────────────────
+
+  test("withProviderId passes providerId claim to the route function") {
+    val token       = makeToken()
+    val claimRoutes = AuthMiddleware.withProviderId[IO](testSecret) { pid =>
+      HttpRoutes.of[IO]:
+        case GET -> Root / "me" => Ok(pid)
+    }
+    val request = Request[IO](Method.GET, uri"/me")
+      .withHeaders(Authorization(Credentials.Token(AuthScheme.Bearer, token)))
+    for
+      response <- claimRoutes.orNotFound(request)
+      body     <- response.as[String]
+    yield
+      assertEquals(response.status, Status.Ok)
+      assertEquals(body, "test-id")
+  }
+
+  test("withProviderId returns 401 when token is missing") {
+    val claimRoutes = AuthMiddleware.withProviderId[IO](testSecret) { pid =>
+      HttpRoutes.of[IO]:
+        case GET -> Root / "me" => Ok(pid)
+    }
+    val request = Request[IO](Method.GET, uri"/me")
+    for
+      response <- claimRoutes.orNotFound(request)
+    yield assertEquals(response.status, Status.Unauthorized)
+  }
+
+  test("withProviderId returns 401 when token has no providerId claim") {
+    val now   = Instant.now().getEpochSecond
+    val token = JwtCirce.encode(
+      JwtClaim(content = """{"email":"x@y.com"}""", issuedAt = Some(now), expiration = Some(now + 86400L)),
+      testSecret,
+      JwtAlgorithm.HS256
+    )
+    val claimRoutes = AuthMiddleware.withProviderId[IO](testSecret) { pid =>
+      HttpRoutes.of[IO]:
+        case GET -> Root / "me" => Ok(pid)
+    }
+    val request = Request[IO](Method.GET, uri"/me")
+      .withHeaders(Authorization(Credentials.Token(AuthScheme.Bearer, token)))
+    for
+      response <- claimRoutes.orNotFound(request)
+    yield assertEquals(response.status, Status.Unauthorized)
+  }
