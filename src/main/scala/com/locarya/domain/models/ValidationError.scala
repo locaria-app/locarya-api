@@ -17,3 +17,4 @@ case class InvalidAddress(message: String)       extends ValidationError
 case class InvalidURL(message: String)            extends ValidationError
 case class InvalidStorefrontSlug(message: String) extends ValidationError
 case class InvalidPassword(message: String)       extends ValidationError
+case class InvalidItemImage(message: String)      extends ValidationError

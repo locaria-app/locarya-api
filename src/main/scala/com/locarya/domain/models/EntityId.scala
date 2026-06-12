@@ -120,3 +120,20 @@ object PaymentId {
     }
   }
 }
+
+// ItemImageId
+final case class ItemImageId private (value: String)
+
+object ItemImageId {
+  def generate: ItemImageId = ItemImageId(UUID.randomUUID().toString)
+
+  def fromString(id: String): Either[ValidationError, ItemImageId] = {
+    try {
+      UUID.fromString(id)
+      Right(ItemImageId(id))
+    } catch {
+      case _: IllegalArgumentException =>
+        Left(InvalidEntityId(s"Invalid ItemImageId format: $id"))
+    }
+  }
+}
