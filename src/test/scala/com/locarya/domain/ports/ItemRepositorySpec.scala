@@ -89,3 +89,28 @@ class ItemRepositorySpec extends CatsEffectSuite:
       result <- repo.create(item).attempt
     yield assert(result.isLeft, "Expected duplicate create to fail")
   }
+
+  test("findActiveByProviderId returns only active items for that provider") {
+    val pid = ProviderId.generate
+    for
+      repo     <- makeRepo
+      active    = makeItem(pid, "Mesa Redonda")
+      inactive  = Item.create(ItemId.generate, pid, "Old Item", "desc", dailyRate, 1, AttendantRequirement.NotAllowed, isActive = false).toOption.get
+      _        <- repo.create(active)
+      _        <- repo.create(inactive)
+      results  <- repo.findActiveByProviderId(pid)
+    yield
+      assertEquals(results.map(_.id).toSet, Set(active.id))
+      assert(!results.exists(_.id == inactive.id))
+  }
+
+  test("findActiveByProviderId returns empty list when no active items") {
+    val pid = ProviderId.generate
+    for
+      repo    <- makeRepo
+      item     = Item.create(ItemId.generate, pid, "Item", "desc", dailyRate, 1, AttendantRequirement.Optional, isActive = false).toOption.get
+      _       <- repo.create(item)
+      results <- repo.findActiveByProviderId(pid)
+    yield assertEquals(results, Nil)
+  }
+

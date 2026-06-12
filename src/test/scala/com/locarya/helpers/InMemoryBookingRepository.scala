@@ -35,6 +35,16 @@ final class InMemoryBookingRepository[F[_]: Async] private (
   def findByDateRange(start: LocalDate, end: LocalDate): F[List[Booking]] =
     state.get.map(_.values.filter(b => !b.startDate.isAfter(end) && !b.endDate.isBefore(start)).toList)
 
+  def existsForItem(itemId: ItemId): F[Boolean] =
+    state.get.map { store =>
+      store.values.exists { booking =>
+        booking.items.exists {
+          case BookedIndividualItem(id, _) => id == itemId
+          case _                           => false
+        }
+      }
+    }
+
 object InMemoryBookingRepository:
   def make[F[_]: Async]: F[InMemoryBookingRepository[F]] =
     Ref.of[F, Map[BookingId, Booking]](Map.empty).map(new InMemoryBookingRepository(_))

@@ -7,3 +7,4 @@ trait BookingRepository[F[_]] extends Repository[F, Booking, BookingId]:
   def findByProvider(providerId: ProviderId): F[List[Booking]]
   def findByStatus(status: BookingStatus): F[List[Booking]]
   def findByDateRange(start: LocalDate, end: LocalDate): F[List[Booking]]
+  def existsForItem(itemId: ItemId): F[Boolean]

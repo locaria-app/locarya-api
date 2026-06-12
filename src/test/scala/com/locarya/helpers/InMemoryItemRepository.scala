@@ -27,6 +27,9 @@ final class InMemoryItemRepository[F[_]: Async] private (
   def findByProviderId(providerId: ProviderId): F[List[Item]] =
     state.get.map(_.values.filter(_.providerId == providerId).toList)
 
+  def findActiveByProviderId(providerId: ProviderId): F[List[Item]] =
+    state.get.map(_.values.filter(i => i.providerId == providerId && i.isActive).toList)
+
 object InMemoryItemRepository:
   def make[F[_]: Async]: F[InMemoryItemRepository[F]] =
     Ref.of[F, Map[ItemId, Item]](Map.empty).map(new InMemoryItemRepository(_))
