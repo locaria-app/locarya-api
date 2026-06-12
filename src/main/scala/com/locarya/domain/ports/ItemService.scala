@@ -6,7 +6,7 @@ final case class CreateItemRequest(
   providerId:           ProviderId,
   name:                 String,
   description:          String,
-  price:                Money,
+  dailyRate:            Money,
   stock:                Int,
   attendantRequirement: AttendantRequirement,
   imageUrls:            List[String]
@@ -17,7 +17,7 @@ final case class UpdateItemRequest(
   providerId:           ProviderId,
   name:                 String,
   description:          String,
-  price:                Money,
+  dailyRate:            Money,
   stock:                Int,
   attendantRequirement: AttendantRequirement,
   imageUrls:            List[String]

@@ -22,7 +22,7 @@ class ItemServiceImpl[F[_]: Sync: Logger](
                     providerId           = request.providerId,
                     name                 = request.name,
                     description          = request.description,
-                    dailyRate            = request.price,
+                    dailyRate            = request.dailyRate,
                     stock                = request.stock,
                     attendantRequirement = request.attendantRequirement
                   )
@@ -46,7 +46,7 @@ class ItemServiceImpl[F[_]: Sync: Logger](
                       providerId           = request.providerId,
                       name                 = request.name,
                       description          = request.description,
-                      dailyRate            = request.price,
+                      dailyRate            = request.dailyRate,
                       stock                = request.stock,
                       attendantRequirement = request.attendantRequirement
                     )

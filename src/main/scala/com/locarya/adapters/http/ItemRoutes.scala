@@ -16,7 +16,7 @@ object ItemRoutes:
   private case class CreateItemBody(
     name:                 String,
     description:          String,
-    price:                BigDecimal,
+    dailyRate:            BigDecimal,
     stock:                Int,
     attendantRequirement: String,
     imageUrls:            List[String]
@@ -25,7 +25,7 @@ object ItemRoutes:
   private case class UpdateItemBody(
     name:                 String,
     description:          String,
-    price:                BigDecimal,
+    dailyRate:            BigDecimal,
     stock:                Int,
     attendantRequirement: String,
     imageUrls:            List[String]
@@ -36,7 +36,7 @@ object ItemRoutes:
     providerId:           String,
     name:                 String,
     description:          String,
-    price:                BigDecimal,
+    dailyRate:            BigDecimal,
     stock:                Int,
     attendantRequirement: String,
     isActive:             Boolean
@@ -58,7 +58,7 @@ object ItemRoutes:
       providerId           = item.providerId.value,
       name                 = item.name,
       description          = item.description,
-      price                = item.dailyRate.amount,
+      dailyRate            = item.dailyRate.amount,
       stock                = item.stock,
       attendantRequirement = item.attendantRequirement.toString,
       isActive             = item.isActive
@@ -93,13 +93,13 @@ object ItemRoutes:
           req.as[CreateItemBody].flatMap { body =>
             for
               pid   <- providerIdF
-              price <- Money.fromAmount(body.price)
-                         .fold(err => ItemError.InvalidInput(err).raiseError[F, Money], _.pure[F])
+              dailyRate <- Money.fromAmount(body.dailyRate)
+                             .fold(err => ItemError.InvalidInput(err).raiseError[F, Money], _.pure[F])
               req2   = CreateItemRequest(
                          providerId           = pid,
                          name                 = body.name,
                          description          = body.description,
-                         price                = price,
+                         dailyRate            = dailyRate,
                          stock                = body.stock,
                          attendantRequirement = parseAttendantRequirement(body.attendantRequirement)
                                                   .fold(_ => AttendantRequirement.Optional, identity),
@@ -123,14 +123,14 @@ object ItemRoutes:
               pid    <- providerIdF
               itemId <- ItemId.fromString(itemIdStr)
                           .fold(err => ItemError.InvalidInput(err).raiseError[F, ItemId], _.pure[F])
-              price  <- Money.fromAmount(body.price)
-                          .fold(err => ItemError.InvalidInput(err).raiseError[F, Money], _.pure[F])
+              dailyRate  <- Money.fromAmount(body.dailyRate)
+                             .fold(err => ItemError.InvalidInput(err).raiseError[F, Money], _.pure[F])
               req2    = UpdateItemRequest(
                           itemId               = itemId,
                           providerId           = pid,
                           name                 = body.name,
                           description          = body.description,
-                          price                = price,
+                          dailyRate            = dailyRate,
                           stock                = body.stock,
                           attendantRequirement = parseAttendantRequirement(body.attendantRequirement)
                                                    .fold(_ => AttendantRequirement.Optional, identity),

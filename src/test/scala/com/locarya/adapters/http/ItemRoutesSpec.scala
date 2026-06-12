@@ -80,7 +80,7 @@ class ItemRoutesSpec extends CatsEffectSuite:
     """{
       "name":                 "Cama Elástica Grande",
       "description":          "Cama elástica para festas",
-      "price":                150.00,
+      "dailyRate":            150.00,
       "stock":                2,
       "attendantRequirement": "Required",
       "imageUrls":            ["https://example.com/img1.jpg","https://example.com/img2.jpg"]
@@ -193,7 +193,7 @@ class ItemRoutesSpec extends CatsEffectSuite:
       """{
         "name":                 "Cama Elástica Atualizada",
         "description":          "Nova descrição",
-        "price":                200.00,
+        "dailyRate":            200.00,
         "stock":                4,
         "attendantRequirement": "Optional",
         "imageUrls":            ["https://example.com/new.jpg"]

@@ -37,7 +37,7 @@ class ItemServiceSpec extends CatsEffectSuite:
     providerId           = providerId,
     name                 = "Cama Elástica",
     description          = "Cama elástica infantil",
-    price                = price,
+    dailyRate            = price,
     stock                = 3,
     attendantRequirement = AttendantRequirement.Required,
     imageUrls            = List(url1, url2)
@@ -127,7 +127,7 @@ class ItemServiceSpec extends CatsEffectSuite:
                   providerId           = providerId,
                   name                 = "Mesa Dobrável",
                   description          = "Mesa de festa",
-                  price                = price,
+                  dailyRate            = price,
                   stock                = 5,
                   attendantRequirement = AttendantRequirement.NotAllowed,
                   imageUrls            = List(url2)
@@ -151,7 +151,7 @@ class ItemServiceSpec extends CatsEffectSuite:
                    providerId           = otherId,
                    name                 = "Hack",
                    description          = "",
-                   price                = price,
+                   dailyRate            = price,
                    stock                = 1,
                    attendantRequirement = AttendantRequirement.Optional,
                    imageUrls            = List(url1)
