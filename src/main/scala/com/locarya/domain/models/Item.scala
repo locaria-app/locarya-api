@@ -7,7 +7,8 @@ final case class Item private (
   description: String,
   dailyRate: Money,
   stock: Int,
-  attendantRequirement: AttendantRequirement
+  attendantRequirement: AttendantRequirement,
+  isActive: Boolean
 )
 
 object Item {
@@ -18,14 +19,19 @@ object Item {
     description: String,
     dailyRate: Money,
     stock: Int,
-    attendantRequirement: AttendantRequirement
+    attendantRequirement: AttendantRequirement,
+    isActive: Boolean = true
   ): Either[ValidationError, Item] = {
     if (name.trim.isEmpty) {
       Left(InvalidItem("Name cannot be empty"))
     } else if (stock < 0) {
       Left(InvalidItem("Stock cannot be negative"))
     } else {
-      Right(Item(id, providerId, name.trim, description.trim, dailyRate, stock, attendantRequirement))
+      Right(Item(id, providerId, name.trim, description.trim, dailyRate, stock, attendantRequirement, isActive))
     }
+  }
+
+  extension (item: Item) {
+    def deactivate: Item = item.copy(isActive = false)
   }
 }

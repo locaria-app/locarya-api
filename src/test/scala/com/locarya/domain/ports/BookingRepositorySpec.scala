@@ -139,3 +139,47 @@ class BookingRepositorySpec extends CatsEffectSuite:
       result <- repo.create(b).attempt
     yield assert(result.isLeft, "Expected duplicate create to fail")
   }
+
+  test("existsForItem returns false when no booking references the item") {
+    for
+      repo   <- makeRepo
+      result <- repo.existsForItem(ItemId.generate)
+    yield assertEquals(result, false)
+  }
+
+  test("existsForItem returns true when a booking references the item") {
+    val itemId = ItemId.generate
+    for
+      repo    <- makeRepo
+      booking  = Booking.create(
+                   id = BookingId.generate,
+                   providerId = ProviderId.generate,
+                   customerId = CustomerId.generate,
+                   items = List(BookedIndividualItem(itemId, 1)),
+                   startDate = LocalDate.of(2026, 6, 1),
+                   endDate = LocalDate.of(2026, 6, 5),
+                   totalAmount = amount
+                 ).toOption.get
+      _       <- repo.create(booking)
+      result  <- repo.existsForItem(itemId)
+    yield assertEquals(result, true)
+  }
+
+  test("existsForItem returns false when booking references a different item") {
+    val targetId = ItemId.generate
+    val otherId  = ItemId.generate
+    for
+      repo    <- makeRepo
+      booking  = Booking.create(
+                   id = BookingId.generate,
+                   providerId = ProviderId.generate,
+                   customerId = CustomerId.generate,
+                   items = List(BookedIndividualItem(otherId, 1)),
+                   startDate = LocalDate.of(2026, 6, 1),
+                   endDate = LocalDate.of(2026, 6, 5),
+                   totalAmount = amount
+                 ).toOption.get
+      _       <- repo.create(booking)
+      result  <- repo.existsForItem(targetId)
+    yield assertEquals(result, false)
+  }
