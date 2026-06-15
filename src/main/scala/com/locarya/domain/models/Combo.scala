@@ -9,7 +9,8 @@ final case class Combo private (
   description: String,
   dailyRate: Money,
   items: List[ComboItemDefinition],
-  attendantRequirement: AttendantRequirement
+  attendantRequirement: AttendantRequirement,
+  isActive: Boolean
 )
 
 object Combo {
@@ -20,7 +21,8 @@ object Combo {
     description: String,
     dailyRate: Money,
     items: List[ComboItemDefinition],
-    attendantRequirement: AttendantRequirement
+    attendantRequirement: AttendantRequirement,
+    isActive: Boolean = true
   ): Either[ValidationError, Combo] = {
     if (name.trim.isEmpty) {
       Left(InvalidCombo("Name cannot be empty"))
@@ -29,7 +31,11 @@ object Combo {
     } else if (items.exists(_.quantity <= 0)) {
       Left(InvalidCombo("All item quantities must be positive"))
     } else {
-      Right(Combo(id, providerId, name.trim, description.trim, dailyRate, items, attendantRequirement))
+      Right(Combo(id, providerId, name.trim, description.trim, dailyRate, items, attendantRequirement, isActive))
     }
+  }
+
+  extension (combo: Combo) {
+    def deactivate: Combo = combo.copy(isActive = false)
   }
 }

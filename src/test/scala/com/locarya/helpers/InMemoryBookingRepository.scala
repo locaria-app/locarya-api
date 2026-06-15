@@ -45,6 +45,16 @@ final class InMemoryBookingRepository[F[_]: Async] private (
       }
     }
 
+  def existsForCombo(comboId: ComboId): F[Boolean] =
+    state.get.map { store =>
+      store.values.exists { booking =>
+        booking.items.exists {
+          case BookedCombo(id, _) => id == comboId
+          case _                  => false
+        }
+      }
+    }
+
 object InMemoryBookingRepository:
   def make[F[_]: Async]: F[InMemoryBookingRepository[F]] =
     Ref.of[F, Map[BookingId, Booking]](Map.empty).map(new InMemoryBookingRepository(_))
