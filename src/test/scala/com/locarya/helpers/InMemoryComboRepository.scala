@@ -27,6 +27,9 @@ final class InMemoryComboRepository[F[_]: Async] private (
   def findItemsInCombo(comboId: ComboId): F[List[ComboItemDefinition]] =
     state.get.map(_.get(comboId).map(_.items).getOrElse(Nil))
 
+  def findActiveByProviderId(providerId: ProviderId): F[List[Combo]] =
+    state.get.map(_.values.filter(c => c.providerId == providerId && c.isActive).toList)
+
 object InMemoryComboRepository:
   def make[F[_]: Async]: F[InMemoryComboRepository[F]] =
     Ref.of[F, Map[ComboId, Combo]](Map.empty).map(new InMemoryComboRepository(_))

@@ -35,7 +35,7 @@ class StorefrontRoutesSpec extends CatsEffectSuite:
     comboRoutes:      HttpRoutes[IO],
     providerRepo:     InMemoryProviderRepository[IO]
   ):
-    def allRoutes: HttpRoutes[IO] = authRoutes <+> itemRoutes <+> comboRoutes <+> storefrontRoutes
+    def allRoutes: HttpRoutes[IO] = authRoutes <+> storefrontRoutes <+> itemRoutes <+> comboRoutes
 
   private def makeCtx: IO[Ctx] =
     for
