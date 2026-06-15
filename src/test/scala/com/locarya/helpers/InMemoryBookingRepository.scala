@@ -35,6 +35,13 @@ final class InMemoryBookingRepository[F[_]: Async] private (
   def findByDateRange(start: LocalDate, end: LocalDate): F[List[Booking]] =
     state.get.map(_.values.filter(b => !b.startDate.isAfter(end) && !b.endDate.isBefore(start)).toList)
 
+  def findConfirmedOrInProgressOnDate(date: LocalDate): F[List[Booking]] =
+    state.get.map(_.values.filter { b =>
+      val statusOk = b.status == BookingStatus.Confirmed || b.status == BookingStatus.InProgress
+      val dateOk   = !b.startDate.isAfter(date) && !b.endDate.isBefore(date)
+      statusOk && dateOk
+    }.toList)
+
   def existsForItem(itemId: ItemId): F[Boolean] =
     state.get.map { store =>
       store.values.exists { booking =>
