@@ -25,7 +25,7 @@ Qualquer coisa que pode ser alugada — individual (ex: uma cama elástica) ou a
 _Avoid_: Produto, brinquedo (como termo técnico), equipamento
 
 **Combo**:
-Um tipo de Item que agrupa outros Itens individuais (ex: "Combo Festa Completa" = 1 cama elástica + 1 piscina de bolinha). O Locador cria Combos através de uma feature "Montar Combo" que permite selecionar Itens individuais e definir preço manual. Quando uma Reserva inclui um Combo, os Itens individuais que o compõem são descontados do estoque. Se qualquer Item individual estiver indisponível, o Combo também fica indisponível. **MVP:** Combos só podem conter Itens individuais (não outros Combos). Combos que já têm Reservas não podem ser editados — criar novo Combo para mudanças.
+Um tipo de Item que agrupa outros Itens individuais (ex: "Combo Festa Completa" = 1 cama elástica + 1 piscina de bolinha). O Locador cria Combos através de uma feature "Montar Combo" que permite selecionar Itens individuais e definir preço manual. Quando uma Reserva inclui um Combo, os Itens individuais que o compõem são descontados do estoque. Se qualquer Item individual estiver indisponível, o Combo também fica indisponível. **MVP:** Combos só podem conter Itens individuais (não outros Combos). Combos que já têm Reservas não podem ser editados — criar novo Combo para mudanças. Combos têm **imagens próprias** (1 principal obrigatória + até 4 adicionais, máximo 5), independentes das imagens dos Itens que os compõem. Primeira imagem é o destaque na Loja, demais formam galeria. Na Loja, o Combo exibe suas próprias imagens e também as imagens dos Itens individuais que o compõem.
 _Avoid_: Pacote, kit, bundle
 
 ### Operações
@@ -72,6 +72,7 @@ _Avoid_: Assinatura, tier, nível
 - **Itens** e **Combos** têm status ativo/inativo — apenas ativos aparecem na Loja
 - **Itens** ou **Combos** que já têm Reservas não podem ser deletados, apenas desativados
 - **Itens** têm 1 imagem principal (obrigatória) + até 4 imagens adicionais (total: 5 máximo). Armazenadas em tabela separada com ordem de exibição
+- **Combos** têm 1 imagem principal (obrigatória) + até 4 imagens adicionais (total: 5 máximo), independentes das imagens dos Itens que os compõem. Armazenadas em tabela separada com ordem de exibição. Obrigatórias na criação e substituição total no update
 - Um **Item** pode exigir **Monitor** (obrigatório), permitir **Monitor** (opcional) ou não permitir
 - Uma **Reserva** pertence a um **Locador** e a um **Cliente**
 - Uma **Reserva** contém um ou mais **Itens** (individuais e/ou Combos), uma data, endereço de entrega
