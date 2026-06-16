@@ -18,3 +18,4 @@ case class InvalidURL(message: String)            extends ValidationError
 case class InvalidStorefrontSlug(message: String) extends ValidationError
 case class InvalidPassword(message: String)       extends ValidationError
 case class InvalidItemImage(message: String)      extends ValidationError
+case class InvalidAvailabilityQuery(message: String) extends ValidationError
