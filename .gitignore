@@ -150,3 +150,6 @@ test-output/
 # If these are shared team config, DO NOT ignore them
 .jvmopts
 .sbtopts
+
+# Ralph loop — ephemeral temp files (briefs, logs)
+.ralph-tmp/
