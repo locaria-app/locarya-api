@@ -3,14 +3,16 @@
 # Ralph loop — single iteration (human-in-the-loop).
 #
 # Picks the next ready issue and drives it through ONE pass of your agent stack:
-#   1. context-gatherer  (subagent) -> implementation brief in session context
+#   1. context-gatherer  (subagent) -> produces a compact brief written to a temp
+#      file on disk; session is discarded after this step.
 #      + migration-guard (subagent) when the issue touches the DB schema
 #   2. /tdd              (skill, invoked explicitly) -> red-green-refactor
+#      Starts a FRESH session and reads the brief file — no accumulated context
+#      from step 1 carried over. This is the main token-budget optimisation:
+#      the gatherer's full codebase reads never enter the /tdd context window.
 #   3. pr-runner         (subagent) -> branch + commit + push + open PR (no merge)
-#
-# Steps 1-3 share ONE Claude Code session (--session-id / --resume) so the brief
-# from context-gatherer is still in context when /tdd runs — mirroring the manual
-# flow of "run the gatherer, then type /tdd in the same session".
+#      Resumes the /tdd session (step 2 only), which is much smaller than the
+#      old combined session that carried steps 1+2.
 #
 # `/tdd` is invoked as a LITERAL slash input (it lives at ~/.claude/skills/tdd/).
 # Skills are model-invocable, but being explicit makes the load deterministic in
@@ -73,11 +75,13 @@ esac
 # Parse the sigil with sed -E (BSD-safe; no grep -P).
 N="$(printf '%s' "$DECISION"  | sed -nE 's/.*<next issue=([0-9]+).*/\1/p')"
 MIG="$(printf '%s' "$DECISION" | sed -nE 's/.*migration=([a-z]+).*/\1/p')"
-SID="$(uuidgen)"
-echo ">> issue #$N (migration=$MIG) session=$SID"
-vlog "start: $(date '+%Y-%m-%d %H:%M:%S') | session $SID"
+CTX_SID="$(uuidgen)"   # session for step 1 only — discarded after brief is written
+TDD_SID="$(uuidgen)"   # fresh session for steps 2+3
+echo ">> issue #$N (migration=$MIG) ctx-session=$CTX_SID tdd-session=$TDD_SID"
+vlog "start: $(date '+%Y-%m-%d %H:%M:%S') | ctx=$CTX_SID tdd=$TDD_SID"
 
-CTX_LOG="$(mktemp "${TMPDIR:-/tmp}/ralph-$N-ctx.XXXXXX")"
+BRIEF_FILE="$(mktemp "${TMPDIR:-/tmp}/ralph-$N-brief.XXXXXX.md")"
+CTX_LOG="$(mktemp "${TMPDIR:-/tmp}/ralph-$N-ctx.XXXXXX")"  # sentinel check only
 
 # 1. Context (+ migration guard when relevant). The guard only REVIEWS; we act on
 #    its verdict here by labeling the issue "blocked" and halting this iteration.
@@ -90,24 +94,37 @@ fi
 
 vlog "step 1/3: context-gatherer$([ "$MIG" = true ] && echo ' + migration-guard' || true)..."
 STEP_START=$(date +%s)
-claude --session-id "$SID" --permission-mode acceptEdits \
-  -p "Use the context-gatherer subagent on issue #$N to produce the implementation brief. $GUARD" \
+claude --session-id "$CTX_SID" --permission-mode acceptEdits \
+  -p "Use the context-gatherer subagent on issue #$N to produce the implementation brief. \
+Write the complete brief as a markdown file to $BRIEF_FILE (use the Bash tool: \
+\`cat > '$BRIEF_FILE' << 'BRIEF_EOF'\n<brief content>\nBRIEF_EOF\`). \
+After writing the file, print exactly: <brief-written/>. $GUARD" \
   | tee "$CTX_LOG"
 vlog "step 1/3 done ($(elapsed $STEP_START))"
 
 if grep -q '<halt/>' "$CTX_LOG"; then
   echo ">> migration-guard halted #$N; labeled 'blocked'. Skipping."
-  rm -f "$CTX_LOG"
+  rm -f "$CTX_LOG" "$BRIEF_FILE"
   exit 4
 fi
-rm -f "$CTX_LOG"
 
-# 2. TDD — unattended: decide and document, don't ask; escalate only genuine
-#    blockers via the <needs-human> sentinel (then comment, label, and skip).
+# Verify the brief was actually written before discarding the ctx session
+if [ ! -s "$BRIEF_FILE" ]; then
+  echo ">> context-gatherer did not write the brief to $BRIEF_FILE — aborting." >&2
+  rm -f "$CTX_LOG" "$BRIEF_FILE"
+  exit 1
+fi
+vlog "brief written: $(wc -c < "$BRIEF_FILE") bytes → $BRIEF_FILE"
+rm -f "$CTX_LOG"  # ctx session log no longer needed
+
+# 2. TDD — fresh session reading only the compact brief from disk.
+#    No context from step 1 is inherited — this is the main token saving.
 vlog "step 2/3: /tdd..."
 STEP_START=$(date +%s)
 TDD_LOG="$(mktemp "${TMPDIR:-/tmp}/ralph-$N-tdd.XXXXXX")"
-claude --resume "$SID" --permission-mode acceptEdits -p "/tdd
+claude --session-id "$TDD_SID" --permission-mode acceptEdits -p "/tdd
+
+Implementation brief for this issue is at $BRIEF_FILE — read it before starting.
 
 UNATTENDED RUN — no human is available to answer questions. Do not pause to ask. For \
 each decision, choose the option most consistent with the PRD, the ADRs, CONTEXT.md and \
@@ -125,15 +142,16 @@ if grep -q '<needs-human>' "$TDD_LOG"; then
   gh issue comment "$N" --body "Ralph paused — needs a human decision: $Q"
   gh issue edit "$N" --add-label needs-design
   echo ">> #$N escalated for a human decision; commented + labeled 'needs-design'. Skipping PR."
-  rm -f "$TDD_LOG"
+  rm -f "$TDD_LOG" "$BRIEF_FILE"
   exit 5
 fi
-rm -f "$TDD_LOG"
+rm -f "$TDD_LOG" "$BRIEF_FILE"
 
-# 3. Open the PR. pr-runner never merges and never pushes to main (enforced by settings.json).
+# 3. Open the PR. Resumes TDD_SID (step 2 only — much smaller than the old
+#    combined session). pr-runner never merges and never pushes to main.
 vlog "step 3/3: pr-runner..."
 STEP_START=$(date +%s)
-claude --resume "$SID" --permission-mode acceptEdits \
+claude --resume "$TDD_SID" --permission-mode acceptEdits \
   -p "Use the pr-runner subagent for issue #$N. Open the PR and stop — do not merge."
 vlog "step 3/3 done ($(elapsed $STEP_START))"
 vlog "total: $(elapsed $LOOP_START)"

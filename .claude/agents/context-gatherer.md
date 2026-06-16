@@ -65,9 +65,24 @@ This repo keeps a `CONTEXT.md` with the domain language: Portuguese business ter
 - <decision>: <options>
 ```
 
+## Delivering the brief
+
+When the caller supplies a file path (e.g. `Write the brief to /tmp/ralph-10-brief.abc.md`),
+write the brief to that path using the Bash tool and then print `<brief-written/>` on its own
+line — nothing else after it. Example:
+
+```bash
+cat > '/tmp/ralph-10-brief.abc.md' << 'BRIEF_EOF'
+## Brief for /tdd — Issue #10: ...
+...
+BRIEF_EOF
+```
+
+When no file path is supplied, print the brief to stdout as usual (interactive / parallel use).
+
 ## Rules
 
-- Read-only. Zero edits.
+- Read-only. Zero edits to source files.
 - Be selective — a tight brief beats a file dump. If you read more than ~8 files you're over-gathering.
 - Always confirm the real test framework; never assume.
 - If the issue clearly needs a migration, say so and recommend running migration-guard alongside `/tdd`.
