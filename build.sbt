@@ -57,6 +57,7 @@ lazy val root = project
 
       // Test — in-memory port impls + stub gateways (no Testcontainers). See ADR 0007.
       "org.scalameta" %% "munit" % "1.1.0" % Test,
+      "org.scalameta" %% "munit-scalacheck" % "1.1.0" % Test,
       "org.typelevel" %% "munit-cats-effect" % "2.1.0" % Test
     ),
 

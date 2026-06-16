@@ -3,7 +3,7 @@ package com.locarya.adapters.http
 import cats.effect.IO
 import cats.syntax.semigroupk.*
 import com.locarya.domain.models.*
-import com.locarya.domain.services.{AuthServiceImpl, ComboServiceImpl, ItemServiceImpl, ProviderServiceImpl, StorefrontServiceImpl}
+import com.locarya.domain.services.{AuthServiceImpl, AvailabilityServiceImpl, ComboServiceImpl, ItemServiceImpl, ProviderServiceImpl, StorefrontServiceImpl}
 import com.locarya.helpers.{
   InMemoryBookingRepository,
   InMemoryComboRepository,
@@ -49,10 +49,11 @@ class StorefrontRoutesSpec extends CatsEffectSuite:
       itemSvc        = ItemServiceImpl[IO](itemRepo, imageRepo, bookingRepo)
       comboSvc       = ComboServiceImpl[IO](comboRepo, itemRepo, bookingRepo)
       storefrontSvc  = StorefrontServiceImpl[IO](providerRepo, itemRepo, imageRepo, comboRepo)
+      availabilitySvc = AvailabilityServiceImpl[IO](itemRepo, comboRepo, bookingRepo)
       auth           = AuthRoutes.routes[IO](providerSvc, authSvc)
       items          = ItemRoutes.routes[IO](itemSvc, testJwtSecret)
       combos         = ComboRoutes.routes[IO](comboSvc, testJwtSecret)
-      storefront     = StorefrontRoutes.routes[IO](storefrontSvc)
+      storefront     = StorefrontRoutes.routes[IO](storefrontSvc, availabilitySvc)
     yield Ctx(storefront, auth, items, combos, providerRepo)
 
   private val signupBody =
@@ -269,4 +270,61 @@ class StorefrontRoutesSpec extends CatsEffectSuite:
       response.status != Status.Unauthorized,
       s"Expected public access (not 401) but got ${response.status}"
     )
+  }
+
+  // ── GET /storefront/:slug/availability ───────────────────────────────────────
+
+  test("GET /storefront/:slug/availability returns 200 with available=true for fresh stock") {
+    for
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      itemId   <- createItem(ctx, auth.token)
+      slug     <- getSlug(ctx, auth.id)
+      url       = s"/storefront/$slug/availability?items=$itemId:1&date=2026-09-01"
+      request   = Request[IO](Method.GET, Uri.unsafeFromString(url))
+      response <- ctx.allRoutes.orNotFound(request)
+      body     <- response.as[String]
+      json      = parse(body).toOption.get
+    yield
+      assertEquals(response.status, Status.Ok)
+      assertEquals(json.hcursor.downField("available").as[Boolean].toOption, Some(true))
+      assertEquals(
+        json.hcursor.downField("unavailableItems").focus.flatMap(_.asArray).map(_.size),
+        Some(0)
+      )
+  }
+
+  test("GET /storefront/:slug/availability is public — no Authorization required") {
+    for
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      itemId   <- createItem(ctx, auth.token)
+      slug     <- getSlug(ctx, auth.id)
+      request   = Request[IO](Method.GET, Uri.unsafeFromString(s"/storefront/$slug/availability?items=$itemId:1&date=2026-09-01"))
+      response <- ctx.allRoutes.orNotFound(request)
+    yield assert(
+      response.status != Status.Unauthorized,
+      s"Expected public access (not 401) but got ${response.status}"
+    )
+  }
+
+  test("GET /storefront/:slug/availability returns 400 for malformed items param") {
+    for
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      slug     <- getSlug(ctx, auth.id)
+      request   = Request[IO](Method.GET, Uri.unsafeFromString(s"/storefront/$slug/availability?items=not-a-uuid&date=2026-09-01"))
+      response <- ctx.allRoutes.orNotFound(request)
+    yield assertEquals(response.status, Status.BadRequest)
+  }
+
+  test("GET /storefront/:slug/availability returns 400 for malformed date") {
+    for
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      itemId   <- createItem(ctx, auth.token)
+      slug     <- getSlug(ctx, auth.id)
+      request   = Request[IO](Method.GET, Uri.unsafeFromString(s"/storefront/$slug/availability?items=$itemId:1&date=not-a-date"))
+      response <- ctx.allRoutes.orNotFound(request)
+    yield assertEquals(response.status, Status.BadRequest)
   }
