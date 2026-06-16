@@ -80,8 +80,10 @@ TDD_SID="$(uuidgen)"   # fresh session for steps 2+3
 echo ">> issue #$N (migration=$MIG) ctx-session=$CTX_SID tdd-session=$TDD_SID"
 vlog "start: $(date '+%Y-%m-%d %H:%M:%S') | ctx=$CTX_SID tdd=$TDD_SID"
 
-BRIEF_FILE="$(mktemp "${TMPDIR:-/tmp}/ralph-$N-brief.XXXXXX.md")"
-CTX_LOG="$(mktemp "${TMPDIR:-/tmp}/ralph-$N-ctx.XXXXXX")"  # sentinel check only
+RALPH_TMP="$ROOT/.ralph-tmp"
+mkdir -p "$RALPH_TMP"
+BRIEF_FILE="$RALPH_TMP/issue-$N-brief.md"   # inside project tree, sandbox-writable, gitignored
+CTX_LOG="$RALPH_TMP/issue-$N-ctx.log"       # sentinel check only (read by shell, not agent)
 
 # 1. Context (+ migration guard when relevant). The guard only REVIEWS; we act on
 #    its verdict here by labeling the issue "blocked" and halting this iteration.
