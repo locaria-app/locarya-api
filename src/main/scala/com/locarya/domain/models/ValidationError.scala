@@ -1,6 +1,8 @@
 package com.locarya.domain.models
 
-sealed trait ValidationError
+sealed trait ValidationError:
+  def message: String
+
 case class InvalidAmount(message: String) extends ValidationError
 case class InvalidEmail(message: String) extends ValidationError
 case class InvalidCPF(message: String) extends ValidationError
@@ -18,3 +20,4 @@ case class InvalidURL(message: String)            extends ValidationError
 case class InvalidStorefrontSlug(message: String) extends ValidationError
 case class InvalidPassword(message: String)       extends ValidationError
 case class InvalidItemImage(message: String)      extends ValidationError
+case class InvalidAvailabilityQuery(message: String) extends ValidationError
