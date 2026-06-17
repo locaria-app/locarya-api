@@ -3,7 +3,7 @@ package com.locarya.adapters.http
 import cats.effect.Async
 import cats.syntax.all.*
 import com.locarya.domain.models.*
-import com.locarya.domain.ports.AvailabilityService
+import com.locarya.domain.ports.{AvailabilityService, StorefrontService}
 import io.circe.Encoder
 import io.circe.generic.semiauto.deriveEncoder
 import io.circe.syntax.*
@@ -15,24 +15,33 @@ import org.http4s.dsl.Http4sDsl
 
 object AvailabilityRoutes:
 
-  private case class UnavailableItemResponse(itemId: String, reason: String)
-  private given Encoder[UnavailableItemResponse] = deriveEncoder
-
-  private case class AvailabilityResponse(
-    available:        Boolean,
-    unavailableItems: List[UnavailableItemResponse]
+  private case class ItemAvailabilityResponse(
+    id:           String,
+    kind:         String,
+    available:    Boolean,
+    availableQty: Int
   )
+  private given Encoder[ItemAvailabilityResponse] = deriveEncoder
+
+  private case class AvailabilityResponse(date: String, items: List[ItemAvailabilityResponse])
   private given Encoder[AvailabilityResponse] = deriveEncoder
 
   private case class ErrorResponseBody(error: String)
   private given Encoder[ErrorResponseBody] = deriveEncoder
 
+  private def kindLabel(kind: AvailabilityKind): String = kind match
+    case AvailabilityKind.Item    => "item"
+    case AvailabilityKind.Combo   => "combo"
+    case AvailabilityKind.Unknown => "unknown"
+
+  private def toResponse(a: ItemAvailability): ItemAvailabilityResponse =
+    ItemAvailabilityResponse(a.id.value, kindLabel(a.kind), a.available, a.availableQty)
+
   private def parseItems(raw: String): Either[ValidationError, List[(ItemId, Int)]] =
     val trimmed = raw.trim
     if trimmed.isEmpty then Left(InvalidAvailabilityQuery("items parameter cannot be empty"))
     else
-      val parts = trimmed.split(",").toList
-      parts.traverse { part =>
+      trimmed.split(",").toList.traverse { part =>
         part.split(":").toList match
           case idStr :: qtyStr :: Nil =>
             for
@@ -53,43 +62,49 @@ object AvailabilityRoutes:
 
   private def parseExcludeBookingId(raw: Option[String]): Either[ValidationError, Option[BookingId]] =
     raw match
-      case None       => Right(None)
-      case Some(str)  => BookingId.fromString(str.trim).map(Some(_))
+      case None      => Right(None)
+      case Some(str) => BookingId.fromString(str.trim).map(Some(_))
 
-  def routes[F[_]: Async](availabilityService: AvailabilityService[F]): HttpRoutes[F] =
+  def routes[F[_]: Async](
+    availabilityService: AvailabilityService[F],
+    storefrontService:   StorefrontService[F]
+  ): HttpRoutes[F] =
     val dsl = Http4sDsl[F]
     import dsl.*
 
     HttpRoutes.of[F]:
       case req @ GET -> Root / "storefront" / slugStr / "availability" =>
-        val parsed: Either[ValidationError, (StorefrontSlug, List[(ItemId, Int)], LocalDate, Option[BookingId])] =
+        val parsed: Either[ValidationError, (StorefrontSlug, LocalDate, Option[BookingId], Option[List[(ItemId, Int)]])] =
           for
             slug             <- StorefrontSlug.fromString(slugStr)
-            itemsRaw         <- req.uri.params.get("items")
-                                  .toRight(InvalidAvailabilityQuery("Missing required parameter: items"))
             dateRaw          <- req.uri.params.get("date")
                                   .toRight(InvalidAvailabilityQuery("Missing required parameter: date"))
-            items            <- parseItems(itemsRaw)
             date             <- parseDate(dateRaw)
             excludeBookingId <- parseExcludeBookingId(req.uri.params.get("excludeBookingId"))
-          yield (slug, items, date, excludeBookingId)
+            itemsOpt         <- req.uri.params.get("items") match
+                                  case None      => Right(None)
+                                  case Some(raw) => parseItems(raw).map(Some(_))
+          yield (slug, date, excludeBookingId, itemsOpt)
 
         parsed match
-          case Left(err: InvalidAvailabilityQuery) =>
+          case Left(err: ValidationError) =>
             BadRequest(ErrorResponseBody(err.message).asJson)
-          case Left(err: InvalidEntityId) =>
-            BadRequest(ErrorResponseBody(err.message).asJson)
-          case Left(err: InvalidStorefrontSlug) =>
-            BadRequest(ErrorResponseBody(err.message).asJson)
-          case Left(_) =>
-            BadRequest(ErrorResponseBody("Invalid availability query").asJson)
-          case Right((_, items, date, excludeBookingId)) =>
-            for
-              result <- availabilityService.checkAvailability(items, date, excludeBookingId)
-              resp   <- Ok(AvailabilityResponse(
-                          available        = result.available,
-                          unavailableItems = result.unavailableItems.map(u =>
-                                               UnavailableItemResponse(u.itemId.value, u.reason)
-                                             )
-                        ).asJson)
-            yield resp
+          case Right((slug, date, excludeBookingId, itemsOpt)) =>
+            // No `items` → evaluate the provider's whole active catalog for that date.
+            // The Combo's ComboId is reused as an ItemId so the service can dispatch it.
+            val requestF: F[List[(ItemId, Int)]] = itemsOpt match
+              case Some(list) => list.pure[F]
+              case None =>
+                storefrontService.getStorefront(slug).map { catalog =>
+                  catalog.items.map(wi => wi.item.id -> 1) ++
+                    catalog.combos.flatMap(wc => ItemId.fromString(wc.combo.id.value).toOption.map(_ -> 1))
+                }
+
+            (for
+              request <- requestF
+              result  <- availabilityService.checkAvailability(request, date, excludeBookingId)
+              resp    <- Ok(AvailabilityResponse(date.toString, result.map(toResponse)).asJson)
+             yield resp).handleErrorWith {
+              case _: StorefrontError.NotFound =>
+                NotFound(ErrorResponseBody("Storefront not found").asJson)
+            }

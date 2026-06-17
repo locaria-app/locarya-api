@@ -2,12 +2,15 @@ package com.locarya.adapters.http
 
 import cats.effect.IO
 import com.locarya.domain.models.*
-import com.locarya.domain.services.AvailabilityServiceImpl
+import com.locarya.domain.services.{AvailabilityServiceImpl, StorefrontServiceImpl}
 import com.locarya.helpers.{
   InMemoryBookingRepository,
   InMemoryComboRepository,
-  InMemoryItemRepository
+  InMemoryItemImageRepository,
+  InMemoryItemRepository,
+  InMemoryProviderRepository
 }
+import io.circe.Json
 import io.circe.parser.parse
 import java.time.LocalDate
 import munit.CatsEffectSuite
@@ -20,7 +23,6 @@ class AvailabilityRoutesSpec extends CatsEffectSuite:
 
   given Logger[IO] = NoOpLogger[IO]
 
-  private val providerId = ProviderId.generate
   private val customerId = CustomerId.generate
   private val date       = LocalDate.of(2026, 9, 1)
   private val price      = Money.fromAmount(BigDecimal("100.00")).toOption.get
@@ -28,39 +30,66 @@ class AvailabilityRoutesSpec extends CatsEffectSuite:
 
   private case class Ctx(
     routes:      HttpRoutes[IO],
+    providerId:  ProviderId,
     itemRepo:    InMemoryItemRepository[IO],
     comboRepo:   InMemoryComboRepository[IO],
     bookingRepo: InMemoryBookingRepository[IO]
   )
 
+  private def makeProvider(repo: InMemoryProviderRepository[IO]): IO[ProviderId] =
+    val provider = Provider.create(
+      id             = ProviderId.generate,
+      email          = Email.fromString("locador@loja.com").toOption.get,
+      taxId          = TaxId.fromCNPJ(CNPJ.fromString("11.222.333/0001-81").toOption.get),
+      businessName   = "Loja de Festa LTDA",
+      tradeName      = "Loja de Festa",
+      city           = "São Paulo",
+      state          = "SP",
+      storefrontSlug = StorefrontSlug.fromString(slug).toOption.get
+    ).toOption.get
+    repo.create(provider).as(provider.id)
+
   private def makeCtx: IO[Ctx] =
     for
-      itemRepo    <- InMemoryItemRepository.make[IO]
-      comboRepo   <- InMemoryComboRepository.make[IO]
-      bookingRepo <- InMemoryBookingRepository.make[IO]
-      svc          = AvailabilityServiceImpl[IO](itemRepo, comboRepo, bookingRepo)
-      routes       = AvailabilityRoutes.routes[IO](svc)
-    yield Ctx(routes, itemRepo, comboRepo, bookingRepo)
+      providerRepo <- InMemoryProviderRepository.make[IO]
+      itemRepo     <- InMemoryItemRepository.make[IO]
+      imageRepo    <- InMemoryItemImageRepository.make[IO]
+      comboRepo    <- InMemoryComboRepository.make[IO]
+      bookingRepo  <- InMemoryBookingRepository.make[IO]
+      providerId   <- makeProvider(providerRepo)
+      availSvc      = AvailabilityServiceImpl[IO](itemRepo, comboRepo, bookingRepo)
+      storefrontSvc = StorefrontServiceImpl[IO](providerRepo, itemRepo, imageRepo, comboRepo)
+      routes        = AvailabilityRoutes.routes[IO](availSvc, storefrontSvc)
+    yield Ctx(routes, providerId, itemRepo, comboRepo, bookingRepo)
 
   private def putItem(ctx: Ctx, stock: Int = 1): IO[Item] =
     val item = Item.create(
       id                   = ItemId.generate,
-      providerId           = providerId,
+      providerId           = ctx.providerId,
       name                 = "Cama Elástica",
       description          = "Para festa",
       dailyRate            = price,
       stock                = stock,
       attendantRequirement = AttendantRequirement.Optional
     ).toOption.get
-    ctx.itemRepo.create(item).map(_ => item)
+    ctx.itemRepo.create(item).as(item)
 
-  private def putBooking(
-    ctx:   Ctx,
-    items: List[BookingItem]
-  ): IO[Unit] =
+  private def putCombo(ctx: Ctx, items: List[(Item, Int)]): IO[Combo] =
+    val combo = Combo.create(
+      id                   = ComboId.generate,
+      providerId           = ctx.providerId,
+      name                 = "Combo Festa",
+      description          = "Combo de festa",
+      dailyRate            = price,
+      items                = items.map((i, q) => ComboItemDefinition(i.id, q)),
+      attendantRequirement = AttendantRequirement.Optional
+    ).toOption.get
+    ctx.comboRepo.create(combo).as(combo)
+
+  private def putBooking(ctx: Ctx, items: List[BookingItem]): IO[Unit] =
     val booking = Booking.create(
       id          = BookingId.generate,
-      providerId  = providerId,
+      providerId  = ctx.providerId,
       customerId  = customerId,
       items       = items,
       startDate   = date,
@@ -74,9 +103,19 @@ class AvailabilityRoutesSpec extends CatsEffectSuite:
     val req = Request[IO](Method.GET, Uri.unsafeFromString(s"/storefront/$slug/availability?$query"))
     ctx.routes.orNotFound(req)
 
-  // ── Happy paths ──────────────────────────────────────────────────────────────
+  private def itemsOf(json: Json): Vector[Json] =
+    json.hcursor.downField("items").focus.get.asArray.get
 
-  test("GET /storefront/:slug/availability returns 200 with available=true when stock is enough") {
+  private def entryFor(json: Json, id: String): Json =
+    itemsOf(json).find(_.hcursor.downField("id").as[String].toOption.contains(id))
+      .getOrElse(fail(s"no entry for $id"))
+
+  private def availableOf(entry: Json): Boolean =
+    entry.hcursor.downField("available").as[Boolean].toOption.get
+
+  // ── Basket check (items param present) ─────────────────────────────────────────
+
+  test("returns 200 with available=true when stock is enough") {
     for
       ctx      <- makeCtx
       item     <- putItem(ctx, stock = 2)
@@ -85,14 +124,13 @@ class AvailabilityRoutesSpec extends CatsEffectSuite:
       json      = parse(body).toOption.get
     yield
       assertEquals(response.status, Status.Ok)
-      assertEquals(json.hcursor.downField("available").as[Boolean].toOption, Some(true))
-      assertEquals(
-        json.hcursor.downField("unavailableItems").focus.get.asArray.get.size,
-        0
-      )
+      val entry = entryFor(json, item.id.value)
+      assertEquals(availableOf(entry), true)
+      assertEquals(entry.hcursor.downField("kind").as[String].toOption, Some("item"))
+      assertEquals(entry.hcursor.downField("availableQty").as[Int].toOption, Some(2))
   }
 
-  test("GET /storefront/:slug/availability returns 200 with available=false and unavailableItems when stock is short") {
+  test("returns 200 with available=false and remaining qty when stock is short") {
     for
       ctx      <- makeCtx
       item     <- putItem(ctx, stock = 1)
@@ -100,16 +138,14 @@ class AvailabilityRoutesSpec extends CatsEffectSuite:
       response <- get(ctx, s"items=${item.id.value}:1&date=$date")
       body     <- response.as[String]
       json      = parse(body).toOption.get
-      unavail   = json.hcursor.downField("unavailableItems").focus.get.asArray.get
     yield
       assertEquals(response.status, Status.Ok)
-      assertEquals(json.hcursor.downField("available").as[Boolean].toOption, Some(false))
-      assertEquals(unavail.size, 1)
-      assertEquals(unavail.head.hcursor.downField("itemId").as[String].toOption, Some(item.id.value))
-      assertEquals(unavail.head.hcursor.downField("reason").as[String].toOption, Some("stock depleted"))
+      val entry = entryFor(json, item.id.value)
+      assertEquals(availableOf(entry), false)
+      assertEquals(entry.hcursor.downField("availableQty").as[Int].toOption, Some(0))
   }
 
-  test("GET /storefront/:slug/availability supports multiple items separated by commas") {
+  test("supports multiple items separated by commas, preserving each entry") {
     for
       ctx      <- makeCtx
       a        <- putItem(ctx, stock = 5)
@@ -117,23 +153,59 @@ class AvailabilityRoutesSpec extends CatsEffectSuite:
       response <- get(ctx, s"items=${a.id.value}:1,${b.id.value}:1&date=$date")
       body     <- response.as[String]
       json      = parse(body).toOption.get
-      unavail   = json.hcursor.downField("unavailableItems").focus.get.asArray.get
     yield
       assertEquals(response.status, Status.Ok)
-      assertEquals(json.hcursor.downField("available").as[Boolean].toOption, Some(false))
-      assertEquals(unavail.map(_.hcursor.downField("itemId").as[String].toOption.get).toSet, Set(b.id.value))
+      assertEquals(itemsOf(json).size, 2)
+      assertEquals(availableOf(entryFor(json, a.id.value)), true)
+      assertEquals(availableOf(entryFor(json, b.id.value)), false)
   }
 
-  // ── Malformed input ──────────────────────────────────────────────────────────
+  // ── Catalog listing (no items param) ───────────────────────────────────────────
 
-  test("GET /storefront/:slug/availability returns 400 when items param is missing") {
+  test("without items, returns availability for the provider's whole catalog") {
     for
       ctx      <- makeCtx
+      a        <- putItem(ctx, stock = 2)
+      b        <- putItem(ctx, stock = 0)
+      combo    <- putCombo(ctx, List((a, 1)))
       response <- get(ctx, s"date=$date")
-    yield assertEquals(response.status, Status.BadRequest)
+      body     <- response.as[String]
+      json      = parse(body).toOption.get
+    yield
+      assertEquals(response.status, Status.Ok)
+      assertEquals(itemsOf(json).size, 3) // 2 items + 1 combo
+      assertEquals(availableOf(entryFor(json, a.id.value)), true)
+      assertEquals(availableOf(entryFor(json, b.id.value)), false)
+      val comboEntry = entryFor(json, combo.id.value)
+      assertEquals(comboEntry.hcursor.downField("kind").as[String].toOption, Some("combo"))
   }
 
-  test("GET /storefront/:slug/availability returns 400 when date param is missing") {
+  test("catalog listing: a combo can be unavailable while its constituent items are available") {
+    for
+      ctx      <- makeCtx
+      a        <- putItem(ctx, stock = 0)
+      b        <- putItem(ctx, stock = 5)
+      combo    <- putCombo(ctx, List((a, 1), (b, 1)))
+      response <- get(ctx, s"date=$date")
+      body     <- response.as[String]
+      json      = parse(body).toOption.get
+    yield
+      assertEquals(response.status, Status.Ok)
+      assertEquals(availableOf(entryFor(json, combo.id.value)), false)
+      assertEquals(availableOf(entryFor(json, b.id.value)), true)
+  }
+
+  test("without items, returns 404 when the storefront slug does not exist") {
+    val req = Request[IO](Method.GET, Uri.unsafeFromString(s"/storefront/no-such-slug/availability?date=$date"))
+    for
+      ctx      <- makeCtx
+      response <- ctx.routes.orNotFound(req)
+    yield assertEquals(response.status, Status.NotFound)
+  }
+
+  // ── Malformed input ────────────────────────────────────────────────────────────
+
+  test("returns 400 when date param is missing") {
     for
       ctx      <- makeCtx
       item     <- putItem(ctx)
@@ -141,14 +213,14 @@ class AvailabilityRoutesSpec extends CatsEffectSuite:
     yield assertEquals(response.status, Status.BadRequest)
   }
 
-  test("GET /storefront/:slug/availability returns 400 when items entry is malformed") {
+  test("returns 400 when items entry is malformed") {
     for
       ctx      <- makeCtx
       response <- get(ctx, s"items=not-a-uuid:1&date=$date")
     yield assertEquals(response.status, Status.BadRequest)
   }
 
-  test("GET /storefront/:slug/availability returns 400 when qty is not an integer") {
+  test("returns 400 when qty is not an integer") {
     for
       ctx      <- makeCtx
       item     <- putItem(ctx)
@@ -156,7 +228,7 @@ class AvailabilityRoutesSpec extends CatsEffectSuite:
     yield assertEquals(response.status, Status.BadRequest)
   }
 
-  test("GET /storefront/:slug/availability returns 400 when qty is zero or negative") {
+  test("returns 400 when qty is zero or negative") {
     for
       ctx      <- makeCtx
       item     <- putItem(ctx)
@@ -164,7 +236,7 @@ class AvailabilityRoutesSpec extends CatsEffectSuite:
     yield assertEquals(response.status, Status.BadRequest)
   }
 
-  test("GET /storefront/:slug/availability returns 400 when date is malformed") {
+  test("returns 400 when date is malformed") {
     for
       ctx      <- makeCtx
       item     <- putItem(ctx)
@@ -172,16 +244,16 @@ class AvailabilityRoutesSpec extends CatsEffectSuite:
     yield assertEquals(response.status, Status.BadRequest)
   }
 
-  // ── excludeBookingId ─────────────────────────────────────────────────────────
+  // ── excludeBookingId & access ──────────────────────────────────────────────────
 
-  test("GET /storefront/:slug/availability honours excludeBookingId") {
+  test("honours excludeBookingId") {
     for
       ctx       <- makeCtx
       item      <- putItem(ctx, stock = 1)
       bookingId  = BookingId.generate
       booking    = Booking.create(
                      id          = bookingId,
-                     providerId  = providerId,
+                     providerId  = ctx.providerId,
                      customerId  = customerId,
                      items       = List(BookedIndividualItem(item.id, 1)),
                      startDate   = date,
@@ -195,10 +267,10 @@ class AvailabilityRoutesSpec extends CatsEffectSuite:
       json       = parse(body).toOption.get
     yield
       assertEquals(response.status, Status.Ok)
-      assertEquals(json.hcursor.downField("available").as[Boolean].toOption, Some(true))
+      assertEquals(availableOf(entryFor(json, item.id.value)), true)
   }
 
-  test("GET /storefront/:slug/availability is public — no Authorization header required") {
+  test("is public — no Authorization header required") {
     for
       ctx      <- makeCtx
       item     <- putItem(ctx)
