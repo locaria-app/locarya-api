@@ -59,9 +59,9 @@ class AvailabilityServiceImpl[F[_]: Sync: Logger](
 
   private def decomposeBooking(booking: Booking): F[List[(ItemId, Int)]] =
     booking.items.flatTraverse {
-      case BookedIndividualItem(id, qty) =>
+      case BookedIndividualItem(id, qty, _) =>
         List((id, qty)).pure[F]
-      case BookedCombo(comboId, qty) =>
+      case BookedCombo(comboId, qty, _) =>
         comboRepo.findById(comboId).map {
           case Some(combo) => combo.items.map(d => (d.itemId, d.quantity * qty))
           case None        => List.empty

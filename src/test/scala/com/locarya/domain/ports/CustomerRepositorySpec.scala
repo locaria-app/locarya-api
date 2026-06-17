@@ -14,7 +14,7 @@ class CustomerRepositorySpec extends CatsEffectSuite:
     Customer.create(
       id = CustomerId.generate,
       email = Email.fromString(email).toOption.get,
-      cpf = CPF.fromString("123.456.789-09").toOption.get,
+      cpf = Some(CPF.fromString("123.456.789-09").toOption.get),
       name = "Maria Silva"
     ).toOption.get
 

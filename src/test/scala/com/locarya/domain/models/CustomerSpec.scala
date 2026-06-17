@@ -12,7 +12,7 @@ class CustomerSpec extends FunSuite {
     val result = Customer.create(
       id = customerId,
       email = email,
-      cpf = cpf,
+      cpf = Some(cpf),
       name = "João Silva"
     )
 
@@ -20,7 +20,7 @@ class CustomerSpec extends FunSuite {
     result.foreach { customer =>
       assertEquals(customer.id, customerId)
       assertEquals(customer.email, email)
-      assertEquals(customer.cpf, cpf)
+      assertEquals(customer.cpf, Some(cpf))
       assertEquals(customer.name, "João Silva")
     }
   }
@@ -33,7 +33,7 @@ class CustomerSpec extends FunSuite {
     val result = Customer.create(
       id = customerId,
       email = email,
-      cpf = cpf,
+      cpf = Some(cpf),
       name = ""
     )
 
@@ -51,13 +51,30 @@ class CustomerSpec extends FunSuite {
     val result = Customer.create(
       id = customerId,
       email = email,
-      cpf = cpf,
+      cpf = Some(cpf),
       name = "   "
     )
 
     assert(result.isLeft, "Should fail to create Customer with whitespace-only name")
     result.left.foreach { error =>
       assert(error.isInstanceOf[InvalidCustomer], "Should return InvalidCustomer error")
+    }
+  }
+
+  test("create storefront Customer without CPF and with phone succeeds") {
+    val email = Email.fromString("storefront@example.com").toOption.get
+
+    val result = Customer.create(
+      id    = CustomerId.generate,
+      email = email,
+      name  = "Maria Festa",
+      phone = Some("(11) 99999-0000")
+    )
+
+    assert(result.isRight, "Should create Customer without CPF")
+    result.foreach { customer =>
+      assertEquals(customer.cpf, None)
+      assertEquals(customer.phone, Some("(11) 99999-0000"))
     }
   }
 
@@ -69,7 +86,7 @@ class CustomerSpec extends FunSuite {
     val result = Customer.create(
       id = customerId,
       email = email,
-      cpf = cpf,
+      cpf = Some(cpf),
       name = "  João Silva  "
     )
 
