@@ -39,7 +39,7 @@ final class InMemoryBookingRepository[F[_]: Async] private (
     state.get.map { store =>
       store.values.exists { booking =>
         booking.items.exists {
-          case BookedIndividualItem(id, _) => id == itemId
+          case BookedIndividualItem(id, _, _) => id == itemId
           case _                           => false
         }
       }
@@ -49,7 +49,7 @@ final class InMemoryBookingRepository[F[_]: Async] private (
     state.get.map { store =>
       store.values.exists { booking =>
         booking.items.exists {
-          case BookedCombo(id, _) => id == comboId
+          case BookedCombo(id, _, _) => id == comboId
           case _                  => false
         }
       }
