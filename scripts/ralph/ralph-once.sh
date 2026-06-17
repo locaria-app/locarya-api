@@ -33,21 +33,67 @@
 #   5  /tdd escalated a genuine blocker (now labeled "needs-design")
 #   1  precondition failed (dirty tree, etc.) — stop and inspect
 #
-# Usage:  REPO=owner/repo ./scripts/ralph/ralph-once.sh [--verbose|-v]
+# Usage: REPO=owner/repo ./scripts/ralph/ralph-once.sh [--verbose|-v] [--clean]
 
 set -uo pipefail   # intentionally NO -e: a single failed step shouldn't be fatal
 
-# --- Verbose flag -----------------------------------------------------------
+# --- Verbose flag + cleanup mode -------------------------------------------
 VERBOSE=0
+CLEAN=0   # --clean: remove brief/log files after run (default: keep them)
 for arg in "$@"; do
-  case "$arg" in --verbose|-v) VERBOSE=1 ;; esac
+  case "$arg" in --verbose|-v) VERBOSE=1 ;; --clean) CLEAN=1 ;; esac
 done
 vlog() { [ "$VERBOSE" -eq 1 ] && echo "[$(date '+%H:%M:%S')] $*" >&2 || true; }
 elapsed() { local s=$(( $(date +%s) - $1 )); printf '%dm%02ds' $(( s/60 )) $(( s%60 )); }
+# Remove ephemeral files only when --clean is passed; otherwise keep for inspection.
+cleanup() { [ "$CLEAN" -eq 1 ] && rm -f "$@" || true; }
 # ----------------------------------------------------------------------------
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"   # run from repo root so Claude Code picks up .claude/ and the project
+
+RALPH_TMP="$ROOT/.ralph-tmp"
+mkdir -p "$RALPH_TMP"
+TELEMETRY_LOG="$RALPH_TMP/ralph-telemetry.jsonl"
+
+# --- Token/cost telemetry --------------------------------------------------
+# Each claude invocation runs with --output-format stream-json --verbose so
+# every event is emitted as a JSON line. We tee to a raw log file, parse the
+# final "result" event for cost/turns/model, and append one record to
+# TELEMETRY_LOG (JSONL). Review with: jq . .ralph-tmp/ralph-telemetry.jsonl
+#
+# run_claude <raw_log> <claude args...>
+#   Streams output, tees raw events to $raw_log, prints readable text to stdout.
+run_claude() {
+  local raw_log="$1"; shift
+  claude --output-format stream-json --verbose "$@" \
+    | tee "$raw_log" \
+    | jq -r 'select(.type=="assistant" or .type=="text") | .content // .text // empty' 2>/dev/null \
+    || true
+}
+
+# record_telemetry <step_label> <raw_log> <duration_seconds>
+#   Extracts cost/turns/model from the raw log and appends to TELEMETRY_LOG.
+record_telemetry() {
+  local label="$1" raw="$2" secs="$3"
+  local result_line cost turns model record
+  result_line="$(grep -m1 '"type":"result"' "$raw" 2>/dev/null || echo '{}')"
+  cost="$(  printf '%s' "$result_line" | jq -r '.total_cost_usd // "null"')"
+  turns="$( printf '%s' "$result_line" | jq -r '.num_turns       // "null"')"
+  model="$( printf '%s' "$result_line" | jq -r '.model           // "null"')"
+  record="$(jq -cn \
+    --arg  ts    "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+    --arg  issue "${N:-?}" \
+    --arg  step  "$label" \
+    --arg  cost  "$cost" \
+    --arg  turns "$turns" \
+    --arg  model "$model" \
+    --argjson secs "$secs" \
+    '{ts:$ts,issue:$issue,step:$step,cost_usd:$cost,turns:$turns,model:$model,duration_s:$secs}')"
+  echo "$record" >> "$TELEMETRY_LOG"
+  vlog "telemetry [$label]: cost=$cost turns=$turns model=$model duration=${secs}s"
+}
+# ----------------------------------------------------------------------------
 
 # --- Start every issue from a clean main -------------------------------------
 # pr-runner leaves you on the issue's feature branch. Without resetting, the NEXT
@@ -80,10 +126,8 @@ TDD_SID="$(uuidgen)"   # fresh session for steps 2+3
 echo ">> issue #$N (migration=$MIG) ctx-session=$CTX_SID tdd-session=$TDD_SID"
 vlog "start: $(date '+%Y-%m-%d %H:%M:%S') | ctx=$CTX_SID tdd=$TDD_SID"
 
-RALPH_TMP="$ROOT/.ralph-tmp"
-mkdir -p "$RALPH_TMP"
 BRIEF_FILE="$RALPH_TMP/issue-$N-brief.md"   # inside project tree, sandbox-writable, gitignored
-CTX_LOG="$RALPH_TMP/issue-$N-ctx.log"       # sentinel check only (read by shell, not agent)
+CTX_RAW="$RALPH_TMP/issue-$N-ctx.raw.jsonl"  # raw stream-json events (sentinel + telemetry)
 
 # 1. Context (+ migration guard when relevant). The guard only REVIEWS; we act on
 #    its verdict here by labeling the issue "blocked" and halting this iteration.
@@ -96,35 +140,36 @@ fi
 
 vlog "step 1/3: context-gatherer$([ "$MIG" = true ] && echo ' + migration-guard' || true)..."
 STEP_START=$(date +%s)
-claude --session-id "$CTX_SID" --permission-mode acceptEdits \
+run_claude "$CTX_RAW" --session-id "$CTX_SID" --permission-mode acceptEdits \
   -p "Use the context-gatherer subagent on issue #$N to produce the implementation brief. \
 Write the complete brief as a markdown file to $BRIEF_FILE (use the Bash tool: \
 \`cat > '$BRIEF_FILE' << 'BRIEF_EOF'\n<brief content>\nBRIEF_EOF\`). \
-After writing the file, print exactly: <brief-written/>. $GUARD" \
-  | tee "$CTX_LOG"
+After writing the file, print exactly: <brief-written/>. $GUARD"
+record_telemetry "context-gatherer" "$CTX_RAW" "$(( $(date +%s) - STEP_START ))"
 vlog "step 1/3 done ($(elapsed $STEP_START))"
 
-if grep -q '<halt/>' "$CTX_LOG"; then
+if grep -q '<halt/>' "$CTX_RAW"; then
   echo ">> migration-guard halted #$N; labeled 'blocked'. Skipping."
-  rm -f "$CTX_LOG" "$BRIEF_FILE"
+  cleanup "$CTX_RAW" "$BRIEF_FILE"
   exit 4
 fi
 
 # Verify the brief was actually written before discarding the ctx session
 if [ ! -s "$BRIEF_FILE" ]; then
   echo ">> context-gatherer did not write the brief to $BRIEF_FILE — aborting." >&2
-  rm -f "$CTX_LOG" "$BRIEF_FILE"
+  cleanup "$CTX_RAW" "$BRIEF_FILE"
   exit 1
 fi
 vlog "brief written: $(wc -c < "$BRIEF_FILE") bytes → $BRIEF_FILE"
-rm -f "$CTX_LOG"  # ctx session log no longer needed
+cleanup "$CTX_RAW"  # raw events no longer needed after telemetry recorded
 
 # 2. TDD — fresh session reading only the compact brief from disk.
 #    No context from step 1 is inherited — this is the main token saving.
 vlog "step 2/3: /tdd..."
 STEP_START=$(date +%s)
-TDD_LOG="$(mktemp "${TMPDIR:-/tmp}/ralph-$N-tdd.XXXXXX")"
-claude --session-id "$TDD_SID" --permission-mode acceptEdits -p "/tdd
+TDD_RAW="$RALPH_TMP/issue-$N-tdd.raw.jsonl"
+TDD_LOG="$RALPH_TMP/issue-$N-tdd.log"  # readable text — for <needs-human> grep
+run_claude "$TDD_RAW" --session-id "$TDD_SID" --permission-mode acceptEdits -p "/tdd
 
 Implementation brief for this issue is at $BRIEF_FILE — read it before starting.
 
@@ -137,6 +182,7 @@ a test because it can't run in the current environment. Only if a choice is a bu
 rule with no basis in the docs and is unsafe to guess, STOP before writing any code and \
 reply with exactly: <needs-human>one-line question</needs-human>" \
   | tee "$TDD_LOG"
+record_telemetry "/tdd" "$TDD_RAW" "$(( $(date +%s) - STEP_START ))"
 vlog "step 2/3 done ($(elapsed $STEP_START))"
 
 if grep -q '<needs-human>' "$TDD_LOG"; then
@@ -144,17 +190,20 @@ if grep -q '<needs-human>' "$TDD_LOG"; then
   gh issue comment "$N" --body "Ralph paused — needs a human decision: $Q"
   gh issue edit "$N" --add-label needs-design
   echo ">> #$N escalated for a human decision; commented + labeled 'needs-design'. Skipping PR."
-  rm -f "$TDD_LOG" "$BRIEF_FILE"
+  cleanup "$TDD_RAW" "$TDD_LOG" "$BRIEF_FILE"
   exit 5
 fi
-rm -f "$TDD_LOG" "$BRIEF_FILE"
+cleanup "$TDD_RAW" "$TDD_LOG" "$BRIEF_FILE"
 
 # 3. Open the PR. Resumes TDD_SID (step 2 only — much smaller than the old
 #    combined session). pr-runner never merges and never pushes to main.
 vlog "step 3/3: pr-runner..."
 STEP_START=$(date +%s)
-claude --resume "$TDD_SID" --permission-mode acceptEdits \
+PR_RAW="$RALPH_TMP/issue-$N-pr.raw.jsonl"
+run_claude "$PR_RAW" --resume "$TDD_SID" --permission-mode acceptEdits \
   -p "Use the pr-runner subagent for issue #$N. Open the PR and stop — do not merge."
+record_telemetry "pr-runner" "$PR_RAW" "$(( $(date +%s) - STEP_START ))"
+cleanup "$PR_RAW"
 vlog "step 3/3 done ($(elapsed $STEP_START))"
 vlog "total: $(elapsed $LOOP_START)"
 
