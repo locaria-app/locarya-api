@@ -10,9 +10,10 @@
 #      Starts a FRESH session and reads the brief file — no accumulated context
 #      from step 1 carried over. This is the main token-budget optimisation:
 #      the gatherer's full codebase reads never enter the /tdd context window.
-#   3. pr-runner         (subagent) -> branch + commit + push + open PR (no merge)
-#      Resumes the /tdd session (step 2 only), which is much smaller than the
-#      old combined session that carried steps 1+2.
+# Steps 1-3 each use an independent session — no context bleeds between them.
+#   1. context-gatherer  → brief written to disk        (CTX_SID, discarded)
+#   2. /tdd              → code committed on branch     (TDD_SID, discarded)
+#   3. pr-runner         → PR opened from current branch (PR_SID, discarded)
 #
 # `/tdd` is invoked as a LITERAL slash input (it lives at ~/.claude/skills/tdd/).
 # Skills are model-invocable, but being explicit makes the load deterministic in
@@ -132,9 +133,10 @@ esac
 N="$(printf '%s' "$DECISION"  | sed -nE 's/.*<next issue=([0-9]+).*/\1/p')"
 MIG="$(printf '%s' "$DECISION" | sed -nE 's/.*migration=([a-z]+).*/\1/p')"
 CTX_SID="$(uuidgen)"   # session for step 1 only — discarded after brief is written
-TDD_SID="$(uuidgen)"   # fresh session for steps 2+3
-echo ">> issue #$N (migration=$MIG) ctx-session=$CTX_SID tdd-session=$TDD_SID"
-vlog "start: $(date '+%Y-%m-%d %H:%M:%S') | ctx=$CTX_SID tdd=$TDD_SID"
+TDD_SID="$(uuidgen)"   # fresh session for step 2 — discarded after tdd
+PR_SID="$(uuidgen)"    # fresh session for step 3 — no /tdd context carried over
+echo ">> issue #$N (migration=$MIG) ctx-session=$CTX_SID tdd-session=$TDD_SID pr-session=$PR_SID"
+vlog "start: $(date '+%Y-%m-%d %H:%M:%S') | ctx=$CTX_SID tdd=$TDD_SID pr=$PR_SID"
 
 BRIEF_FILE="$RALPH_TMP/issue-$N-brief.md"   # inside project tree, sandbox-writable, gitignored
 CTX_RAW="$RALPH_TMP/issue-$N-ctx.raw.jsonl"  # raw stream-json events (sentinel + telemetry)
@@ -205,13 +207,17 @@ if grep -q '<needs-human>' "$TDD_LOG"; then
 fi
 cleanup "$TDD_RAW" "$TDD_LOG" "$BRIEF_FILE"
 
-# 3. Open the PR. Resumes TDD_SID (step 2 only — much smaller than the old
-#    combined session). pr-runner never merges and never pushes to main.
+# 3. Open the PR. Fresh session — no /tdd context carried over.
+#    The branch was already created and committed by /tdd; we pass it explicitly.
+#    pr-runner never merges and never pushes to main.
 vlog "step 3/3: pr-runner..."
 STEP_START=$(date +%s)
 PR_RAW="$RALPH_TMP/issue-$N-pr.raw.jsonl"
-run_claude "$PR_RAW" --resume "$TDD_SID" --permission-mode acceptEdits \
-  -p "Use the pr-runner subagent for issue #$N. Open the PR and stop — do not merge."
+CURRENT_BRANCH="$(git branch --show-current)"
+run_claude "$PR_RAW" --session-id "$PR_SID" --permission-mode acceptEdits \
+  -p "Use the pr-runner subagent for issue #$N. \
+The code is already committed on branch '$CURRENT_BRANCH' — do not create a new branch or re-commit. \
+Open the PR and stop — do not merge."
 record_telemetry "pr-runner" "$PR_RAW" "$(( $(date +%s) - STEP_START ))"
 cleanup "$PR_RAW"
 vlog "step 3/3 done ($(elapsed $STEP_START))"
