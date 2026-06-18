@@ -78,25 +78,30 @@ run_claude() {
 }
 
 # record_telemetry <step_label> <raw_log> <duration_seconds>
-#   Extracts cost/turns/model from the raw log and appends to TELEMETRY_LOG.
+#   Extracts cost/turns/model breakdown from modelUsage and appends to TELEMETRY_LOG.
 record_telemetry() {
   local label="$1" raw="$2" secs="$3"
-  local result_line cost turns model record
+  local result_line cost turns models model_costs record
   result_line="$(grep -m1 '"type":"result"' "$raw" 2>/dev/null || echo '{}')"
-  cost="$(  printf '%s' "$result_line" | jq -r '.total_cost_usd // "null"')"
-  turns="$( printf '%s' "$result_line" | jq -r '.num_turns       // "null"')"
-  model="$( printf '%s' "$result_line" | jq -r '.model           // "null"')"
+  cost="$(        printf '%s' "$result_line" | jq -r '.total_cost_usd              // "null"')"
+  turns="$(       printf '%s' "$result_line" | jq -r '.num_turns                  // "null"')"
+  # modelUsage is an object keyed by model name — extract all models used and per-model costs
+  models="$(      printf '%s' "$result_line" | jq -r '.modelUsage // {} | keys | join(",")' 2>/dev/null || echo "${MODEL}")"
+  model_costs="$( printf '%s' "$result_line" | jq -c  '.modelUsage // {} | to_entries | map({model:.key,cost_usd:.value.costUSD,input_tokens:.value.inputTokens,output_tokens:.value.outputTokens,cache_read:.value.cacheReadInputTokens,cache_write:.value.cacheCreationInputTokens})' 2>/dev/null || echo '[]')"
+  # fallback: if modelUsage missing, report the requested model with null cost
+  [ -z "$models" ] && models="$MODEL"
   record="$(jq -cn \
-    --arg  ts    "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
-    --arg  issue "${N:-?}" \
-    --arg  step  "$label" \
-    --arg  cost  "$cost" \
-    --arg  turns "$turns" \
-    --arg  model "$model" \
-    --argjson secs "$secs" \
-    '{ts:$ts,issue:$issue,step:$step,cost_usd:$cost,turns:$turns,model:$model,duration_s:$secs}')"
+    --arg  ts          "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+    --arg  issue       "${N:-?}" \
+    --arg  step        "$label" \
+    --arg  cost        "$cost" \
+    --arg  turns       "$turns" \
+    --arg  models      "$models" \
+    --argjson model_costs "$model_costs" \
+    --argjson secs     "$secs" \
+    '{ts:$ts,issue:$issue,step:$step,cost_usd:$cost,turns:$turns,models:$models,model_costs:$model_costs,duration_s:$secs}')"
   echo "$record" >> "$TELEMETRY_LOG"
-  vlog "telemetry [$label]: cost=$cost turns=$turns model=$model duration=${secs}s"
+  vlog "telemetry [$label]: cost=$cost turns=$turns models=$models duration=${secs}s"
 }
 # ----------------------------------------------------------------------------
 
