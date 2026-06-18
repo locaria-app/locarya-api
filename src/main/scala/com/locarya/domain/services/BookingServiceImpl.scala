@@ -45,6 +45,58 @@ class BookingServiceImpl[F[_]: Sync: Logger](
       _         <- Logger[F].info(bookingCreatedLog(stored, customer))
     yield BookingCreated(stored.id, stored.status, stored.totalAmount)
 
+  def createBookingByProvider(providerId: ProviderId, request: CreateBookingByProviderRequest): F[BookingCreated] =
+    for
+      _         <- requireAvailable(request.items, request.date)
+      customer  <- upsertCustomer(request.customer)
+      lines     <- request.items.traverse(resolveLine)
+      total     <- totalAmount(lines)
+      booking   <- liftValidation(
+                     Booking.create(
+                       id              = BookingId.generate,
+                       providerId      = providerId,
+                       customerId      = customer.id,
+                       items           = lines.map(_.item),
+                       startDate       = request.date,
+                       endDate         = request.date,
+                       totalAmount     = total,
+                       status          = BookingStatus.Confirmed,
+                       deliveryAddress = Some(request.deliveryAddress),
+                       createdBy       = BookingCreator.Provider
+                     )
+                   )
+      stored    <- bookingRepo.create(booking)
+      _         <- Logger[F].info(bookingCreatedLog(stored, customer))
+    yield BookingCreated(stored.id, stored.status, stored.totalAmount)
+
+  def listBookings(providerId: ProviderId, status: Option[BookingStatus], dateFrom: Option[LocalDate], dateTo: Option[LocalDate]): F[List[DashboardBookingView]] =
+    for
+      bookings <- bookingRepo.findByProvider(providerId)
+      filtered  = bookings
+                    .filter(b => status.isEmpty || b.status == status.get)
+                    .filter(b => dateFrom.isEmpty || !b.startDate.isBefore(dateFrom.get))
+                    .filter(b => dateTo.isEmpty || !b.startDate.isAfter(dateTo.get))
+      views    <- filtered.traverse(toBookingView)
+    yield views
+
+  private def toBookingView(booking: Booking): F[DashboardBookingView] =
+    for
+      customer <- customerRepo.findById(booking.customerId).flatMap {
+                    case Some(c) => c.pure[F]
+                    case None    => BookingError.InvalidInput(InvalidBooking("Customer not found")).raiseError[F, Customer]
+                  }
+    yield DashboardBookingView(
+      id              = booking.id,
+      providerId      = booking.providerId,
+      customer        = DashboardCustomerView(customer.name, customer.email.value, customer.phone),
+      items           = booking.items,
+      date            = booking.startDate,
+      deliveryAddress = booking.deliveryAddress,
+      status          = booking.status,
+      totalAmount     = booking.totalAmount,
+      createdBy       = booking.createdBy
+    )
+
   private def requireProvider(slug: StorefrontSlug): F[Provider] =
     providerRepo.findBySlug(slug).flatMap {
       case Some(p) => p.pure[F]
@@ -59,6 +111,16 @@ class BookingServiceImpl[F[_]: Sync: Logger](
       if unavailable.isEmpty then ().pure[F]
       else
         Logger[F].info(availabilityFailedLog(request.date, results, unavailable)) *>
+          BookingError.ItemsUnavailable(unavailable).raiseError[F, Unit]
+    }
+
+  private def requireAvailable(items: List[BookingLineInput], date: LocalDate): F[Unit] =
+    val lines = items.map(l => (l.itemId, l.quantity))
+    availability.checkAvailability(lines, date, None).flatMap { results =>
+      val unavailable = results.filterNot(_.available)
+      if unavailable.isEmpty then ().pure[F]
+      else
+        Logger[F].info(availabilityFailedLog(date, results, unavailable)) *>
           BookingError.ItemsUnavailable(unavailable).raiseError[F, Unit]
     }
 
