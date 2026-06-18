@@ -25,8 +25,19 @@ final class InMemoryBookingRepository[F[_]: Async] private (
   def update(booking: Booking): F[Booking] =
     state.modify(store => (store + (booking.id -> booking)) -> booking)
 
-  def findByProvider(providerId: ProviderId): F[List[Booking]] =
-    state.get.map(_.values.filter(_.providerId == providerId).toList)
+  def findByProvider(
+    providerId: ProviderId,
+    status:     Option[BookingStatus],
+    dateFrom:   Option[LocalDate],
+    dateTo:     Option[LocalDate]
+  ): F[List[Booking]] =
+    state.get.map(_.values
+      .filter(_.providerId == providerId)
+      .filter(b => status.forall(_ == b.status))
+      .filter(b => dateFrom.forall(!b.startDate.isBefore(_)))
+      .filter(b => dateTo.forall(!b.startDate.isAfter(_)))
+      .toList
+    )
 
   def findByStatus(status: BookingStatus): F[List[Booking]] =
     state.get.map(_.values.filter(_.status == status).toList)

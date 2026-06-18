@@ -47,6 +47,7 @@ class BookingServiceImpl[F[_]: Sync: Logger](
 
   def createBookingByProvider(providerId: ProviderId, request: CreateBookingByProviderRequest): F[BookingCreated] =
     for
+      _         <- requireProvider(providerId)
       _         <- requireAvailable(request.items, request.date)
       customer  <- upsertCustomer(request.customer)
       lines     <- request.items.traverse(resolveLine)
@@ -71,31 +72,28 @@ class BookingServiceImpl[F[_]: Sync: Logger](
 
   def listBookings(providerId: ProviderId, status: Option[BookingStatus], dateFrom: Option[LocalDate], dateTo: Option[LocalDate]): F[List[DashboardBookingView]] =
     for
-      bookings <- bookingRepo.findByProvider(providerId)
-      filtered  = bookings
-                    .filter(b => status.isEmpty || b.status == status.get)
-                    .filter(b => dateFrom.isEmpty || !b.startDate.isBefore(dateFrom.get))
-                    .filter(b => dateTo.isEmpty || !b.startDate.isAfter(dateTo.get))
-      views    <- filtered.traverse(toBookingView)
+      bookings   <- bookingRepo.findByProvider(providerId, status, dateFrom, dateTo)
+      customerIds = bookings.map(_.customerId).distinct
+      customers  <- customerRepo.findByIds(customerIds)
+      views      <- bookings.traverse(toBookingView(_, customers))
     yield views
 
-  private def toBookingView(booking: Booking): F[DashboardBookingView] =
-    for
-      customer <- customerRepo.findById(booking.customerId).flatMap {
-                    case Some(c) => c.pure[F]
-                    case None    => BookingError.InvalidInput(InvalidBooking("Customer not found")).raiseError[F, Customer]
-                  }
-    yield DashboardBookingView(
-      id              = booking.id,
-      providerId      = booking.providerId,
-      customer        = DashboardCustomerView(customer.name, customer.email.value, customer.phone),
-      items           = booking.items,
-      date            = booking.startDate,
-      deliveryAddress = booking.deliveryAddress,
-      status          = booking.status,
-      totalAmount     = booking.totalAmount,
-      createdBy       = booking.createdBy
-    )
+  private def toBookingView(booking: Booking, customers: Map[CustomerId, Customer]): F[DashboardBookingView] =
+    customers.get(booking.customerId) match
+      case Some(c) =>
+        DashboardBookingView(
+          id              = booking.id,
+          providerId      = booking.providerId,
+          customer        = DashboardCustomerView(c.name, c.email.value, c.phone),
+          items           = booking.items,
+          date            = booking.startDate,
+          deliveryAddress = booking.deliveryAddress,
+          status          = booking.status,
+          totalAmount     = booking.totalAmount,
+          createdBy       = booking.createdBy
+        ).pure[F]
+      case None =>
+        BookingError.InvalidInput(InvalidBooking("Customer not found")).raiseError[F, DashboardBookingView]
 
   private def requireProvider(slug: StorefrontSlug): F[Provider] =
     providerRepo.findBySlug(slug).flatMap {
@@ -103,16 +101,14 @@ class BookingServiceImpl[F[_]: Sync: Logger](
       case None    => BookingError.ProviderNotFound(slug).raiseError[F, Provider]
     }
 
-  /** Validate availability for every requested item on the date BEFORE persisting. */
-  private def requireAvailable(request: CreateBookingRequest): F[Unit] =
-    val lines = request.items.map(l => (l.itemId, l.quantity))
-    availability.checkAvailability(lines, request.date, None).flatMap { results =>
-      val unavailable = results.filterNot(_.available)
-      if unavailable.isEmpty then ().pure[F]
-      else
-        Logger[F].info(availabilityFailedLog(request.date, results, unavailable)) *>
-          BookingError.ItemsUnavailable(unavailable).raiseError[F, Unit]
+  private def requireProvider(id: ProviderId): F[Provider] =
+    providerRepo.findById(id).flatMap {
+      case Some(p) => p.pure[F]
+      case None    => BookingError.ProviderIdNotFound(id).raiseError[F, Provider]
     }
+
+  private def requireAvailable(request: CreateBookingRequest): F[Unit] =
+    requireAvailable(request.items, request.date)
 
   private def requireAvailable(items: List[BookingLineInput], date: LocalDate): F[Unit] =
     val lines = items.map(l => (l.itemId, l.quantity))

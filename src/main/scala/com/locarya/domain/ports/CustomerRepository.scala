@@ -4,3 +4,4 @@ import com.locarya.domain.models.*
 
 trait CustomerRepository[F[_]] extends Repository[F, Customer, CustomerId]:
   def findByEmail(email: Email): F[Option[Customer]]
+  def findByIds(ids: List[CustomerId]): F[Map[CustomerId, Customer]]

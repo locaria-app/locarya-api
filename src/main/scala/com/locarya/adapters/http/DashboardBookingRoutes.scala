@@ -76,6 +76,9 @@ object DashboardBookingRoutes:
   private case class ErrorResponseBody(error: String)
   private given Encoder[ErrorResponseBody] = deriveEncoder
 
+  private def toKebab(s: String): String =
+    s.replaceAll("([a-z])([A-Z])", "$1-$2").toLowerCase
+
   private def parseDate(raw: String): Either[ValidationError, LocalDate] =
     try Right(LocalDate.parse(raw.trim))
     catch case _: DateTimeParseException => Left(InvalidBooking(s"Invalid date: $raw — expected YYYY-MM-DD"))
@@ -119,7 +122,7 @@ object DashboardBookingRoutes:
       deliveryAddress = view.deliveryAddress.map { addr =>
         AddressResponse(addr.street, addr.number, addr.neighborhood, addr.city, addr.state, addr.cep, addr.complement)
       },
-      status          = view.status.toString.toLowerCase.replaceAll("([a-z])([A-Z])", "$1-$2").toLowerCase,
+      status          = toKebab(view.status.toString),
       totalAmount     = view.totalAmount.amount,
       createdBy       = view.createdBy.toString.toLowerCase
     )
@@ -164,8 +167,9 @@ object DashboardBookingRoutes:
             bookings  <- bookingService.listBookings(pid, status, dateFrom, dateTo)
             resp      <- Ok(bookings.map(toBookingListResponse).asJson)
           yield resp).handleErrorWith {
-            case e: BookingError => BadRequest(ErrorResponseBody(e.getMessage).asJson)
-            case e => BadRequest(ErrorResponseBody(e.getMessage).asJson)
+            case _: BookingError.ProviderIdNotFound => NotFound(ErrorResponseBody("Provider not found").asJson)
+            case e: BookingError                    => BadRequest(ErrorResponseBody(e.getMessage).asJson)
+            case _                                  => InternalServerError(ErrorResponseBody("Internal error").asJson)
           }
 
         case req @ POST -> Root / "dashboard" / "bookings" =>
@@ -185,7 +189,7 @@ object DashboardBookingRoutes:
               resp     <- Created(
                             BookingCreateResponse(
                               bookingId = created.bookingId.value,
-                              status    = created.status.toString.toLowerCase.replaceAll("([a-z])([A-Z])", "$1-$2").toLowerCase
+                              status    = toKebab(created.status.toString)
                             ).asJson
                           )
             yield resp
@@ -194,6 +198,8 @@ object DashboardBookingRoutes:
               Conflict(
                 ErrorResponseBody(s"Items unavailable: ${e.unavailable.map(_.id.value).mkString(", ")}").asJson
               )
+            case _: BookingError.ProviderIdNotFound =>
+              NotFound(ErrorResponseBody("Provider not found").asJson)
             case e: BookingError.InvalidInput =>
               BadRequest(ErrorResponseBody(e.getMessage).asJson)
             case _: MalformedMessageBodyFailure =>
