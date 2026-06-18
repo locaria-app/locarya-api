@@ -269,6 +269,113 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
       assertEquals(parse(pendBody).toOption.get.asArray.map(_.size), Some(0))
   }
 
+  // ── PUT /dashboard/bookings/:id/status ───────────────────────────────────
+
+  private def putBookingStatus(ctx: Ctx, bookingId: String, body: String, token: String): IO[Response[IO]] =
+    val uri = Uri.unsafeFromString(s"/dashboard/bookings/$bookingId/status")
+    ctx.allRoutes.orNotFound(
+      Request[IO](Method.PUT, uri)
+        .withEntity(body)
+        .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(token))
+    )
+
+  private def createAndGetBookingId(ctx: Ctx, auth: Auth): IO[String] =
+    for
+      itemId <- createItem(ctx, auth.token)
+      resp   <- postDashboardBooking(ctx, bookingBody(itemId), auth.token)
+      body   <- resp.as[String]
+    yield parse(body).toOption.get.hcursor.downField("bookingId").as[String].toOption.get
+
+  test("PUT /dashboard/bookings/:id/status returns 401 without Authorization header") {
+    for
+      ctx  <- makeCtx
+      resp <- ctx.allRoutes.orNotFound(
+                Request[IO](Method.PUT, uri"/dashboard/bookings/some-id/status")
+                  .withEntity("""{"newStatus":"in-progress"}""")
+                  .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
+              )
+    yield assertEquals(resp.status, Status.Unauthorized)
+  }
+
+  test("PUT /dashboard/bookings/:id/status with valid transition returns 200 with updated status") {
+    for
+      ctx       <- makeCtx
+      auth      <- signupAndLogin(ctx)
+      bookingId <- createAndGetBookingId(ctx, auth)
+      resp      <- putBookingStatus(ctx, bookingId, """{"newStatus":"in-progress"}""", auth.token)
+      body      <- resp.as[String]
+      json       = parse(body).toOption.get
+    yield
+      assertEquals(resp.status, Status.Ok)
+      assertEquals(json.hcursor.downField("status").as[String].toOption, Some("in-progress"))
+      assertEquals(json.hcursor.downField("id").as[String].toOption, Some(bookingId))
+  }
+
+  test("PUT /dashboard/bookings/:id/status with invalid newStatus string returns 400") {
+    for
+      ctx       <- makeCtx
+      auth      <- signupAndLogin(ctx)
+      bookingId <- createAndGetBookingId(ctx, auth)
+      resp      <- putBookingStatus(ctx, bookingId, """{"newStatus":"flying"}""", auth.token)
+    yield assertEquals(resp.status, Status.BadRequest)
+  }
+
+  test("PUT /dashboard/bookings/:id/status with invalid transition returns 400") {
+    for
+      ctx       <- makeCtx
+      auth      <- signupAndLogin(ctx)
+      bookingId <- createAndGetBookingId(ctx, auth)
+      // Confirmed → Pending is not a valid transition
+      resp      <- putBookingStatus(ctx, bookingId, """{"newStatus":"pending"}""", auth.token)
+    yield assertEquals(resp.status, Status.BadRequest)
+  }
+
+  test("PUT /dashboard/bookings/:id/status cancelling InProgress booking returns 400") {
+    for
+      ctx       <- makeCtx
+      auth      <- signupAndLogin(ctx)
+      bookingId <- createAndGetBookingId(ctx, auth)
+      _         <- putBookingStatus(ctx, bookingId, """{"newStatus":"in-progress"}""", auth.token)
+      resp      <- putBookingStatus(ctx, bookingId, """{"newStatus":"cancelled"}""", auth.token)
+    yield assertEquals(resp.status, Status.BadRequest)
+  }
+
+  test("PUT /dashboard/bookings/:id/status on non-existent bookingId returns 404") {
+    for
+      ctx    <- makeCtx
+      auth   <- signupAndLogin(ctx)
+      bogus   = BookingId.generate.value
+      resp   <- putBookingStatus(ctx, bogus, """{"newStatus":"in-progress"}""", auth.token)
+    yield assertEquals(resp.status, Status.NotFound)
+  }
+
+  test("PUT /dashboard/bookings/:id/status on another provider's booking returns 404") {
+    for
+      ctx       <- makeCtx
+      auth1     <- signupAndLogin(ctx)
+      // Register a second provider and log in as them
+      _         <- ctx.allRoutes.orNotFound(
+                     Request[IO](Method.POST, uri"/auth/signup")
+                       .withEntity("""{
+                         "email":"other@dashboard.com","password":"otherpass123",
+                         "name":"Other Locador","city":"Rio","state":"RJ","cnpj":"11.222.333/0001-81"
+                       }""")
+                       .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
+                   )
+      loginResp <- ctx.allRoutes.orNotFound(
+                     Request[IO](Method.POST, uri"/auth/login")
+                       .withEntity("""{"email":"other@dashboard.com","password":"otherpass123"}""")
+                       .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
+                   )
+      body2     <- loginResp.as[String]
+      token2     = parse(body2).toOption.get.hcursor.downField("token").as[String].toOption.get
+      // Provider 1 creates a booking
+      bookingId <- createAndGetBookingId(ctx, auth1)
+      // Provider 2 tries to transition it
+      resp      <- putBookingStatus(ctx, bookingId, """{"newStatus":"in-progress"}""", token2)
+    yield assertEquals(resp.status, Status.NotFound)
+  }
+
   test("GET /dashboard/bookings filters by ?dateFrom and ?dateTo") {
     for
       ctx       <- makeCtx

@@ -73,6 +73,11 @@ object DashboardBookingRoutes:
   )
   private given Encoder[BookingCreateResponse] = deriveEncoder
 
+  private case class UpdateBookingStatusBody(newStatus: String, reason: Option[String])
+
+  private case class BookingStatusResponse(id: String, status: String)
+  private given Encoder[BookingStatusResponse] = deriveEncoder
+
   private case class ErrorResponseBody(error: String)
   private given Encoder[ErrorResponseBody] = deriveEncoder
 
@@ -134,7 +139,8 @@ object DashboardBookingRoutes:
     val dsl = Http4sDsl[F]
     import dsl.*
 
-    given EntityDecoder[F, CreateBookingBody] = jsonOf[F, CreateBookingBody]
+    given EntityDecoder[F, CreateBookingBody]        = jsonOf[F, CreateBookingBody]
+    given EntityDecoder[F, UpdateBookingStatusBody]  = jsonOf[F, UpdateBookingStatusBody]
 
     AuthMiddleware.withProviderId[F](jwtSecret) { rawProviderId =>
       val providerIdF: F[ProviderId] =
@@ -206,5 +212,26 @@ object DashboardBookingRoutes:
               BadRequest(ErrorResponseBody("Invalid or incomplete request body").asJson)
             case _: InvalidMessageBodyFailure =>
               BadRequest(ErrorResponseBody("Invalid request body").asJson)
+          }
+
+        case req @ PUT -> Root / "dashboard" / "bookings" / bookingIdStr / "status" =>
+          req.as[UpdateBookingStatusBody].flatMap { body =>
+            (for
+              pid       <- providerIdF
+              bookingId <- BookingId.fromString(bookingIdStr)
+                             .fold(err => BookingError.InvalidInput(err).raiseError[F, BookingId], _.pure[F])
+              newStatus <- parseBookingStatus(body.newStatus)
+                             .fold(err => BookingError.InvalidInput(InvalidBooking(err)).raiseError[F, BookingStatus], _.pure[F])
+              updated   <- bookingService.updateBookingStatus(pid, bookingId, newStatus, body.reason)
+              resp      <- Ok(BookingStatusResponse(id = updated.id.value, status = toKebab(updated.status.toString)).asJson)
+            yield resp).handleErrorWith {
+              case _: BookingError.BookingNotFound => NotFound(ErrorResponseBody("Booking not found").asJson)
+              case e: BookingError.InvalidInput    => BadRequest(ErrorResponseBody(e.getMessage).asJson)
+              case _: MalformedMessageBodyFailure  => BadRequest(ErrorResponseBody("Invalid or incomplete request body").asJson)
+              case _: InvalidMessageBodyFailure    => BadRequest(ErrorResponseBody("Invalid request body").asJson)
+            }
+          }.handleErrorWith {
+            case _: MalformedMessageBodyFailure => BadRequest(ErrorResponseBody("Invalid or incomplete request body").asJson)
+            case _: InvalidMessageBodyFailure   => BadRequest(ErrorResponseBody("Invalid request body").asJson)
           }
     }

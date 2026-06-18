@@ -16,3 +16,6 @@ object BookingError:
       extends BookingError(
         s"Items unavailable: ${unavailable.map(_.id.value).mkString(", ")}"
       )
+
+  final case class BookingNotFound(id: BookingId)
+      extends BookingError(s"Booking '${id.value}' not found")
