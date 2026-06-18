@@ -1,15 +1,4 @@
 {
-  "enabledPlugins": {
-    "andrej-karpathy-skills@karpathy-skills": true
-  },
-  "extraKnownMarketplaces": {
-    "karpathy-skills": {
-      "source": {
-        "source": "github",
-        "repo": "forrestchang/andrej-karpathy-skills"
-      }
-    }
-  },
   "permissions": {
     "allow": [
       "Bash(rtk:*)",
@@ -89,5 +78,18 @@
       "Bash(wget * | sh:*)",
       "Bash(wget * | bash:*)"
     ]
+  },
+  "enabledPlugins": {
+    "andrej-karpathy-skills@karpathy-skills": true,
+    "code-review@claude-plugins-official": true,
+    "pr-review-toolkit@claude-plugins-official": true
+  },
+  "extraKnownMarketplaces": {
+    "karpathy-skills": {
+      "source": {
+        "source": "github",
+        "repo": "forrestchang/andrej-karpathy-skills"
+      }
+    }
   }
 }

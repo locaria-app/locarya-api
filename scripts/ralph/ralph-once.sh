@@ -33,15 +33,20 @@
 #   5  /tdd escalated a genuine blocker (now labeled "needs-design")
 #   1  precondition failed (dirty tree, etc.) — stop and inspect
 #
-# Usage: REPO=owner/repo ./scripts/ralph/ralph-once.sh [--verbose|-v] [--clean]
+# Usage: REPO=owner/repo ./scripts/ralph/ralph-once.sh [--verbose|-v] [--clean] [--model=<model>]
 
 set -uo pipefail   # intentionally NO -e: a single failed step shouldn't be fatal
 
-# --- Verbose flag + cleanup mode -------------------------------------------
+# --- Verbose flag + cleanup mode + model -----------------------------------
 VERBOSE=0
 CLEAN=0   # --clean: remove brief/log files after run (default: keep them)
+MODEL="${RALPH_MODEL:-claude-sonnet-4-6}"
 for arg in "$@"; do
-  case "$arg" in --verbose|-v) VERBOSE=1 ;; --clean) CLEAN=1 ;; esac
+  case "$arg" in
+    --verbose|-v) VERBOSE=1 ;;
+    --clean)      CLEAN=1 ;;
+    --model=*)    MODEL="${arg#--model=}" ;;
+  esac
 done
 vlog() { [ "$VERBOSE" -eq 1 ] && echo "[$(date '+%H:%M:%S')] $*" >&2 || true; }
 elapsed() { local s=$(( $(date +%s) - $1 )); printf '%dm%02ds' $(( s/60 )) $(( s%60 )); }
@@ -66,7 +71,7 @@ TELEMETRY_LOG="$RALPH_TMP/ralph-telemetry.jsonl"
 #   Streams output, tees raw events to $raw_log, prints readable text to stdout.
 run_claude() {
   local raw_log="$1"; shift
-  claude --output-format stream-json --verbose "$@" \
+  claude --model "$MODEL" --output-format stream-json --verbose "$@" \
     | tee "$raw_log" \
     | jq -r 'select(.type=="assistant" or .type=="text") | .content // .text // empty' 2>/dev/null \
     || true

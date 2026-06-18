@@ -60,7 +60,25 @@ git fetch origin
 
    Reuse the issue's acceptance criteria in the body if helpful.
 
-7. **Report CI status** (don't wait/block forever):
+7. **Run PR review** using the pr-review-toolkit after the PR is open:
+
+   ```
+   /pr-review-toolkit:review-pr types tests errors
+   ```
+
+   - `types` — analyzes new/modified Scala types and their invariants
+   - `tests` — checks behavioral coverage gaps in the new specs
+   - `errors` — hunts for silent failures in IO/EitherT error handling
+
+   Collect the findings and append them to the PR body under a `## Auto-review` section:
+
+   ```bash
+   gh pr edit <N> --body-file <(gh pr view <N> --json body -q .body; echo; echo '## Auto-review'; echo '<findings>')
+   ```
+
+   If the review reports **Critical Issues**, list them prominently at the top of the `## Auto-review` section so the human sees them immediately.
+
+8. **Report CI status** (don't wait/block forever):
    ```bash
    gh pr checks            # current check status
    gh pr view --json url,number,statusCheckRollup
@@ -74,6 +92,9 @@ git fetch origin
 - Branch: issue-N-<slug>
 - Commit: <hash> <message>
 - PR: <url>
+
+### Auto-review findings
+- <Critical Issues if any, else "No critical issues found">
 
 ### CI status
 - <check name>: <pass | running | fail>
