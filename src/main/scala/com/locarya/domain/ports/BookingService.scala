@@ -37,5 +37,34 @@ final case class BookingCreated(
   totalAmount: Money
 )
 
+/** A customer view for the dashboard: includes denormalized customer details. */
+final case class DashboardBookingView(
+  id:               BookingId,
+  providerId:       ProviderId,
+  customer:         DashboardCustomerView,
+  items:            List[BookingItem],
+  date:             LocalDate,
+  deliveryAddress:  Option[Address],
+  status:           BookingStatus,
+  totalAmount:      Money,
+  createdBy:        BookingCreator
+)
+
+final case class DashboardCustomerView(
+  name:  String,
+  email: String,
+  phone: Option[String]
+)
+
+/** Request DTO for provider-created bookings. */
+final case class CreateBookingByProviderRequest(
+  items:           List[BookingLineInput],
+  date:            LocalDate,
+  deliveryAddress: Address,
+  customer:        CustomerInput
+)
+
 trait BookingService[F[_]]:
   def createBooking(request: CreateBookingRequest): F[BookingCreated]
+  def createBookingByProvider(providerId: ProviderId, request: CreateBookingByProviderRequest): F[BookingCreated]
+  def listBookings(providerId: ProviderId, status: Option[BookingStatus], dateFrom: Option[LocalDate], dateTo: Option[LocalDate]): F[List[DashboardBookingView]]

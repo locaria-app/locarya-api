@@ -27,6 +27,9 @@ final class InMemoryCustomerRepository[F[_]: Async] private (
   def findByEmail(email: Email): F[Option[Customer]] =
     state.get.map(_.values.find(_.email == email))
 
+  def findByIds(ids: List[CustomerId]): F[Map[CustomerId, Customer]] =
+    state.get.map(store => ids.flatMap(id => store.get(id).map(id -> _)).toMap)
+
 object InMemoryCustomerRepository:
   def make[F[_]: Async]: F[InMemoryCustomerRepository[F]] =
     Ref.of[F, Map[CustomerId, Customer]](Map.empty).map(new InMemoryCustomerRepository(_))

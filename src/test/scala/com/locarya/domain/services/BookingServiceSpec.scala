@@ -214,3 +214,224 @@ class BookingServiceSpec extends CatsEffectSuite:
       assert(failLine.isDefined, s"Expected a BookingAvailabilityCheckFailed log line, got: $logs")
       assert(failLine.get.contains(item.id.value), failLine.get)
   }
+
+  // ── Provider-created bookings ──
+
+  test("createBookingByProvider creates a Confirmed booking with createdBy=Provider") {
+    for
+      ctx     <- makeCtx()
+      item    <- seedItem(ctx)
+      req      = CreateBookingByProviderRequest(
+                   items           = List(BookingLineInput(item.id, 1)),
+                   date            = date,
+                   deliveryAddress = deliveryAddress,
+                   customer        = customerInput
+                 )
+      created <- ctx.svc.createBookingByProvider(ctx.provider.id, req)
+      stored  <- ctx.bookingRepo.findById(created.bookingId)
+    yield
+      assertEquals(created.status, BookingStatus.Confirmed)
+      assert(stored.isDefined, "Expected the booking to be persisted")
+      assertEquals(stored.get.status, BookingStatus.Confirmed)
+      assertEquals(stored.get.createdBy, BookingCreator.Provider)
+  }
+
+  test("createBookingByProvider validates availability before persisting") {
+    for
+      ctx     <- makeCtx(unavailableIds = Set.empty)
+      item    <- seedItem(ctx)
+      ctx2    <- makeCtx(unavailableIds = Set(item.id))
+      _       <- seedItemWithId(ctx2, item.id)
+      req      = CreateBookingByProviderRequest(
+                   items           = List(BookingLineInput(item.id, 1)),
+                   date            = date,
+                   deliveryAddress = deliveryAddress,
+                   customer        = customerInput
+                 )
+      result  <- ctx2.svc.createBookingByProvider(ctx2.provider.id, req).attempt
+      stored  <- ctx2.bookingRepo.findByStatus(BookingStatus.Confirmed)
+    yield
+      assert(result.isLeft, "Expected createBookingByProvider to fail when item is unavailable")
+      result.left.foreach {
+        case e: BookingError.ItemsUnavailable => assert(e.unavailable.exists(_.id == item.id))
+        case other                            => fail(s"Expected ItemsUnavailable, got $other")
+      }
+      assert(stored.isEmpty, "Expected no booking to be persisted on availability failure")
+  }
+
+  test("createBookingByProvider emits BookingCreated log with createdBy=provider") {
+    for
+      capt              <- CapturingLogger.make
+      (logger, getLogs)  = capt
+      ctx               <- makeCtx(logger = logger)
+      item              <- seedItem(ctx)
+      req                = CreateBookingByProviderRequest(
+                             items           = List(BookingLineInput(item.id, 1)),
+                             date            = date,
+                             deliveryAddress = deliveryAddress,
+                             customer        = customerInput
+                           )
+      created           <- ctx.svc.createBookingByProvider(ctx.provider.id, req)
+      logs              <- getLogs
+    yield
+      assertEquals(logs.size, 1)
+      assert(logs.head.contains("\"event\":\"BookingCreated\""), logs.head)
+      assert(logs.head.contains(created.bookingId.value), logs.head)
+      assert(logs.head.contains("\"createdBy\":\"provider\""), logs.head)
+  }
+
+  test("listBookings returns bookings for the provider") {
+    for
+      ctx     <- makeCtx()
+      item    <- seedItem(ctx)
+      req      = CreateBookingByProviderRequest(
+                   items           = List(BookingLineInput(item.id, 1)),
+                   date            = date,
+                   deliveryAddress = deliveryAddress,
+                   customer        = customerInput
+                 )
+      created <- ctx.svc.createBookingByProvider(ctx.provider.id, req)
+      list    <- ctx.svc.listBookings(ctx.provider.id, None, None, None)
+    yield
+      assertEquals(list.size, 1)
+      assertEquals(list.head.id, created.bookingId)
+      assertEquals(list.head.status, BookingStatus.Confirmed)
+  }
+
+  test("listBookings filters by status") {
+    for
+      ctx     <- makeCtx()
+      item    <- seedItem(ctx)
+      req      = CreateBookingByProviderRequest(
+                   items           = List(BookingLineInput(item.id, 1)),
+                   date            = date,
+                   deliveryAddress = deliveryAddress,
+                   customer        = customerInput
+                 )
+      _       <- ctx.svc.createBookingByProvider(ctx.provider.id, req)
+      pending <- ctx.svc.listBookings(ctx.provider.id, Some(BookingStatus.Pending), None, None)
+      confirmed <- ctx.svc.listBookings(ctx.provider.id, Some(BookingStatus.Confirmed), None, None)
+    yield
+      assertEquals(pending.size, 0)
+      assertEquals(confirmed.size, 1)
+  }
+
+  test("listBookings filters by date range") {
+    for
+      ctx       <- makeCtx()
+      item      <- seedItem(ctx)
+      yesterday  = date.minusDays(1)
+      tomorrow   = date.plusDays(1)
+      req        = CreateBookingByProviderRequest(
+                     items           = List(BookingLineInput(item.id, 1)),
+                     date            = date,
+                     deliveryAddress = deliveryAddress,
+                     customer        = customerInput
+                   )
+      _         <- ctx.svc.createBookingByProvider(ctx.provider.id, req)
+      inRange   <- ctx.svc.listBookings(ctx.provider.id, None, Some(yesterday), Some(tomorrow))
+      outOfRange <- ctx.svc.listBookings(ctx.provider.id, None, Some(tomorrow), Some(tomorrow))
+    yield
+      assertEquals(inRange.size, 1)
+      assertEquals(outOfRange.size, 0)
+  }
+
+  test("listBookings includes denormalized customer data") {
+    for
+      ctx     <- makeCtx()
+      item    <- seedItem(ctx)
+      req      = CreateBookingByProviderRequest(
+                   items           = List(BookingLineInput(item.id, 1)),
+                   date            = date,
+                   deliveryAddress = deliveryAddress,
+                   customer        = customerInput
+                 )
+      _       <- ctx.svc.createBookingByProvider(ctx.provider.id, req)
+      list    <- ctx.svc.listBookings(ctx.provider.id, None, None, None)
+    yield
+      assertEquals(list.head.customer.name, customerInput.name)
+      assertEquals(list.head.customer.email, customerInput.email.value)
+      assertEquals(list.head.customer.phone, customerInput.phone)
+  }
+
+  test("listBookings does not return bookings belonging to a different provider") {
+    given Logger[IO] = NoOpLogger[IO]
+    for
+      providerRepo <- InMemoryProviderRepository.make[IO]
+      customerRepo <- InMemoryCustomerRepository.make[IO]
+      bookingRepo  <- InMemoryBookingRepository.make[IO]
+      itemRepo     <- InMemoryItemRepository.make[IO]
+      comboRepo    <- InMemoryComboRepository.make[IO]
+      svc           = BookingServiceImpl[IO](providerRepo, customerRepo, bookingRepo, itemRepo, comboRepo, StubAvailabilityService(Set.empty))
+      prov1         = Provider.create(
+                        id             = ProviderId.generate,
+                        email          = Email.fromString("p1@test.com").toOption.get,
+                        taxId          = TaxId.fromCNPJ(CNPJ.fromString("11.222.333/0001-81").toOption.get),
+                        businessName   = "Prov One LTDA",
+                        tradeName      = "Prov One",
+                        city           = "São Paulo",
+                        state          = "SP",
+                        storefrontSlug = StorefrontSlug.fromString("prov-one").toOption.get
+                      ).toOption.get
+      prov2         = Provider.create(
+                        id             = ProviderId.generate,
+                        email          = Email.fromString("p2@test.com").toOption.get,
+                        taxId          = TaxId.fromCNPJ(CNPJ.fromString("11.222.333/0001-81").toOption.get),
+                        businessName   = "Prov Two LTDA",
+                        tradeName      = "Prov Two",
+                        city           = "Rio de Janeiro",
+                        state          = "RJ",
+                        storefrontSlug = StorefrontSlug.fromString("prov-two").toOption.get
+                      ).toOption.get
+      _            <- providerRepo.create(prov1)
+      _            <- providerRepo.create(prov2)
+      item1         = Item.create(
+                        id                   = ItemId.generate,
+                        providerId           = prov1.id,
+                        name                 = "Item A",
+                        description          = "desc",
+                        dailyRate            = price,
+                        stock                = 5,
+                        attendantRequirement = AttendantRequirement.Optional
+                      ).toOption.get
+      item2         = Item.create(
+                        id                   = ItemId.generate,
+                        providerId           = prov2.id,
+                        name                 = "Item B",
+                        description          = "desc",
+                        dailyRate            = price,
+                        stock                = 5,
+                        attendantRequirement = AttendantRequirement.Optional
+                      ).toOption.get
+      _            <- itemRepo.create(item1)
+      _            <- itemRepo.create(item2)
+      _            <- svc.createBookingByProvider(prov1.id, CreateBookingByProviderRequest(List(BookingLineInput(item1.id, 1)), date, deliveryAddress, customerInput))
+      _            <- svc.createBookingByProvider(prov2.id, CreateBookingByProviderRequest(List(BookingLineInput(item2.id, 1)), date, deliveryAddress, customerInput))
+      list1        <- svc.listBookings(prov1.id, None, None, None)
+      list2        <- svc.listBookings(prov2.id, None, None, None)
+    yield
+      assertEquals(list1.size, 1, "Provider 1 should see only its own booking")
+      assertEquals(list2.size, 1, "Provider 2 should see only its own booking")
+      assert(list1.forall(_.providerId == prov1.id))
+      assert(list2.forall(_.providerId == prov2.id))
+  }
+
+  test("createBookingByProvider fails when provider does not exist") {
+    for
+      ctx    <- makeCtx()
+      item   <- seedItem(ctx)
+      bogus   = ProviderId.generate
+      req     = CreateBookingByProviderRequest(
+                  items           = List(BookingLineInput(item.id, 1)),
+                  date            = date,
+                  deliveryAddress = deliveryAddress,
+                  customer        = customerInput
+                )
+      result <- ctx.svc.createBookingByProvider(bogus, req).attempt
+    yield
+      assert(result.isLeft, "Expected failure when provider does not exist")
+      result.left.foreach {
+        case _: BookingError.ProviderIdNotFound => ()
+        case other                              => fail(s"Expected ProviderIdNotFound, got $other")
+      }
+  }
