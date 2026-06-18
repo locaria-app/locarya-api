@@ -3,11 +3,11 @@ package com.locarya
 import cats.effect._
 import cats.syntax.all._
 import com.comcast.ip4s._
-import com.locarya.adapters.http.{AuthRoutes, HealthEndpoints}
+import com.locarya.adapters.http.{AttendantRoutes, AuthRoutes, HealthEndpoints}
 import com.locarya.adapters.http.middleware.CorrelationIdMiddleware
 import com.locarya.adapters.persistence.{Database, ProviderRepositoryLive}
 import com.locarya.config.AppConfig
-import com.locarya.domain.services.{AuthServiceImpl, ProviderServiceImpl}
+import com.locarya.domain.services.{AttendantServiceImpl, AuthServiceImpl, ProviderServiceImpl}
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.server.Server
 import org.typelevel.log4cats.Logger

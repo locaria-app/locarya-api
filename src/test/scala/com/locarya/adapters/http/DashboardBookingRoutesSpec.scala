@@ -5,6 +5,7 @@ import cats.syntax.semigroupk.*
 import com.locarya.domain.models.*
 import com.locarya.domain.services.{AuthServiceImpl, AvailabilityServiceImpl, BookingServiceImpl, ItemServiceImpl, ProviderServiceImpl}
 import com.locarya.helpers.{
+  InMemoryAttendantRepository,
   InMemoryBookingRepository,
   InMemoryComboRepository,
   InMemoryCustomerRepository,
@@ -44,20 +45,21 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
 
   private def makeCtx: IO[Ctx] =
     for
-      providerRepo <- InMemoryProviderRepository.make[IO]
-      itemRepo     <- InMemoryItemRepository.make[IO]
-      imageRepo    <- InMemoryItemImageRepository.make[IO]
-      comboRepo    <- InMemoryComboRepository.make[IO]
-      bookingRepo  <- InMemoryBookingRepository.make[IO]
-      customerRepo <- InMemoryCustomerRepository.make[IO]
-      providerSvc   = ProviderServiceImpl[IO](providerRepo)
-      authSvc       = AuthServiceImpl[IO](providerRepo, testJwtSecret)
-      itemSvc       = ItemServiceImpl[IO](itemRepo, imageRepo, bookingRepo)
-      availSvc      = AvailabilityServiceImpl[IO](itemRepo, comboRepo, bookingRepo)
-      bookingSvc    = BookingServiceImpl[IO](providerRepo, customerRepo, bookingRepo, itemRepo, comboRepo, availSvc)
-      auth          = AuthRoutes.routes[IO](providerSvc, authSvc)
-      items         = ItemRoutes.routes[IO](itemSvc, testJwtSecret)
-      bookings      = DashboardBookingRoutes.routes[IO](bookingSvc, testJwtSecret)
+      providerRepo  <- InMemoryProviderRepository.make[IO]
+      itemRepo      <- InMemoryItemRepository.make[IO]
+      imageRepo     <- InMemoryItemImageRepository.make[IO]
+      comboRepo     <- InMemoryComboRepository.make[IO]
+      bookingRepo   <- InMemoryBookingRepository.make[IO]
+      customerRepo  <- InMemoryCustomerRepository.make[IO]
+      attendantRepo <- InMemoryAttendantRepository.make[IO]
+      providerSvc    = ProviderServiceImpl[IO](providerRepo)
+      authSvc        = AuthServiceImpl[IO](providerRepo, testJwtSecret)
+      itemSvc        = ItemServiceImpl[IO](itemRepo, imageRepo, bookingRepo)
+      availSvc       = AvailabilityServiceImpl[IO](itemRepo, comboRepo, bookingRepo)
+      bookingSvc     = BookingServiceImpl[IO](providerRepo, customerRepo, bookingRepo, itemRepo, comboRepo, availSvc, attendantRepo)
+      auth           = AuthRoutes.routes[IO](providerSvc, authSvc)
+      items          = ItemRoutes.routes[IO](itemSvc, testJwtSecret)
+      bookings       = DashboardBookingRoutes.routes[IO](bookingSvc, testJwtSecret)
     yield Ctx(auth, items, bookings, providerRepo, itemRepo, bookingRepo, customerRepo)
 
   private val signupBody =

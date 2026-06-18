@@ -8,12 +8,13 @@ import java.time.LocalDate
 import org.typelevel.log4cats.Logger
 
 class BookingServiceImpl[F[_]: Sync: Logger](
-  providerRepo: ProviderRepository[F],
-  customerRepo: CustomerRepository[F],
-  bookingRepo:  BookingRepository[F],
-  itemRepo:     ItemRepository[F],
-  comboRepo:    ComboRepository[F],
-  availability: AvailabilityService[F]
+  providerRepo:  ProviderRepository[F],
+  customerRepo:  CustomerRepository[F],
+  bookingRepo:   BookingRepository[F],
+  itemRepo:      ItemRepository[F],
+  comboRepo:     ComboRepository[F],
+  availability:  AvailabilityService[F],
+  attendantRepo: AttendantRepository[F]
 ) extends BookingService[F]:
 
   /** A requested line resolved to its booked representation and the price snapshot
@@ -82,9 +83,30 @@ class BookingServiceImpl[F[_]: Sync: Logger](
                    case _                                     => BookingError.BookingNotFound(bookingId).raiseError[F, Booking]
                  }
       updated <- liftValidation(booking.transitionStatus(newStatus))
+      _       <- requireAttendantsWhenConfirming(booking, newStatus)
       stored  <- bookingRepo.update(updated)
       _       <- Logger[F].info(bookingStatusChangedLog(stored, booking.status, reason))
     yield stored
+
+  private def requireAttendantsWhenConfirming(booking: Booking, newStatus: BookingStatus): F[Unit] =
+    if newStatus != BookingStatus.Confirmed then ().pure[F]
+    else
+      booking.items.traverse {
+        case BookedIndividualItem(itemId, _, _) =>
+          itemRepo.findById(itemId).map(_.exists(_.attendantRequirement == AttendantRequirement.Required))
+        case BookedCombo(comboId, _, _) =>
+          comboRepo.findById(comboId).map(_.exists(_.attendantRequirement == AttendantRequirement.Required))
+      }.flatMap { checks =>
+        if checks.exists(identity) then
+          attendantRepo.findByBooking(booking.id).flatMap { attendants =>
+            if attendants.isEmpty then
+              BookingError.InvalidInput(
+                InvalidBooking("Booking with required-attendant items must have an attendant assigned before confirmation")
+              ).raiseError[F, Unit]
+            else ().pure[F]
+          }
+        else ().pure[F]
+      }
 
   def listBookings(providerId: ProviderId, status: Option[BookingStatus], dateFrom: Option[LocalDate], dateTo: Option[LocalDate]): F[List[DashboardBookingView]] =
     for

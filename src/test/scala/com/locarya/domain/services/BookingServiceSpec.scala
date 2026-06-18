@@ -5,6 +5,7 @@ import com.locarya.domain.models.*
 import com.locarya.domain.ports.*
 import com.locarya.helpers.{
   CapturingLogger,
+  InMemoryAttendantRepository,
   InMemoryBookingRepository,
   InMemoryComboRepository,
   InMemoryCustomerRepository,
@@ -42,12 +43,13 @@ class BookingServiceSpec extends CatsEffectSuite:
       })
 
   private case class Ctx(
-    svc:          BookingService[IO],
-    providerRepo: InMemoryProviderRepository[IO],
-    customerRepo: InMemoryCustomerRepository[IO],
-    bookingRepo:  InMemoryBookingRepository[IO],
-    itemRepo:     InMemoryItemRepository[IO],
-    provider:     Provider
+    svc:           BookingService[IO],
+    providerRepo:  InMemoryProviderRepository[IO],
+    customerRepo:  InMemoryCustomerRepository[IO],
+    bookingRepo:   InMemoryBookingRepository[IO],
+    itemRepo:      InMemoryItemRepository[IO],
+    attendantRepo: InMemoryAttendantRepository[IO],
+    provider:      Provider
   )
 
   private def makeCtx(
@@ -56,25 +58,26 @@ class BookingServiceSpec extends CatsEffectSuite:
   ): IO[Ctx] =
     given Logger[IO] = logger
     for
-      providerRepo <- InMemoryProviderRepository.make[IO]
-      customerRepo <- InMemoryCustomerRepository.make[IO]
-      bookingRepo  <- InMemoryBookingRepository.make[IO]
-      itemRepo     <- InMemoryItemRepository.make[IO]
-      comboRepo    <- InMemoryComboRepository.make[IO]
-      provider      = Provider.create(
-                        id           = ProviderId.generate,
-                        email        = Email.fromString("locador@example.com").toOption.get,
-                        taxId        = TaxId.fromCNPJ(CNPJ.fromString("11.222.333/0001-81").toOption.get),
-                        businessName = "Locador LTDA",
-                        tradeName    = "Locador",
-                        city         = "São Paulo",
-                        state        = "SP",
-                        storefrontSlug = slug
-                      ).toOption.get
-      _            <- providerRepo.create(provider)
-      availability  = StubAvailabilityService(unavailableIds)
-      svc           = BookingServiceImpl[IO](providerRepo, customerRepo, bookingRepo, itemRepo, comboRepo, availability)
-    yield Ctx(svc, providerRepo, customerRepo, bookingRepo, itemRepo, provider)
+      providerRepo  <- InMemoryProviderRepository.make[IO]
+      customerRepo  <- InMemoryCustomerRepository.make[IO]
+      bookingRepo   <- InMemoryBookingRepository.make[IO]
+      itemRepo      <- InMemoryItemRepository.make[IO]
+      comboRepo     <- InMemoryComboRepository.make[IO]
+      attendantRepo <- InMemoryAttendantRepository.make[IO]
+      provider       = Provider.create(
+                         id             = ProviderId.generate,
+                         email          = Email.fromString("locador@example.com").toOption.get,
+                         taxId          = TaxId.fromCNPJ(CNPJ.fromString("11.222.333/0001-81").toOption.get),
+                         businessName   = "Locador LTDA",
+                         tradeName      = "Locador",
+                         city           = "São Paulo",
+                         state          = "SP",
+                         storefrontSlug = slug
+                       ).toOption.get
+      _             <- providerRepo.create(provider)
+      availability   = StubAvailabilityService(unavailableIds)
+      svc            = BookingServiceImpl[IO](providerRepo, customerRepo, bookingRepo, itemRepo, comboRepo, availability, attendantRepo)
+    yield Ctx(svc, providerRepo, customerRepo, bookingRepo, itemRepo, attendantRepo, provider)
 
   private def buildItem(ctx: Ctx, id: ItemId, stock: Int, itemPrice: Money): Item =
     Item.create(
@@ -358,12 +361,13 @@ class BookingServiceSpec extends CatsEffectSuite:
   test("listBookings does not return bookings belonging to a different provider") {
     given Logger[IO] = NoOpLogger[IO]
     for
-      providerRepo <- InMemoryProviderRepository.make[IO]
-      customerRepo <- InMemoryCustomerRepository.make[IO]
-      bookingRepo  <- InMemoryBookingRepository.make[IO]
-      itemRepo     <- InMemoryItemRepository.make[IO]
-      comboRepo    <- InMemoryComboRepository.make[IO]
-      svc           = BookingServiceImpl[IO](providerRepo, customerRepo, bookingRepo, itemRepo, comboRepo, StubAvailabilityService(Set.empty))
+      providerRepo  <- InMemoryProviderRepository.make[IO]
+      customerRepo  <- InMemoryCustomerRepository.make[IO]
+      bookingRepo   <- InMemoryBookingRepository.make[IO]
+      itemRepo      <- InMemoryItemRepository.make[IO]
+      comboRepo     <- InMemoryComboRepository.make[IO]
+      attendantRepo <- InMemoryAttendantRepository.make[IO]
+      svc            = BookingServiceImpl[IO](providerRepo, customerRepo, bookingRepo, itemRepo, comboRepo, StubAvailabilityService(Set.empty), attendantRepo)
       prov1         = Provider.create(
                         id             = ProviderId.generate,
                         email          = Email.fromString("p1@test.com").toOption.get,
@@ -443,25 +447,26 @@ class BookingServiceSpec extends CatsEffectSuite:
   private def makeCtxFull(logger: Logger[IO] = NoOpLogger[IO]): IO[Ctx] =
     given Logger[IO] = logger
     for
-      providerRepo <- InMemoryProviderRepository.make[IO]
-      customerRepo <- InMemoryCustomerRepository.make[IO]
-      bookingRepo  <- InMemoryBookingRepository.make[IO]
-      itemRepo     <- InMemoryItemRepository.make[IO]
-      comboRepo    <- InMemoryComboRepository.make[IO]
-      provider      = Provider.create(
-                        id             = ProviderId.generate,
-                        email          = Email.fromString("locador@example.com").toOption.get,
-                        taxId          = TaxId.fromCNPJ(CNPJ.fromString("11.222.333/0001-81").toOption.get),
-                        businessName   = "Locador LTDA",
-                        tradeName      = "Locador",
-                        city           = "São Paulo",
-                        state          = "SP",
-                        storefrontSlug = slug
-                      ).toOption.get
-      _            <- providerRepo.create(provider)
-      availability  = AvailabilityServiceImpl[IO](itemRepo, comboRepo, bookingRepo)
-      svc           = BookingServiceImpl[IO](providerRepo, customerRepo, bookingRepo, itemRepo, comboRepo, availability)
-    yield Ctx(svc, providerRepo, customerRepo, bookingRepo, itemRepo, provider)
+      providerRepo  <- InMemoryProviderRepository.make[IO]
+      customerRepo  <- InMemoryCustomerRepository.make[IO]
+      bookingRepo   <- InMemoryBookingRepository.make[IO]
+      itemRepo      <- InMemoryItemRepository.make[IO]
+      comboRepo     <- InMemoryComboRepository.make[IO]
+      attendantRepo <- InMemoryAttendantRepository.make[IO]
+      provider       = Provider.create(
+                         id             = ProviderId.generate,
+                         email          = Email.fromString("locador@example.com").toOption.get,
+                         taxId          = TaxId.fromCNPJ(CNPJ.fromString("11.222.333/0001-81").toOption.get),
+                         businessName   = "Locador LTDA",
+                         tradeName      = "Locador",
+                         city           = "São Paulo",
+                         state          = "SP",
+                         storefrontSlug = slug
+                       ).toOption.get
+      _             <- providerRepo.create(provider)
+      availability   = AvailabilityServiceImpl[IO](itemRepo, comboRepo, bookingRepo)
+      svc            = BookingServiceImpl[IO](providerRepo, customerRepo, bookingRepo, itemRepo, comboRepo, availability, attendantRepo)
+    yield Ctx(svc, providerRepo, customerRepo, bookingRepo, itemRepo, attendantRepo, provider)
 
   private def createConfirmedBooking(ctx: Ctx, item: Item): IO[BookingId] =
     val req = CreateBookingByProviderRequest(
@@ -610,4 +615,72 @@ class BookingServiceSpec extends CatsEffectSuite:
       assertEquals(after1.status, BookingStatus.Confirmed)
       assertEquals(after2.status, BookingStatus.InProgress)
       assertEquals(after3.status, BookingStatus.Completed)
+  }
+
+  // ── attendant confirmation guard ──────────────────────────────────────────
+
+  private def buildRequiredItem(ctx: Ctx): IO[Item] =
+    val item = Item.create(
+      id                   = ItemId.generate,
+      providerId           = ctx.provider.id,
+      name                 = "Pula-Pula Gigante",
+      description          = "Requer monitor",
+      dailyRate            = price,
+      stock                = 5,
+      attendantRequirement = AttendantRequirement.Required
+    ).toOption.get
+    ctx.itemRepo.create(item).as(item)
+
+  test("updateBookingStatus — Pending to Confirmed succeeds when Required-item booking has attendant assigned") {
+    for
+      ctx       <- makeCtx()
+      item      <- buildRequiredItem(ctx)
+      created   <- ctx.svc.createBooking(request(List((item.id, 1))))
+      bid        = created.bookingId
+      attendant  = Attendant.create(AttendantId.generate, ctx.provider.id, "Monitor Joao", "11900000000").toOption.get
+      _         <- ctx.attendantRepo.create(attendant)
+      _         <- ctx.attendantRepo.assignToBooking(bid, attendant.id)
+      updated   <- ctx.svc.updateBookingStatus(ctx.provider.id, bid, BookingStatus.Confirmed, None)
+    yield assertEquals(updated.status, BookingStatus.Confirmed)
+  }
+
+  test("updateBookingStatus — Pending to Confirmed raises InvalidInput when Required-item booking has no attendant") {
+    for
+      ctx     <- makeCtx()
+      item    <- buildRequiredItem(ctx)
+      created <- ctx.svc.createBooking(request(List((item.id, 1))))
+      bid      = created.bookingId
+      result  <- ctx.svc.updateBookingStatus(ctx.provider.id, bid, BookingStatus.Confirmed, None).attempt
+    yield
+      assert(result.isLeft)
+      result.left.foreach {
+        case _: BookingError.InvalidInput => ()
+        case other                        => fail(s"Expected InvalidInput for missing required attendant, got $other")
+      }
+  }
+
+  test("updateBookingStatus — Pending to Confirmed with Optional-item does not require attendant") {
+    for
+      ctx     <- makeCtx()
+      item    <- seedItem(ctx)
+      created <- ctx.svc.createBooking(request(List((item.id, 1))))
+      bid      = created.bookingId
+      updated <- ctx.svc.updateBookingStatus(ctx.provider.id, bid, BookingStatus.Confirmed, None)
+    yield assertEquals(updated.status, BookingStatus.Confirmed)
+  }
+
+  test("integration: Required-item booking fails confirm without attendant, succeeds after assignment") {
+    for
+      ctx       <- makeCtx()
+      item      <- buildRequiredItem(ctx)
+      created   <- ctx.svc.createBooking(request(List((item.id, 1))))
+      bid        = created.bookingId
+      failed    <- ctx.svc.updateBookingStatus(ctx.provider.id, bid, BookingStatus.Confirmed, None).attempt
+      attendant  = Attendant.create(AttendantId.generate, ctx.provider.id, "Monitor Maria", "11900000001").toOption.get
+      _         <- ctx.attendantRepo.create(attendant)
+      _         <- ctx.attendantRepo.assignToBooking(bid, attendant.id)
+      updated   <- ctx.svc.updateBookingStatus(ctx.provider.id, bid, BookingStatus.Confirmed, None)
+    yield
+      assert(failed.isLeft, "Expected confirmation to fail without attendant")
+      assertEquals(updated.status, BookingStatus.Confirmed)
   }
