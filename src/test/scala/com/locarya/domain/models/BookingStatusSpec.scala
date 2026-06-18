@@ -49,12 +49,39 @@ class BookingStatusSpec extends FunSuite {
     }
   }
 
-  test("transition from InProgress to Cancelled succeeds") {
+  test("transition from InProgress to Cancelled fails") {
     val result = BookingStatus.InProgress.transitionTo(BookingStatus.Cancelled)
 
-    assert(result.isRight, "Should allow transition from InProgress to Cancelled")
-    result.foreach { status =>
-      assertEquals(status, BookingStatus.Cancelled)
+    assert(result.isLeft, "Cannot cancel a booking that is already in progress (equipment delivered)")
+    result.left.foreach { error =>
+      assert(error.isInstanceOf[InvalidStatusTransition], "Should return InvalidStatusTransition error")
+    }
+  }
+
+  test("transition from Completed to Cancelled fails") {
+    val result = BookingStatus.Completed.transitionTo(BookingStatus.Cancelled)
+
+    assert(result.isLeft, "Completed is a terminal state")
+    result.left.foreach { error =>
+      assert(error.isInstanceOf[InvalidStatusTransition], "Should return InvalidStatusTransition error")
+    }
+  }
+
+  test("transition from InProgress to Pending fails") {
+    val result = BookingStatus.InProgress.transitionTo(BookingStatus.Pending)
+
+    assert(result.isLeft, "Cannot go backwards in the lifecycle")
+    result.left.foreach { error =>
+      assert(error.isInstanceOf[InvalidStatusTransition], "Should return InvalidStatusTransition error")
+    }
+  }
+
+  test("transition from InProgress to Confirmed fails") {
+    val result = BookingStatus.InProgress.transitionTo(BookingStatus.Confirmed)
+
+    assert(result.isLeft, "Cannot go backwards in the lifecycle")
+    result.left.foreach { error =>
+      assert(error.isInstanceOf[InvalidStatusTransition], "Should return InvalidStatusTransition error")
     }
   }
 

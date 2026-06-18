@@ -11,6 +11,7 @@ import com.locarya.helpers.{
   InMemoryItemRepository,
   InMemoryProviderRepository
 }
+import com.locarya.domain.services.AvailabilityServiceImpl
 import java.time.LocalDate
 import munit.CatsEffectSuite
 import org.typelevel.log4cats.Logger
@@ -434,4 +435,179 @@ class BookingServiceSpec extends CatsEffectSuite:
         case _: BookingError.ProviderIdNotFound => ()
         case other                              => fail(s"Expected ProviderIdNotFound, got $other")
       }
+  }
+
+  // ── updateBookingStatus ────────────────────────────────────────────────────
+
+  /** Context wired with AvailabilityServiceImpl so stock-release tests work. */
+  private def makeCtxFull(logger: Logger[IO] = NoOpLogger[IO]): IO[Ctx] =
+    given Logger[IO] = logger
+    for
+      providerRepo <- InMemoryProviderRepository.make[IO]
+      customerRepo <- InMemoryCustomerRepository.make[IO]
+      bookingRepo  <- InMemoryBookingRepository.make[IO]
+      itemRepo     <- InMemoryItemRepository.make[IO]
+      comboRepo    <- InMemoryComboRepository.make[IO]
+      provider      = Provider.create(
+                        id             = ProviderId.generate,
+                        email          = Email.fromString("locador@example.com").toOption.get,
+                        taxId          = TaxId.fromCNPJ(CNPJ.fromString("11.222.333/0001-81").toOption.get),
+                        businessName   = "Locador LTDA",
+                        tradeName      = "Locador",
+                        city           = "São Paulo",
+                        state          = "SP",
+                        storefrontSlug = slug
+                      ).toOption.get
+      _            <- providerRepo.create(provider)
+      availability  = AvailabilityServiceImpl[IO](itemRepo, comboRepo, bookingRepo)
+      svc           = BookingServiceImpl[IO](providerRepo, customerRepo, bookingRepo, itemRepo, comboRepo, availability)
+    yield Ctx(svc, providerRepo, customerRepo, bookingRepo, itemRepo, provider)
+
+  private def createConfirmedBooking(ctx: Ctx, item: Item): IO[BookingId] =
+    val req = CreateBookingByProviderRequest(
+      items           = List(BookingLineInput(item.id, 1)),
+      date            = date,
+      deliveryAddress = deliveryAddress,
+      customer        = customerInput
+    )
+    ctx.svc.createBookingByProvider(ctx.provider.id, req).map(_.bookingId)
+
+  test("updateBookingStatus — valid transition returns updated Booking with new status") {
+    for
+      ctx       <- makeCtx()
+      item      <- seedItem(ctx)
+      bookingId <- createConfirmedBooking(ctx, item)
+      updated   <- ctx.svc.updateBookingStatus(ctx.provider.id, bookingId, BookingStatus.InProgress, None)
+    yield
+      assertEquals(updated.status, BookingStatus.InProgress)
+      assertEquals(updated.id, bookingId)
+  }
+
+  test("updateBookingStatus — booking not found raises BookingNotFound") {
+    for
+      ctx    <- makeCtx()
+      bogus   = BookingId.generate
+      result <- ctx.svc.updateBookingStatus(ctx.provider.id, bogus, BookingStatus.Confirmed, None).attempt
+    yield
+      assert(result.isLeft)
+      result.left.foreach {
+        case _: BookingError.BookingNotFound => ()
+        case other                           => fail(s"Expected BookingNotFound, got $other")
+      }
+  }
+
+  test("updateBookingStatus — booking belongs to different provider raises BookingNotFound") {
+    for
+      ctx         <- makeCtx()
+      otherPid     = ProviderId.generate
+      item        <- seedItem(ctx)
+      bookingId   <- createConfirmedBooking(ctx, item)
+      result      <- ctx.svc.updateBookingStatus(otherPid, bookingId, BookingStatus.InProgress, None).attempt
+    yield
+      assert(result.isLeft)
+      result.left.foreach {
+        case _: BookingError.BookingNotFound => ()
+        case other                           => fail(s"Expected BookingNotFound for cross-provider access, got $other")
+      }
+  }
+
+  test("updateBookingStatus — invalid status transition raises InvalidInput") {
+    for
+      ctx       <- makeCtx()
+      item      <- seedItem(ctx)
+      bookingId <- createConfirmedBooking(ctx, item)
+      // Confirmed → Pending is not a valid transition
+      result    <- ctx.svc.updateBookingStatus(ctx.provider.id, bookingId, BookingStatus.Pending, None).attempt
+    yield
+      assert(result.isLeft)
+      result.left.foreach {
+        case _: BookingError.InvalidInput => ()
+        case other                        => fail(s"Expected InvalidInput, got $other")
+      }
+  }
+
+  test("updateBookingStatus — cannot cancel InProgress booking raises InvalidInput") {
+    for
+      ctx       <- makeCtx()
+      item      <- seedItem(ctx)
+      bookingId <- createConfirmedBooking(ctx, item)
+      _         <- ctx.svc.updateBookingStatus(ctx.provider.id, bookingId, BookingStatus.InProgress, None)
+      result    <- ctx.svc.updateBookingStatus(ctx.provider.id, bookingId, BookingStatus.Cancelled, None).attempt
+    yield
+      assert(result.isLeft)
+      result.left.foreach {
+        case _: BookingError.InvalidInput => ()
+        case other                        => fail(s"Expected InvalidInput when cancelling InProgress, got $other")
+      }
+  }
+
+  test("updateBookingStatus — Confirmed→Cancelled releases stock") {
+    for
+      ctx       <- makeCtxFull()
+      item      <- seedItem(ctx, stock = 1)
+      bookingId <- createConfirmedBooking(ctx, item)
+      // Second booking attempt must fail — stock consumed
+      blocked   <- ctx.svc.createBookingByProvider(ctx.provider.id,
+                     CreateBookingByProviderRequest(List(BookingLineInput(item.id, 1)), date, deliveryAddress, customerInput)
+                   ).attempt
+      _         <- ctx.svc.updateBookingStatus(ctx.provider.id, bookingId, BookingStatus.Cancelled, Some("test cancel"))
+      // After cancel, a new booking must succeed
+      released  <- ctx.svc.createBookingByProvider(ctx.provider.id,
+                     CreateBookingByProviderRequest(List(BookingLineInput(item.id, 1)), date, deliveryAddress, customerInput)
+                   ).attempt
+    yield
+      assert(blocked.isLeft, "Second booking should be blocked while first is Confirmed")
+      blocked.left.foreach {
+        case _: BookingError.ItemsUnavailable => ()
+        case other                            => fail(s"Expected ItemsUnavailable, got $other")
+      }
+      assert(released.isRight, "Booking should succeed after cancellation releases stock")
+  }
+
+  test("updateBookingStatus — emits BookingStatusChanged log on valid transition") {
+    for
+      capt              <- CapturingLogger.make
+      (logger, getLogs)  = capt
+      ctx               <- makeCtx(logger = logger)
+      item              <- seedItem(ctx)
+      bookingId         <- createConfirmedBooking(ctx, item)
+      _                 <- ctx.svc.updateBookingStatus(ctx.provider.id, bookingId, BookingStatus.InProgress, None)
+      logs              <- getLogs
+    yield
+      val statusLog = logs.find(_.contains("\"event\":\"BookingStatusChanged\""))
+      assert(statusLog.isDefined, s"Expected BookingStatusChanged log, got: $logs")
+      assert(statusLog.get.contains(bookingId.value), statusLog.get)
+      assert(statusLog.get.contains("\"fromStatus\":\"confirmed\""), statusLog.get)
+      assert(statusLog.get.contains("\"toStatus\":\"in-progress\""), statusLog.get)
+  }
+
+  test("updateBookingStatus — emits reason in log when provided") {
+    for
+      capt              <- CapturingLogger.make
+      (logger, getLogs)  = capt
+      ctx               <- makeCtx(logger = logger)
+      item              <- seedItem(ctx)
+      bookingId         <- createConfirmedBooking(ctx, item)
+      _                 <- ctx.svc.updateBookingStatus(ctx.provider.id, bookingId, BookingStatus.Cancelled, Some("customer request"))
+      logs              <- getLogs
+    yield
+      val statusLog = logs.find(_.contains("\"event\":\"BookingStatusChanged\""))
+      assert(statusLog.isDefined, s"Expected BookingStatusChanged log, got: $logs")
+      assert(statusLog.get.contains("\"reason\":\"customer request\""), statusLog.get)
+  }
+
+  test("updateBookingStatus — full lifecycle Pending→Confirmed→InProgress→Completed") {
+    for
+      ctx       <- makeCtx()
+      item      <- seedItem(ctx)
+      // Start with a customer booking (Pending)
+      created   <- ctx.svc.createBooking(request(List((item.id, 1))))
+      bid        = created.bookingId
+      after1    <- ctx.svc.updateBookingStatus(ctx.provider.id, bid, BookingStatus.Confirmed, None)
+      after2    <- ctx.svc.updateBookingStatus(ctx.provider.id, bid, BookingStatus.InProgress, None)
+      after3    <- ctx.svc.updateBookingStatus(ctx.provider.id, bid, BookingStatus.Completed, None)
+    yield
+      assertEquals(after1.status, BookingStatus.Confirmed)
+      assertEquals(after2.status, BookingStatus.InProgress)
+      assertEquals(after3.status, BookingStatus.Completed)
   }

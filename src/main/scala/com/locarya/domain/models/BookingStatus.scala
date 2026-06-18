@@ -13,7 +13,6 @@ sealed trait BookingStatus {
 
       // From InProgress
       case (BookingStatus.InProgress, BookingStatus.Completed) => Right(BookingStatus.Completed)
-      case (BookingStatus.InProgress, BookingStatus.Cancelled) => Right(BookingStatus.Cancelled)
 
       // Terminal states cannot transition
       case (BookingStatus.Completed, _) =>

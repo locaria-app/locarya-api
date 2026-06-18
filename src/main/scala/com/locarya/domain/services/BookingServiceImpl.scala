@@ -70,6 +70,22 @@ class BookingServiceImpl[F[_]: Sync: Logger](
       _         <- Logger[F].info(bookingCreatedLog(stored, customer))
     yield BookingCreated(stored.id, stored.status, stored.totalAmount)
 
+  def updateBookingStatus(
+    providerId: ProviderId,
+    bookingId:  BookingId,
+    newStatus:  BookingStatus,
+    reason:     Option[String]
+  ): F[Booking] =
+    for
+      booking <- bookingRepo.findById(bookingId).flatMap {
+                   case Some(b) if b.providerId == providerId => b.pure[F]
+                   case _                                     => BookingError.BookingNotFound(bookingId).raiseError[F, Booking]
+                 }
+      updated <- liftValidation(booking.transitionStatus(newStatus))
+      stored  <- bookingRepo.update(updated)
+      _       <- Logger[F].info(bookingStatusChangedLog(stored, booking.status, reason))
+    yield stored
+
   def listBookings(providerId: ProviderId, status: Option[BookingStatus], dateFrom: Option[LocalDate], dateTo: Option[LocalDate]): F[List[DashboardBookingView]] =
     for
       bookings   <- bookingRepo.findByProvider(providerId, status, dateFrom, dateTo)
@@ -173,6 +189,13 @@ class BookingServiceImpl[F[_]: Sync: Logger](
     }.mkString(",")
     val createdBy = booking.createdBy.toString.toLowerCase
     s"""{"event":"BookingCreated","bookingId":"${booking.id.value}","providerId":"${booking.providerId.value}","customerId":"${customer.id.value}","itemIds":[$itemIds],"date":"${booking.startDate}","createdBy":"$createdBy"}"""
+
+  private def bookingStatusChangedLog(booking: Booking, fromStatus: BookingStatus, reason: Option[String]): String =
+    val reasonPart = reason.map(r => s""","reason":"$r"""").getOrElse("")
+    s"""{"event":"BookingStatusChanged","bookingId":"${booking.id.value}","fromStatus":"${toKebab(fromStatus.toString)}","toStatus":"${toKebab(booking.status.toString)}"$reasonPart}"""
+
+  private def toKebab(s: String): String =
+    s.replaceAll("([a-z])([A-Z])", "$1-$2").toLowerCase
 
   private def availabilityFailedLog(
     date:        LocalDate,
