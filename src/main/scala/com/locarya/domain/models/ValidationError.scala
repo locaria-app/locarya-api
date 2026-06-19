@@ -22,3 +22,4 @@ case class InvalidPassword(message: String)       extends ValidationError
 case class InvalidItemImage(message: String)      extends ValidationError
 case class InvalidAvailabilityQuery(message: String) extends ValidationError
 case class InvalidAttendant(message: String)          extends ValidationError
+case class InvalidPayment(message: String)            extends ValidationError
