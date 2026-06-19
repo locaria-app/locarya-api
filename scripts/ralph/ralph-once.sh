@@ -58,6 +58,18 @@ cleanup() { [ "$CLEAN" -eq 1 ] && rm -f "$@" || true; }
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"   # run from repo root so Claude Code picks up .claude/ and the project
 
+# halt_in() — checks for a sentinel ONLY in assistant-authored text, never in the
+# raw stream (which also contains our own prompt echoed back inside the initial
+# user-turn JSON). A naive grep on the whole file would match the literal sentinel
+# text we instruct the model to use, even when the model itself never said it —
+# which is exactly what happened with <halt/>: it appears in our own instruction
+# ("reply with exactly: <halt/>") and grep can't tell that apart from a real reply.
+halt_in() {
+  local raw="$1" sentinel="$2"
+  jq -r 'select(.type=="assistant") | .message.content[]? | select(.type=="text") | .text' "$raw" 2>/dev/null \
+    | grep -qF "$sentinel"
+}
+
 RALPH_TMP="$ROOT/.ralph-tmp"
 mkdir -p "$RALPH_TMP"
 TELEMETRY_LOG="$RALPH_TMP/ralph-telemetry.jsonl"
@@ -160,7 +172,7 @@ After writing the file, print exactly: <brief-written/>. $GUARD"
 record_telemetry "context-gatherer" "$CTX_RAW" "$(( $(date +%s) - STEP_START ))"
 vlog "step 1/3 done ($(elapsed $STEP_START))"
 
-if grep -q '<halt/>' "$CTX_RAW"; then
+if halt_in "$CTX_RAW" '<halt/>'; then
   echo ">> migration-guard halted #$N; labeled 'blocked'. Skipping."
   cleanup "$CTX_RAW" "$BRIEF_FILE"
   exit 4
@@ -204,8 +216,8 @@ reply with exactly: <needs-human>one-line question</needs-human>" \
 record_telemetry "/tdd" "$TDD_RAW" "$(( $(date +%s) - STEP_START ))"
 vlog "step 2/3 done ($(elapsed $STEP_START))"
 
-if grep -q '<needs-human>' "$TDD_LOG"; then
-  Q="$(sed -nE 's@.*<needs-human>(.*)</needs-human>.*@\1@p' "$TDD_LOG")"
+if halt_in "$TDD_RAW" '<needs-human>'; then
+  Q="$(jq -r 'select(.type=="assistant") | .message.content[]? | select(.type=="text") | .text' "$TDD_RAW" 2>/dev/null | sed -nE 's@.*<needs-human>(.*)</needs-human>.*@\1@p' | head -1)"
   gh issue comment "$N" --body "Ralph paused — needs a human decision: $Q"
   gh issue edit "$N" --add-label needs-design
   echo ">> #$N escalated for a human decision; commented + labeled 'needs-design'. Skipping PR."
