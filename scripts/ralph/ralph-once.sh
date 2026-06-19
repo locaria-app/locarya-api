@@ -183,14 +183,21 @@ TDD_RAW="$RALPH_TMP/issue-$N-tdd.raw.jsonl"
 TDD_LOG="$RALPH_TMP/issue-$N-tdd.log"  # readable text — for <needs-human> grep
 run_claude "$TDD_RAW" --session-id "$TDD_SID" --permission-mode acceptEdits -p "/tdd
 
-Implementation brief for this issue is at $BRIEF_FILE — read it before starting.
+Implementation brief for this issue is at $BRIEF_FILE — read it before starting. The brief \
+already lists the existing patterns, domain terms, and files to touch — trust it instead of \
+re-discovering them by re-reading unrelated files.
 
 UNATTENDED RUN — no human is available to answer questions. Do not pause to ask. For \
 each decision, choose the option most consistent with the PRD, the ADRs, CONTEXT.md and \
 CLAUDE.md, and list every such choice under a '## Assumptions' heading in the PR body. \
 Stay tests-first and follow the project's established testing approach; fully cover the \
 tracer-bullet slice before widening scope. Always COMMIT the tests you write — never drop \
-a test because it can't run in the current environment. Only if a choice is a business \
+a test because it can't run in the current environment. \
+When running tests mid-cycle (after each RED→GREEN step), scope the run to the spec you're \
+working on (e.g. \`sbt "testOnly *PaymentServiceSpec"\`) rather than the full suite — this \
+avoids recompiling/rerunning hundreds of unrelated tests on every small cycle. Only run the \
+full suite (\`sbt test\`) once, as a final check before committing and opening the PR. \
+Only if a choice is a business \
 rule with no basis in the docs and is unsafe to guess, STOP before writing any code and \
 reply with exactly: <needs-human>one-line question</needs-human>" \
   | tee "$TDD_LOG"
