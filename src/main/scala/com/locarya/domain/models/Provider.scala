@@ -11,7 +11,8 @@ final case class Provider private (
   contractStatus:  ContractStatus,
   passwordHash:    String,
   plan:            Plan,
-  storefrontSlug:  StorefrontSlug
+  storefrontSlug:  StorefrontSlug,
+  isActive:        Boolean
 )
 
 object Provider:
@@ -26,7 +27,8 @@ object Provider:
     contractStatus: ContractStatus  = ContractStatus.Active,
     passwordHash:   String          = "",
     plan:           Plan            = Plan.Freemium,
-    storefrontSlug: StorefrontSlug  = StorefrontSlug.fromString("placeholder-000000").toOption.get
+    storefrontSlug: StorefrontSlug  = StorefrontSlug.fromString("placeholder-000000").toOption.get,
+    isActive:       Boolean         = true
   ): Either[ValidationError, Provider] =
     if businessName.trim.isEmpty then
       Left(InvalidProvider("Business name cannot be empty"))
@@ -43,6 +45,11 @@ object Provider:
           businessName.trim, tradeName.trim,
           city.trim, state.trim,
           contractStatus,
-          passwordHash, plan, storefrontSlug
+          passwordHash, plan, storefrontSlug,
+          isActive
         )
       )
+
+  extension (p: Provider) {
+    def deactivate: Provider = p.copy(isActive = false)
+  }

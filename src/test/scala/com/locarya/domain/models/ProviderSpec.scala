@@ -126,6 +126,61 @@ class ProviderSpec extends FunSuite {
     assertEquals(result.toOption.get.storefrontSlug, slug)
   }
 
+  test("create Provider defaults isActive to true") {
+    val email = Email.fromString("provider@example.com").toOption.get
+    val cnpj  = CNPJ.fromString("11.222.333/0001-81").toOption.get
+    val taxId = TaxId.fromCNPJ(cnpj)
+
+    val result = Provider.create(
+      id = ProviderId.generate, email = email, taxId = taxId,
+      businessName = "Festa Fácil Locações", tradeName = "Festa Fácil",
+      city = "São Paulo", state = "SP"
+    )
+
+    assert(result.isRight)
+    assertEquals(result.toOption.get.isActive, true)
+  }
+
+  test("create Provider with isActive = false stores it") {
+    val email = Email.fromString("provider@example.com").toOption.get
+    val cnpj  = CNPJ.fromString("11.222.333/0001-81").toOption.get
+    val taxId = TaxId.fromCNPJ(cnpj)
+
+    val result = Provider.create(
+      id = ProviderId.generate, email = email, taxId = taxId,
+      businessName = "Festa Fácil Locações", tradeName = "Festa Fácil",
+      city = "São Paulo", state = "SP",
+      isActive = false
+    )
+
+    assert(result.isRight)
+    assertEquals(result.toOption.get.isActive, false)
+  }
+
+  test("deactivate returns Provider copy with isActive = false") {
+    val email = Email.fromString("provider@example.com").toOption.get
+    val cnpj  = CNPJ.fromString("11.222.333/0001-81").toOption.get
+    val taxId = TaxId.fromCNPJ(cnpj)
+    val id    = ProviderId.generate
+
+    val provider = Provider.create(
+      id = id, email = email, taxId = taxId,
+      businessName = "Festa Fácil Locações", tradeName = "Festa Fácil",
+      city = "São Paulo", state = "SP"
+    ).toOption.get
+
+    val deactivated = provider.deactivate
+
+    assertEquals(deactivated.isActive, false)
+    assertEquals(deactivated.id, provider.id)
+    assertEquals(deactivated.email, provider.email)
+    assertEquals(deactivated.taxId, provider.taxId)
+    assertEquals(deactivated.businessName, provider.businessName)
+    assertEquals(deactivated.tradeName, provider.tradeName)
+    assertEquals(deactivated.city, provider.city)
+    assertEquals(deactivated.state, provider.state)
+  }
+
   test("reject Provider with empty state") {
     val email = Email.fromString("provider@example.com").toOption.get
     val cnpj = CNPJ.fromString("11.222.333/0001-81").toOption.get
