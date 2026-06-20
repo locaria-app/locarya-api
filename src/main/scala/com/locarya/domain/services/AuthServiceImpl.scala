@@ -33,7 +33,7 @@ class AuthServiceImpl[F[_]: Sync: Logger](
       providerId     = provider.id.value,
       name           = provider.tradeName,
       email          = provider.email.value,
-      plan           = planToString(provider.plan),
+      plan           = planTierToString(provider.planTier),
       storefrontSlug = provider.storefrontSlug.value
     )
 
@@ -69,7 +69,7 @@ class AuthServiceImpl[F[_]: Sync: Logger](
       val content = Json.obj(
         "providerId" -> provider.id.value.asJson,
         "email"      -> provider.email.value.asJson,
-        "plan"       -> planToString(provider.plan).asJson
+        "plan"       -> planTierToString(provider.planTier).asJson
       ).noSpaces
       JwtCirce.encode(
         JwtClaim(
@@ -82,6 +82,6 @@ class AuthServiceImpl[F[_]: Sync: Logger](
       )
     }
 
-  private def planToString(plan: Plan): String = plan match
-    case Plan.Freemium => "FREEMIUM"
-    case Plan.Premium  => "PREMIUM"
+  private def planTierToString(planTier: PlanTier): String = planTier match
+    case PlanTier.Freemium => "FREEMIUM"
+    case PlanTier.Premium  => "PREMIUM"

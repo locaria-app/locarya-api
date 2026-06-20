@@ -106,7 +106,7 @@ class ProviderSpec extends FunSuite {
     )
 
     assert(result.isRight)
-    assertEquals(result.toOption.get.plan, Plan.Freemium)
+    assertEquals(result.toOption.get.planTier, PlanTier.Freemium)
   }
 
   test("create Provider with explicit storefrontSlug stores it") {

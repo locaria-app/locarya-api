@@ -62,4 +62,23 @@ class EntityIdSpec extends FunSuite {
     assert(AttendantId.fromString(uuid).isRight)
     assert(PaymentId.fromString(uuid).isRight)
   }
+
+  test("PlanId.generate creates a valid UUID-based ID") {
+    val id = PlanId.generate
+    assert(id.value.nonEmpty)
+    UUID.fromString(id.value)
+  }
+
+  test("PlanId.fromString with valid UUID returns Right") {
+    val uuid = UUID.randomUUID().toString
+    val result = PlanId.fromString(uuid)
+    assert(result.isRight)
+    result.foreach(id => assertEquals(id.value, uuid))
+  }
+
+  test("PlanId.fromString with invalid string returns Left(InvalidEntityId)") {
+    val result = PlanId.fromString("not-a-uuid")
+    assert(result.isLeft)
+    result.left.foreach(err => assert(err.isInstanceOf[InvalidEntityId]))
+  }
 }

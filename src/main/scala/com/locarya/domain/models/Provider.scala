@@ -10,7 +10,7 @@ final case class Provider private (
   state:           String,
   contractStatus:  ContractStatus,
   passwordHash:    String,
-  plan:            Plan,
+  planTier:        PlanTier,
   storefrontSlug:  StorefrontSlug,
   isActive:        Boolean
 )
@@ -26,7 +26,7 @@ object Provider:
     state:          String,
     contractStatus: ContractStatus  = ContractStatus.Active,
     passwordHash:   String          = "",
-    plan:           Plan            = Plan.Freemium,
+    planTier:       PlanTier        = PlanTier.Freemium,
     storefrontSlug: StorefrontSlug  = StorefrontSlug.fromString("placeholder-000000").toOption.get,
     isActive:       Boolean         = true
   ): Either[ValidationError, Provider] =
@@ -45,7 +45,7 @@ object Provider:
           businessName.trim, tradeName.trim,
           city.trim, state.trim,
           contractStatus,
-          passwordHash, plan, storefrontSlug,
+          passwordHash, planTier, storefrontSlug,
           isActive
         )
       )
