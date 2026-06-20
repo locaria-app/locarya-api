@@ -137,3 +137,20 @@ object ItemImageId {
     }
   }
 }
+
+// PlanId
+final case class PlanId private (value: String)
+
+object PlanId {
+  def generate: PlanId = PlanId(UUID.randomUUID().toString)
+
+  def fromString(id: String): Either[ValidationError, PlanId] = {
+    try {
+      UUID.fromString(id)
+      Right(PlanId(id))
+    } catch {
+      case _: IllegalArgumentException =>
+        Left(InvalidEntityId(s"Invalid PlanId format: $id"))
+    }
+  }
+}

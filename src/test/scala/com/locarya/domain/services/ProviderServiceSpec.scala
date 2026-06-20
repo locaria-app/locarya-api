@@ -40,7 +40,7 @@ class ProviderServiceSpec extends CatsEffectSuite:
       svc     = ProviderServiceImpl[IO](repo)
       result <- svc.signup(validRequest)
       stored <- repo.findById(result.providerId)
-    yield assertEquals(stored.map(_.plan), Some(Plan.Freemium))
+    yield assertEquals(stored.map(_.planTier), Some(PlanTier.Freemium))
   }
 
   test("signup hashes password — stored hash is not the plain-text password") {

@@ -34,7 +34,7 @@ class ProviderServiceImpl[F[_]: Sync: Logger](
                         city           = request.city.trim,
                         state          = request.state.trim,
                         passwordHash   = hash,
-                        plan           = Plan.Freemium,
+                        planTier       = PlanTier.Freemium,
                         storefrontSlug = slug
                       )
                     )
