@@ -24,3 +24,4 @@ case class InvalidAvailabilityQuery(message: String) extends ValidationError
 case class InvalidAttendant(message: String)          extends ValidationError
 case class InvalidPayment(message: String)            extends ValidationError
 case class InvalidPlan(message: String)               extends ValidationError
+case class InvalidSubscription(message: String)       extends ValidationError

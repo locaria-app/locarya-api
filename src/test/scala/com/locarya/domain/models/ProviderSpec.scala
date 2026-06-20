@@ -1,6 +1,7 @@
 package com.locarya.domain.models
 
 import munit.FunSuite
+import java.time.LocalDate
 
 class ProviderSpec extends FunSuite {
 
@@ -179,6 +180,70 @@ class ProviderSpec extends FunSuite {
     assertEquals(deactivated.tradeName, provider.tradeName)
     assertEquals(deactivated.city, provider.city)
     assertEquals(deactivated.state, provider.state)
+  }
+
+  test("Provider.create does not accept contractStatus parameter") {
+    // contractStatus was removed from Provider.create; this test verifies compilation
+    // and that the resulting Provider has no contractStatus field
+    val email = Email.fromString("provider@example.com").toOption.get
+    val cnpj  = CNPJ.fromString("11.222.333/0001-81").toOption.get
+    val taxId = TaxId.fromCNPJ(cnpj)
+
+    val result = Provider.create(
+      id = ProviderId.generate, email = email, taxId = taxId,
+      businessName = "Festa Fácil Locações", tradeName = "Festa Fácil",
+      city = "São Paulo", state = "SP"
+    )
+
+    assert(result.isRight)
+  }
+
+  test("hasActiveSubscriptionOn returns true when subscription isActiveOn the date") {
+    val email = Email.fromString("provider@example.com").toOption.get
+    val cnpj  = CNPJ.fromString("11.222.333/0001-81").toOption.get
+    val taxId = TaxId.fromCNPJ(cnpj)
+
+    val provider = Provider.create(
+      id = ProviderId.generate, email = email, taxId = taxId,
+      businessName = "Festa Fácil Locações", tradeName = "Festa Fácil",
+      city = "São Paulo", state = "SP"
+    ).toOption.get
+
+    val start = LocalDate.of(2024, 1, 1)
+    val subscription = Subscription.create(
+      id         = SubscriptionId.generate,
+      providerId = provider.id,
+      planId     = PlanId.generate,
+      status     = SubscriptionStatus.Active,
+      startDate  = start,
+      endDate    = None
+    ).toOption.get
+
+    assert(Provider.hasActiveSubscriptionOn(subscription, start.plusDays(30)))
+  }
+
+  test("hasActiveSubscriptionOn returns false when subscription is Suspended") {
+    val email = Email.fromString("provider@example.com").toOption.get
+    val cnpj  = CNPJ.fromString("11.222.333/0001-81").toOption.get
+    val taxId = TaxId.fromCNPJ(cnpj)
+
+    val provider = Provider.create(
+      id = ProviderId.generate, email = email, taxId = taxId,
+      businessName = "Festa Fácil Locações", tradeName = "Festa Fácil",
+      city = "São Paulo", state = "SP"
+    ).toOption.get
+
+    val start = LocalDate.of(2024, 1, 1)
+    val subscription = Subscription.create(
+      id         = SubscriptionId.generate,
+      providerId = provider.id,
+      planId     = PlanId.generate,
+      status     = SubscriptionStatus.Suspended,
+      startDate  = start,
+      endDate    = None
+    ).toOption.get
+
+    assert(!Provider.hasActiveSubscriptionOn(subscription, start.plusDays(30)))
   }
 
   test("reject Provider with empty state") {

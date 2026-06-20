@@ -154,3 +154,20 @@ object PlanId {
     }
   }
 }
+
+// SubscriptionId
+final case class SubscriptionId private (value: String)
+
+object SubscriptionId {
+  def generate: SubscriptionId = SubscriptionId(UUID.randomUUID().toString)
+
+  def fromString(id: String): Either[ValidationError, SubscriptionId] = {
+    try {
+      UUID.fromString(id)
+      Right(SubscriptionId(id))
+    } catch {
+      case _: IllegalArgumentException =>
+        Left(InvalidEntityId(s"Invalid SubscriptionId format: $id"))
+    }
+  }
+}
