@@ -118,7 +118,7 @@ record_telemetry() {
 }
 # ----------------------------------------------------------------------------
 
-# --- Start every issue from a clean main -------------------------------------
+# --- Start every issue from a clean, up-to-date main ------------------------
 # pr-runner leaves you on the issue's feature branch. Without resetting, the NEXT
 # serial run would stack its work onto the previous issue's branch. Untracked
 # files (e.g. not-yet-committed tooling) are fine; tracked uncommitted changes
@@ -129,6 +129,7 @@ if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
 fi
 git switch main >/dev/null 2>&1 || git checkout main
 git pull --ff-only --quiet || true
+echo ">> main is up-to-date"
 # -----------------------------------------------------------------------------
 
 export REPO="${REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
@@ -149,6 +150,16 @@ TDD_SID="$(uuidgen)"   # fresh session for step 2 — discarded after tdd
 PR_SID="$(uuidgen)"    # fresh session for step 3 — no /tdd context carried over
 echo ">> issue #$N (migration=$MIG) ctx-session=$CTX_SID tdd-session=$TDD_SID pr-session=$PR_SID"
 vlog "start: $(date '+%Y-%m-%d %H:%M:%S') | ctx=$CTX_SID tdd=$TDD_SID pr=$PR_SID"
+
+# Create the feature branch now (from main) so the name is deterministic and
+# both /tdd and pr-runner share the same branch without relying on the agent.
+BRANCH="issue-$N"
+if git switch -c "$BRANCH" 2>/dev/null; then
+  echo ">> created branch: $BRANCH"
+else
+  git switch "$BRANCH"
+  echo ">> resumed branch: $BRANCH (already existed)"
+fi
 
 BRIEF_FILE="$RALPH_TMP/issue-$N-brief.md"   # inside project tree, sandbox-writable, gitignored
 CTX_RAW="$RALPH_TMP/issue-$N-ctx.raw.jsonl"  # raw stream-json events (sentinel + telemetry)
@@ -199,6 +210,9 @@ Implementation brief for this issue is at $BRIEF_FILE — read it before startin
 already lists the existing patterns, domain terms, and files to touch — trust it instead of \
 re-discovering them by re-reading unrelated files.
 
+You are already on branch '$BRANCH' (created from main). Commit all work to this branch — \
+do not create a new branch.
+
 UNATTENDED RUN — no human is available to answer questions. Do not pause to ask. For \
 each decision, choose the option most consistent with the PRD, the ADRs, CONTEXT.md and \
 CLAUDE.md, and list every such choice under a '## Assumptions' heading in the PR body. \
@@ -227,16 +241,16 @@ fi
 cleanup "$TDD_RAW" "$TDD_LOG" "$BRIEF_FILE"
 
 # 3. Open the PR. Fresh session — no /tdd context carried over.
-#    The branch was already created and committed by /tdd; we pass it explicitly.
+#    BRANCH was created by the script (from main) before step 1 — the name is
+#    deterministic; we pass it explicitly rather than reading git state.
 #    pr-runner never merges and never pushes to main.
 vlog "step 3/3: pr-runner..."
 STEP_START=$(date +%s)
 PR_RAW="$RALPH_TMP/issue-$N-pr.raw.jsonl"
-CURRENT_BRANCH="$(git branch --show-current)"
 run_claude "$PR_RAW" --session-id "$PR_SID" --permission-mode acceptEdits \
   -p "Use the pr-runner subagent for issue #$N. \
-The code is already committed on branch '$CURRENT_BRANCH' — do not create a new branch or re-commit. \
-Open the PR and stop — do not merge."
+The code is already committed on branch '$BRANCH' — do not create a new branch or re-commit. \
+Open the PR targeting main and stop — do not merge."
 record_telemetry "pr-runner" "$PR_RAW" "$(( $(date +%s) - STEP_START ))"
 cleanup "$PR_RAW"
 vlog "step 3/3 done ($(elapsed $STEP_START))"
