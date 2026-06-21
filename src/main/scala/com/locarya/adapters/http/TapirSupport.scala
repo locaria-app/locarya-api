@@ -16,9 +16,14 @@ object TapirSupport:
 
   final case class ErrorBody(error: String)
 
-  // Base endpoint with bearer auth security input and unified error output
+  // Path prefix shared by all API endpoints — embed here so OpenAPI docs reflect the real URL
+  val publicBase: Endpoint[Unit, Unit, Unit, Unit, Any] =
+    endpoint.in("api" / "v1")
+
+  // Base endpoint for JWT-secured routes: prefix + bearer auth + unified error output
   val securedBase: Endpoint[String, Unit, (StatusCode, ErrorBody), Unit, Any] =
     endpoint
+      .in("api" / "v1")
       .securityIn(auth.bearer[String]())
       .errorOut(statusCode.and(jsonBody[ErrorBody]))
 

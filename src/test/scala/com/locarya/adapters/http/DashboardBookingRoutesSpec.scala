@@ -78,10 +78,10 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
   private case class Auth(token: String, id: String)
 
   private def signupAndLogin(ctx: Ctx): IO[Auth] =
-    val signupReq = Request[IO](Method.POST, uri"/auth/signup")
+    val signupReq = Request[IO](Method.POST, uri"/api/v1/auth/signup")
       .withEntity(signupBody)
       .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
-    val loginReq = Request[IO](Method.POST, uri"/auth/login")
+    val loginReq = Request[IO](Method.POST, uri"/api/v1/auth/login")
       .withEntity(loginBody)
       .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
     for
@@ -107,7 +107,7 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
     }"""
 
   private def createItem(ctx: Ctx, token: String): IO[String] =
-    val req = Request[IO](Method.POST, uri"/dashboard/items")
+    val req = Request[IO](Method.POST, uri"/api/v1/dashboard/items")
       .withEntity(validItemBody)
       .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(token))
     for
@@ -357,7 +357,7 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
       auth1     <- signupAndLogin(ctx)
       // Register a second provider and log in as them
       _         <- ctx.allRoutes.orNotFound(
-                     Request[IO](Method.POST, uri"/auth/signup")
+                     Request[IO](Method.POST, uri"/api/v1/auth/signup")
                        .withEntity("""{
                          "email":"other@dashboard.com","password":"otherpass123",
                          "name":"Other Locador","city":"Rio","state":"RJ","cnpj":"11.222.333/0001-81"
@@ -365,7 +365,7 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
                        .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
                    )
       loginResp <- ctx.allRoutes.orNotFound(
-                     Request[IO](Method.POST, uri"/auth/login")
+                     Request[IO](Method.POST, uri"/api/v1/auth/login")
                        .withEntity("""{"email":"other@dashboard.com","password":"otherpass123"}""")
                        .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
                    )

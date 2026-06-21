@@ -71,10 +71,10 @@ class StorefrontRoutesSpec extends CatsEffectSuite:
   private case class Auth(token: String, id: String)
 
   private def signupAndLogin(ctx: Ctx): IO[Auth] =
-    val signupReq = Request[IO](Method.POST, uri"/auth/signup")
+    val signupReq = Request[IO](Method.POST, uri"/api/v1/auth/signup")
       .withEntity(signupBody)
       .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
-    val loginReq = Request[IO](Method.POST, uri"/auth/login")
+    val loginReq = Request[IO](Method.POST, uri"/api/v1/auth/login")
       .withEntity(loginBody)
       .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
     for
@@ -100,7 +100,7 @@ class StorefrontRoutesSpec extends CatsEffectSuite:
     }"""
 
   private def createItem(ctx: Ctx, token: String): IO[String] =
-    val req = Request[IO](Method.POST, uri"/dashboard/items")
+    val req = Request[IO](Method.POST, uri"/api/v1/dashboard/items")
       .withEntity(validItemBody)
       .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(token))
     for
@@ -138,7 +138,7 @@ class StorefrontRoutesSpec extends CatsEffectSuite:
       itemId   <- createItem(ctx, auth.token)
       _        <- createCombo(ctx, auth.token, itemId)
       slug     <- getSlug(ctx, auth.id)
-      request   = Request[IO](Method.GET, Uri.unsafeFromString(s"/storefront/$slug"))
+      request   = Request[IO](Method.GET, Uri.unsafeFromString(s"/api/v1/storefront/$slug"))
       response <- ctx.allRoutes.orNotFound(request)
       body     <- response.as[String]
       json      = parse(body).toOption.get
@@ -155,7 +155,7 @@ class StorefrontRoutesSpec extends CatsEffectSuite:
       auth     <- signupAndLogin(ctx)
       _        <- createItem(ctx, auth.token)
       slug     <- getSlug(ctx, auth.id)
-      request   = Request[IO](Method.GET, Uri.unsafeFromString(s"/storefront/$slug"))
+      request   = Request[IO](Method.GET, Uri.unsafeFromString(s"/api/v1/storefront/$slug"))
       response <- ctx.allRoutes.orNotFound(request)
       body     <- response.as[String]
       json      = parse(body).toOption.get
@@ -184,7 +184,7 @@ class StorefrontRoutesSpec extends CatsEffectSuite:
       itemId   <- createItem(ctx, auth.token)
       _        <- createCombo(ctx, auth.token, itemId)
       slug     <- getSlug(ctx, auth.id)
-      request   = Request[IO](Method.GET, Uri.unsafeFromString(s"/storefront/$slug"))
+      request   = Request[IO](Method.GET, Uri.unsafeFromString(s"/api/v1/storefront/$slug"))
       response <- ctx.allRoutes.orNotFound(request)
       body     <- response.as[String]
       json      = parse(body).toOption.get
@@ -215,11 +215,11 @@ class StorefrontRoutesSpec extends CatsEffectSuite:
       auth     <- signupAndLogin(ctx)
       itemId   <- createItem(ctx, auth.token)
       _        <- ctx.allRoutes.orNotFound(
-                    Request[IO](Method.DELETE, Uri.unsafeFromString(s"/dashboard/items/$itemId"))
+                    Request[IO](Method.DELETE, Uri.unsafeFromString(s"/api/v1/dashboard/items/$itemId"))
                       .withHeaders(authHeader(auth.token))
                   )
       slug     <- getSlug(ctx, auth.id)
-      request   = Request[IO](Method.GET, Uri.unsafeFromString(s"/storefront/$slug"))
+      request   = Request[IO](Method.GET, Uri.unsafeFromString(s"/api/v1/storefront/$slug"))
       response <- ctx.allRoutes.orNotFound(request)
       body     <- response.as[String]
       json      = parse(body).toOption.get
@@ -240,7 +240,7 @@ class StorefrontRoutesSpec extends CatsEffectSuite:
                       .withHeaders(authHeader(auth.token))
                   )
       slug     <- getSlug(ctx, auth.id)
-      request   = Request[IO](Method.GET, Uri.unsafeFromString(s"/storefront/$slug"))
+      request   = Request[IO](Method.GET, Uri.unsafeFromString(s"/api/v1/storefront/$slug"))
       response <- ctx.allRoutes.orNotFound(request)
       body     <- response.as[String]
       json      = parse(body).toOption.get
@@ -253,7 +253,7 @@ class StorefrontRoutesSpec extends CatsEffectSuite:
   test("GET /storefront/:slug returns 404 for unknown slug") {
     for
       ctx      <- makeCtx
-      request   = Request[IO](Method.GET, uri"/storefront/no-such-provider-slug")
+      request   = Request[IO](Method.GET, uri"/api/v1/storefront/no-such-provider-slug")
       response <- ctx.allRoutes.orNotFound(request)
     yield assertEquals(response.status, Status.NotFound)
   }
@@ -263,10 +263,18 @@ class StorefrontRoutesSpec extends CatsEffectSuite:
       ctx      <- makeCtx
       auth     <- signupAndLogin(ctx)
       slug     <- getSlug(ctx, auth.id)
-      request   = Request[IO](Method.GET, Uri.unsafeFromString(s"/storefront/$slug"))
+      request   = Request[IO](Method.GET, Uri.unsafeFromString(s"/api/v1/storefront/$slug"))
       response <- ctx.allRoutes.orNotFound(request)
     yield assert(
       response.status != Status.Unauthorized,
       s"Expected public access (not 401) but got ${response.status}"
     )
+  }
+
+  test("StorefrontRoutes.allEndpoints is non-empty and path includes api/v1/storefront") {
+    assert(StorefrontRoutes.allEndpoints.nonEmpty)
+    val desc = StorefrontRoutes.allEndpoints.map(_.show).mkString
+    assert(desc.contains("api"),       s"Expected 'api' prefix in endpoint: $desc")
+    assert(desc.contains("v1"),        s"Expected 'v1' prefix in endpoint: $desc")
+    assert(desc.contains("storefront"), s"Expected 'storefront' in endpoint: $desc")
   }

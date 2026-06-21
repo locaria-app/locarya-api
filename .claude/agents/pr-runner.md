@@ -21,7 +21,13 @@ git fetch origin
 
 ## Process
 
-1. **Identify the issue.** You'll be told the issue number. Pull its title for naming/linking: `gh issue view <N> --json number,title`.
+1. **Identify the issue (if any).** You'll be told the issue number, or infer it from the current branch name (`issue-<N>-*` or `issue-<N>`). Pull its title for naming/linking:
+
+   ```bash
+   gh issue view <N> --json number,title
+   ```
+
+   If no issue is associated (e.g., a chore or doc-only change), skip the `Closes` line. If an issue can be inferred from the branch name, **always include it**.
 
 2. **Branch.** If not already on a feature branch, create one:
 
