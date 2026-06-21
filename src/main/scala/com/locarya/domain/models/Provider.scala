@@ -1,18 +1,19 @@
 package com.locarya.domain.models
 
+import java.time.LocalDate
+
 final case class Provider private (
-  id:              ProviderId,
-  email:           Email,
-  taxId:           TaxId,
-  businessName:    String,
-  tradeName:       String,
-  city:            String,
-  state:           String,
-  contractStatus:  ContractStatus,
-  passwordHash:    String,
-  planTier:        PlanTier,
-  storefrontSlug:  StorefrontSlug,
-  isActive:        Boolean
+  id:             ProviderId,
+  email:          Email,
+  taxId:          TaxId,
+  businessName:   String,
+  tradeName:      String,
+  city:           String,
+  state:          String,
+  passwordHash:   String,
+  planTier:       PlanTier,
+  storefrontSlug: StorefrontSlug,
+  isActive:       Boolean
 )
 
 object Provider:
@@ -24,11 +25,10 @@ object Provider:
     tradeName:      String,
     city:           String,
     state:          String,
-    contractStatus: ContractStatus  = ContractStatus.Active,
-    passwordHash:   String          = "",
-    planTier:       PlanTier        = PlanTier.Freemium,
-    storefrontSlug: StorefrontSlug  = StorefrontSlug.fromString("placeholder-000000").toOption.get,
-    isActive:       Boolean         = true
+    passwordHash:   String         = "",
+    planTier:       PlanTier       = PlanTier.Freemium,
+    storefrontSlug: StorefrontSlug = StorefrontSlug.fromString("placeholder-000000").toOption.get,
+    isActive:       Boolean        = true
   ): Either[ValidationError, Provider] =
     if businessName.trim.isEmpty then
       Left(InvalidProvider("Business name cannot be empty"))
@@ -44,11 +44,13 @@ object Provider:
           id, email, taxId,
           businessName.trim, tradeName.trim,
           city.trim, state.trim,
-          contractStatus,
           passwordHash, planTier, storefrontSlug,
           isActive
         )
       )
+
+  def hasActiveSubscriptionOn(subscription: Subscription, date: LocalDate): Boolean =
+    subscription.isActiveOn(date)
 
   extension (p: Provider) {
     def deactivate: Provider = p.copy(isActive = false)
