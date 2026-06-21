@@ -13,6 +13,7 @@ import org.http4s.circe.*
 import org.http4s.dsl.io.*
 import org.http4s.headers.Authorization
 import org.http4s.implicits.*
+import org.http4s.server.Router
 import org.typelevel.ci.CIStringSyntax
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.noop.NoOpLogger
@@ -27,7 +28,7 @@ class AuthRoutesSpec extends CatsEffectSuite:
     InMemoryProviderRepository.make[IO].map { repo =>
       val providerSvc = ProviderServiceImpl[IO](repo)
       val authSvc     = AuthServiceImpl[IO](repo, testJwtSecret)
-      AuthRoutes.routes[IO](providerSvc, authSvc)
+      Router("/api/v1" -> AuthRoutes.routes[IO](providerSvc, authSvc))
     }
 
   private val validSignupBody: String =
@@ -51,7 +52,7 @@ class AuthRoutesSpec extends CatsEffectSuite:
   test("POST /auth/signup with valid body returns 201") {
     for
       routes   <- makeRoutes
-      request   = Request[IO](Method.POST, uri"/auth/signup")
+      request   = Request[IO](Method.POST, uri"/api/v1/auth/signup")
                     .withEntity(validSignupBody)
                     .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
       response <- routes.orNotFound(request)
@@ -61,7 +62,7 @@ class AuthRoutesSpec extends CatsEffectSuite:
   test("POST /auth/signup response body contains providerId and storefrontSlug") {
     for
       routes   <- makeRoutes
-      request   = Request[IO](Method.POST, uri"/auth/signup")
+      request   = Request[IO](Method.POST, uri"/api/v1/auth/signup")
                     .withEntity(validSignupBody)
                     .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
       response <- routes.orNotFound(request)
@@ -79,7 +80,7 @@ class AuthRoutesSpec extends CatsEffectSuite:
     for
       routes  <- makeRoutes
       wrapped  = CorrelationIdMiddleware(routes)
-      request  = Request[IO](Method.POST, uri"/auth/signup")
+      request  = Request[IO](Method.POST, uri"/api/v1/auth/signup")
                    .withEntity(validSignupBody)
                    .withHeaders(
                      Header.Raw(ci"Content-Type",    "application/json"),
@@ -94,7 +95,7 @@ class AuthRoutesSpec extends CatsEffectSuite:
   test("POST /auth/signup with duplicate email returns 409 Conflict") {
     for
       routes  <- makeRoutes
-      req      = Request[IO](Method.POST, uri"/auth/signup")
+      req      = Request[IO](Method.POST, uri"/api/v1/auth/signup")
                    .withEntity(validSignupBody)
                    .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
       _       <- routes.orNotFound(req)
@@ -105,7 +106,7 @@ class AuthRoutesSpec extends CatsEffectSuite:
   test("POST /auth/signup with malformed JSON returns 400") {
     for
       routes  <- makeRoutes
-      request  = Request[IO](Method.POST, uri"/auth/signup")
+      request  = Request[IO](Method.POST, uri"/api/v1/auth/signup")
                    .withEntity("""{"email": "missing-fields"}""")
                    .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
       response <- routes.orNotFound(request)
@@ -116,7 +117,7 @@ class AuthRoutesSpec extends CatsEffectSuite:
     val badBody = validSignupBody.replace("joao@example.com", "not-an-email")
     for
       routes  <- makeRoutes
-      request  = Request[IO](Method.POST, uri"/auth/signup")
+      request  = Request[IO](Method.POST, uri"/api/v1/auth/signup")
                    .withEntity(badBody)
                    .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
       response <- routes.orNotFound(request)
@@ -127,7 +128,7 @@ class AuthRoutesSpec extends CatsEffectSuite:
     val badBody = validSignupBody.replace("securepassword123", "short")
     for
       routes  <- makeRoutes
-      request  = Request[IO](Method.POST, uri"/auth/signup")
+      request  = Request[IO](Method.POST, uri"/api/v1/auth/signup")
                    .withEntity(badBody)
                    .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
       response <- routes.orNotFound(request)
@@ -137,10 +138,10 @@ class AuthRoutesSpec extends CatsEffectSuite:
   // ── Login tests ─────────────────────────────────────────────────────────────
 
   private def signupThenLogin(routes: HttpRoutes[IO]): IO[Response[IO]] =
-    val signupReq = Request[IO](Method.POST, uri"/auth/signup")
+    val signupReq = Request[IO](Method.POST, uri"/api/v1/auth/signup")
       .withEntity(validSignupBody)
       .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
-    val loginReq = Request[IO](Method.POST, uri"/auth/login")
+    val loginReq = Request[IO](Method.POST, uri"/api/v1/auth/login")
       .withEntity(validLoginBody)
       .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
     routes.orNotFound(signupReq) >> routes.orNotFound(loginReq)
@@ -175,11 +176,11 @@ class AuthRoutesSpec extends CatsEffectSuite:
     val wrongLoginBody = """{"email":"joao@example.com","password":"wrongpassword!"}"""
     for
       routes    <- makeRoutes
-      signupReq  = Request[IO](Method.POST, uri"/auth/signup")
+      signupReq  = Request[IO](Method.POST, uri"/api/v1/auth/signup")
                      .withEntity(validSignupBody)
                      .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
       _         <- routes.orNotFound(signupReq)
-      loginReq   = Request[IO](Method.POST, uri"/auth/login")
+      loginReq   = Request[IO](Method.POST, uri"/api/v1/auth/login")
                      .withEntity(wrongLoginBody)
                      .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
       response  <- routes.orNotFound(loginReq)
@@ -190,7 +191,7 @@ class AuthRoutesSpec extends CatsEffectSuite:
     val unknownBody = """{"email":"nobody@example.com","password":"securepassword123"}"""
     for
       routes   <- makeRoutes
-      loginReq  = Request[IO](Method.POST, uri"/auth/login")
+      loginReq  = Request[IO](Method.POST, uri"/api/v1/auth/login")
                     .withEntity(unknownBody)
                     .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
       response <- routes.orNotFound(loginReq)

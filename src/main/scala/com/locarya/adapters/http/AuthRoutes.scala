@@ -2,13 +2,17 @@ package com.locarya.adapters.http
 
 import cats.effect.Async
 import cats.syntax.all.*
+import com.locarya.adapters.http.TapirSupport.ErrorBody
 import com.locarya.domain.models.{AuthError, SignupError}
 import com.locarya.domain.ports.{AuthService, LoginRequest, ProviderService, SignupRequest}
 import io.circe.generic.auto.*
-import io.circe.syntax.*
-import org.http4s.*
-import org.http4s.circe.*
-import org.http4s.dsl.Http4sDsl
+import org.http4s.HttpRoutes
+import sttp.model.StatusCode
+import sttp.tapir.*
+import sttp.tapir.AnyEndpoint
+import sttp.tapir.generic.auto.*
+import sttp.tapir.json.circe.*
+import sttp.tapir.server.http4s.Http4sServerInterpreter
 
 object AuthRoutes:
 
@@ -41,80 +45,66 @@ object AuthRoutes:
     storefrontSlug: String
   )
 
-  private case class ErrorResponseBody(error: String)
+  private val signupE = endpoint.post
+    .in("auth" / "signup")
+    .in(jsonBody[SignupRequestBody])
+    .out(statusCode(StatusCode.Created).and(jsonBody[SignupResponseBody]))
+    .errorOut(statusCode.and(jsonBody[ErrorBody]))
+
+  private val loginE = endpoint.post
+    .in("auth" / "login")
+    .in(jsonBody[LoginRequestBody])
+    .out(jsonBody[LoginResponseBody])
+    .errorOut(statusCode.and(jsonBody[ErrorBody]))
+
+  val allEndpoints: List[AnyEndpoint] = List(signupE, loginE)
 
   def routes[F[_]: Async](
     providerService: ProviderService[F],
     authService:     AuthService[F]
   ): HttpRoutes[F] =
-    val dsl = Http4sDsl[F]
-    import dsl.*
 
-    given EntityDecoder[F, SignupRequestBody] = jsonOf[F, SignupRequestBody]
-    given EntityDecoder[F, LoginRequestBody]  = jsonOf[F, LoginRequestBody]
+    type Err = (StatusCode, ErrorBody)
 
-    HttpRoutes.of[F]:
-      case req @ POST -> Root / "auth" / "signup" =>
-        req.as[SignupRequestBody]
-          .flatMap { body =>
-            providerService
-              .signup(
-                SignupRequest(
-                  email    = body.email,
-                  password = body.password,
-                  name     = body.name,
-                  city     = body.city,
-                  state    = body.state,
-                  cpf      = body.cpf,
-                  cnpj     = body.cnpj
-                )
-              )
-              .flatMap { result =>
-                Created(SignupResponseBody(result.providerId.value, result.storefrontSlug.value).asJson)
-              }
-              .handleErrorWith {
-                case SignupError.DuplicateEmail(email) =>
-                  Conflict(ErrorResponseBody(s"Email already registered: $email").asJson)
-                case SignupError.InvalidInput(err) =>
-                  BadRequest(ErrorResponseBody(err.toString).asJson)
-                case _ =>
-                  InternalServerError()
-              }
-          }
-          .handleErrorWith {
-            case _: MalformedMessageBodyFailure =>
-              BadRequest(ErrorResponseBody("Invalid or incomplete request body").asJson)
-            case _: InvalidMessageBodyFailure =>
-              BadRequest(ErrorResponseBody("Invalid request body").asJson)
-          }
+    val signupServer = signupE.serverLogic[F] { body =>
+      providerService
+        .signup(SignupRequest(
+          email    = body.email,
+          password = body.password,
+          name     = body.name,
+          city     = body.city,
+          state    = body.state,
+          cpf      = body.cpf,
+          cnpj     = body.cnpj
+        ))
+        .map(result => Right(SignupResponseBody(result.providerId.value, result.storefrontSlug.value)))
+        .handleErrorWith {
+          case SignupError.DuplicateEmail(email) =>
+            Left((StatusCode.Conflict, ErrorBody(s"Email already registered: $email"))).pure[F]
+          case SignupError.InvalidInput(err) =>
+            Left((StatusCode.BadRequest, ErrorBody(err.toString))).pure[F]
+          case _ =>
+            Left((StatusCode.InternalServerError, ErrorBody("Internal server error"))).pure[F]
+        }
+    }
 
-      case req @ POST -> Root / "auth" / "login" =>
-        req.as[LoginRequestBody]
-          .flatMap { body =>
-            authService
-              .login(LoginRequest(email = body.email, password = body.password))
-              .flatMap { result =>
-                Ok(LoginResponseBody(
-                  token          = result.token,
-                  id             = result.providerId,
-                  name           = result.name,
-                  email          = result.email,
-                  planId         = result.plan,
-                  storefrontSlug = result.storefrontSlug
-                ).asJson)
-              }
-              .handleErrorWith {
-                case _: AuthError =>
-                  Response[F](Status.Unauthorized)
-                    .withEntity(ErrorResponseBody("Invalid credentials").asJson)
-                    .pure[F]
-                case _ =>
-                  InternalServerError()
-              }
-          }
-          .handleErrorWith {
-            case _: MalformedMessageBodyFailure =>
-              BadRequest(ErrorResponseBody("Invalid or incomplete request body").asJson)
-            case _: InvalidMessageBodyFailure =>
-              BadRequest(ErrorResponseBody("Invalid request body").asJson)
-          }
+    val loginServer = loginE.serverLogic[F] { body =>
+      authService
+        .login(LoginRequest(email = body.email, password = body.password))
+        .map(result => Right(LoginResponseBody(
+          token          = result.token,
+          id             = result.providerId,
+          name           = result.name,
+          email          = result.email,
+          planId         = result.plan,
+          storefrontSlug = result.storefrontSlug
+        )))
+        .handleErrorWith {
+          case _: AuthError =>
+            Left((StatusCode.Unauthorized, ErrorBody("Invalid credentials"))).pure[F]
+          case _ =>
+            Left((StatusCode.InternalServerError, ErrorBody("Internal server error"))).pure[F]
+        }
+    }
+
+    Http4sServerInterpreter[F]().toRoutes(List(signupServer, loginServer))
