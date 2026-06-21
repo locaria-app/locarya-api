@@ -37,7 +37,7 @@ object Main extends IOApp.Simple {
       authService     = AuthServiceImpl[IO](providerRepo, config.jwt.secret)
 
       swaggerEnabled = sys.env.getOrElse("SWAGGER_ENABLED", "false") == "true"
-      docsRoute      = SwaggerRoutes.maybeDocsRoute[IO](ItemRoutes.allEndpoints, swaggerEnabled)
+      docsRoute      = SwaggerRoutes.maybeDocsRoute[IO](ItemRoutes.allEndpoints ++ AuthRoutes.allEndpoints, swaggerEnabled)
 
       apiV1Routes = Router(
         "/api/v1" -> AuthRoutes.routes[IO](providerService, authService)
