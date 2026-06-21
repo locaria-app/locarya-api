@@ -2,7 +2,7 @@ package com.locarya.adapters.http
 
 import cats.effect.Async
 import cats.syntax.all.*
-import com.locarya.adapters.http.TapirSupport.ErrorBody
+import com.locarya.adapters.http.TapirSupport.{ErrorBody, publicBase}
 import com.locarya.domain.models.ValidationError
 import com.locarya.domain.models.*
 import com.locarya.domain.ports.{AvailabilityService, StorefrontService}
@@ -14,7 +14,6 @@ import java.time.format.DateTimeParseException
 import org.http4s.HttpRoutes
 import sttp.model.StatusCode
 import sttp.tapir.*
-import sttp.tapir.AnyEndpoint
 import sttp.tapir.generic.auto.*
 import sttp.tapir.json.circe.*
 import sttp.tapir.server.http4s.Http4sServerInterpreter
@@ -70,7 +69,7 @@ object AvailabilityRoutes:
       case None      => Right(None)
       case Some(str) => BookingId.fromString(str.trim).map(Some(_))
 
-  private val availabilityE = endpoint.get
+  private val availabilityE = publicBase.get
     .in("storefront" / path[String]("slug") / "availability")
     .in(query[String]("date"))
     .in(query[Option[String]]("items"))

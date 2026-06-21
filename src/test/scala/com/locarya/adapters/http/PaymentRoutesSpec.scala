@@ -64,10 +64,10 @@ class PaymentRoutesSpec extends CatsEffectSuite:
   private case class Auth(token: String, id: String)
 
   private def signupAndLogin(ctx: Ctx): IO[Auth] =
-    val signupReq = Request[IO](Method.POST, uri"/auth/signup")
+    val signupReq = Request[IO](Method.POST, uri"/api/v1/auth/signup")
       .withEntity(signupBody)
       .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
-    val loginReq = Request[IO](Method.POST, uri"/auth/login")
+    val loginReq = Request[IO](Method.POST, uri"/api/v1/auth/login")
       .withEntity(loginBody)
       .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
     for
@@ -199,7 +199,7 @@ class PaymentRoutesSpec extends CatsEffectSuite:
       bookingId <- seedBooking(ctx, pid1)
       // signup second provider
       _         <- ctx.allRoutes.orNotFound(
-                     Request[IO](Method.POST, uri"/auth/signup")
+                     Request[IO](Method.POST, uri"/api/v1/auth/signup")
                        .withEntity("""{
                          "email":"other@payment.com","password":"otherpass123",
                          "name":"Other Locador","city":"Rio","state":"RJ","cnpj":"11.222.333/0001-81"
@@ -207,7 +207,7 @@ class PaymentRoutesSpec extends CatsEffectSuite:
                        .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
                    )
       loginResp <- ctx.allRoutes.orNotFound(
-                     Request[IO](Method.POST, uri"/auth/login")
+                     Request[IO](Method.POST, uri"/api/v1/auth/login")
                        .withEntity("""{"email":"other@payment.com","password":"otherpass123"}""")
                        .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
                    )
@@ -285,7 +285,7 @@ class PaymentRoutesSpec extends CatsEffectSuite:
       pid1       = ProviderId.fromString(auth1.id).toOption.get
       bookingId <- seedBooking(ctx, pid1)
       _         <- ctx.allRoutes.orNotFound(
-                     Request[IO](Method.POST, uri"/auth/signup")
+                     Request[IO](Method.POST, uri"/api/v1/auth/signup")
                        .withEntity("""{
                          "email":"other2@payment.com","password":"otherpass123",
                          "name":"Other2 Locador","city":"Rio","state":"RJ","cnpj":"11.222.333/0001-81"
@@ -293,7 +293,7 @@ class PaymentRoutesSpec extends CatsEffectSuite:
                        .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
                    )
       loginResp <- ctx.allRoutes.orNotFound(
-                     Request[IO](Method.POST, uri"/auth/login")
+                     Request[IO](Method.POST, uri"/api/v1/auth/login")
                        .withEntity("""{"email":"other2@payment.com","password":"otherpass123"}""")
                        .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
                    )

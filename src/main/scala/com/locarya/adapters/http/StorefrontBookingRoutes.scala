@@ -2,7 +2,7 @@ package com.locarya.adapters.http
 
 import cats.effect.Async
 import cats.syntax.all.*
-import com.locarya.adapters.http.TapirSupport.ErrorBody
+import com.locarya.adapters.http.TapirSupport.{ErrorBody, publicBase}
 import com.locarya.domain.models.ValidationError
 import com.locarya.domain.models.*
 import com.locarya.domain.ports.{BookingLineInput, BookingService, CreateBookingRequest, CustomerInput}
@@ -14,7 +14,6 @@ import java.time.format.DateTimeParseException
 import org.http4s.HttpRoutes
 import sttp.model.StatusCode
 import sttp.tapir.*
-import sttp.tapir.AnyEndpoint
 import sttp.tapir.generic.auto.*
 import sttp.tapir.json.circe.*
 import sttp.tapir.server.http4s.Http4sServerInterpreter
@@ -64,6 +63,25 @@ object StorefrontBookingRoutes:
   private given Codec[BookingResponse]   = deriveCodec
   private given Schema[BookingResponse]  = Schema.derived
 
+  // ── 409 Conflict response carries per-item availability so the frontend
+  //    can show "only N left" without parsing a string.
+  private case class UnavailableItemBody(itemId: String, availableQty: Int)
+  private given Codec[UnavailableItemBody]  = deriveCodec
+  private given Schema[UnavailableItemBody] = Schema.derived
+
+  private sealed trait BookingApiError
+  private object BookingApiError:
+    final case class Conflict(error: String, unavailableItems: List[UnavailableItemBody]) extends BookingApiError
+    final case class BadRequest(error: String) extends BookingApiError
+    final case class NotFound(error: String)   extends BookingApiError
+
+  private given Codec[BookingApiError.Conflict]   = deriveCodec
+  private given Schema[BookingApiError.Conflict]  = Schema.derived
+  private given Codec[BookingApiError.BadRequest]  = deriveCodec
+  private given Schema[BookingApiError.BadRequest] = Schema.derived
+  private given Codec[BookingApiError.NotFound]    = deriveCodec
+  private given Schema[BookingApiError.NotFound]   = Schema.derived
+
   private def parseDate(raw: String): Either[ValidationError, LocalDate] =
     try Right(LocalDate.parse(raw.trim))
     catch case _: DateTimeParseException => Left(InvalidBooking(s"Invalid date: $raw — expected YYYY-MM-DD"))
@@ -95,11 +113,17 @@ object StorefrontBookingRoutes:
       endTime         = body.endTime
     )
 
-  private val bookingE = endpoint.post
+  private val bookingE = publicBase.post
     .in("storefront" / path[String]("slug") / "bookings")
     .in(jsonBody[CreateBookingBody])
     .out(statusCode(StatusCode.Created).and(jsonBody[BookingResponse]))
-    .errorOut(statusCode.and(jsonBody[ErrorBody]))
+    .errorOut(
+      oneOf[BookingApiError](
+        oneOfVariant(StatusCode.Conflict,   jsonBody[BookingApiError.Conflict]),
+        oneOfVariant(StatusCode.BadRequest, jsonBody[BookingApiError.BadRequest]),
+        oneOfVariant(StatusCode.NotFound,   jsonBody[BookingApiError.NotFound])
+      )
+    )
 
   val allEndpoints: List[AnyEndpoint] = List(bookingE)
 
@@ -108,7 +132,7 @@ object StorefrontBookingRoutes:
     val server = bookingE.serverLogic[F] { case (slugStr, body) =>
       toRequest(slugStr, body) match
         case Left(err) =>
-          Left((StatusCode.BadRequest, ErrorBody(err.message))).pure[F]
+          Left(BookingApiError.BadRequest(err.message)).pure[F]
         case Right(request) =>
           bookingService.createBooking(request)
             .map { created =>
@@ -121,12 +145,14 @@ object StorefrontBookingRoutes:
             }
             .handleErrorWith {
               case e: BookingError.ItemsUnavailable =>
-                val ids = e.unavailable.map(_.id.value).mkString(", ")
-                Left((StatusCode.Conflict, ErrorBody(s"One or more items are unavailable: $ids"))).pure[F]
+                Left(BookingApiError.Conflict(
+                  error            = "One or more items are unavailable for the requested date",
+                  unavailableItems = e.unavailable.map(a => UnavailableItemBody(a.id.value, a.availableQty))
+                )).pure[F]
               case _: BookingError.ProviderNotFound =>
-                Left((StatusCode.NotFound, ErrorBody("Storefront not found"))).pure[F]
+                Left(BookingApiError.NotFound("Storefront not found")).pure[F]
               case e: BookingError.InvalidInput =>
-                Left((StatusCode.BadRequest, ErrorBody(e.getMessage))).pure[F]
+                Left(BookingApiError.BadRequest(e.getMessage)).pure[F]
             }
     }
 

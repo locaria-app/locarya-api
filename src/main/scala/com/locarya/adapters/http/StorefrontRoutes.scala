@@ -2,7 +2,7 @@ package com.locarya.adapters.http
 
 import cats.effect.Async
 import cats.syntax.all.*
-import com.locarya.adapters.http.TapirSupport.ErrorBody
+import com.locarya.adapters.http.TapirSupport.{ErrorBody, publicBase}
 import com.locarya.domain.models.*
 import com.locarya.domain.ports.StorefrontService
 import io.circe.Codec
@@ -11,7 +11,6 @@ import io.circe.generic.semiauto.deriveCodec
 import org.http4s.HttpRoutes
 import sttp.model.StatusCode
 import sttp.tapir.*
-import sttp.tapir.AnyEndpoint
 import sttp.tapir.generic.auto.*
 import sttp.tapir.json.circe.*
 import sttp.tapir.server.http4s.Http4sServerInterpreter
@@ -70,7 +69,7 @@ object StorefrontRoutes:
       images               = images.map(img => ImageResponse(img.imageUrl.value, img.isPrimary, img.displayOrder))
     )
 
-  private val storefrontE = endpoint.get
+  private val storefrontE = publicBase.get
     .in("storefront" / path[String]("slug"))
     .out(jsonBody[StorefrontResponse])
     .errorOut(statusCode.and(jsonBody[ErrorBody]))
@@ -80,37 +79,38 @@ object StorefrontRoutes:
   def routes[F[_]: Async](storefrontService: StorefrontService[F]): HttpRoutes[F] =
 
     val server = storefrontE.serverLogic[F] { slugStr =>
-      (for
-        slug    <- StorefrontSlug.fromString(slugStr)
-                     .fold(_ => StorefrontError.NotFound(StorefrontSlug.fromString("x").toOption.get).raiseError[F, StorefrontSlug], _.pure[F])
-        catalog <- storefrontService.getStorefront(slug)
-        itemResps  = catalog.items.map(wi => toItemResponse(wi.item, wi.images))
-        comboResps = catalog.combos.map { wc =>
-                       ComboResponse(
-                         id                   = wc.combo.id.value,
-                         name                 = wc.combo.name,
-                         description          = wc.combo.description,
-                         price                = wc.combo.dailyRate.amount,
-                         attendantRequirement = wc.combo.attendantRequirement.toString,
-                         itemCompositions     = wc.compositions.map { ci =>
-                                                  ComboItemCompositionResponse(
-                                                    item     = toItemResponse(ci.item, ci.images),
-                                                    quantity = ci.quantity
-                                                  )
-                                                }
-                       )
-                     }
-        response   = StorefrontResponse(
-                       name   = catalog.provider.tradeName,
-                       city   = catalog.provider.city,
-                       state  = catalog.provider.state,
-                       items  = itemResps,
-                       combos = comboResps
-                     )
-      yield Right(response))
-        .handleErrorWith {
-          case _: StorefrontError.NotFound => Left((StatusCode.NotFound, ErrorBody("Storefront not found"))).pure[F]
-        }
+      StorefrontSlug.fromString(slugStr) match
+        case Left(_) => Left((StatusCode.NotFound, ErrorBody("Storefront not found"))).pure[F]
+        case Right(slug) =>
+          (for
+            catalog <- storefrontService.getStorefront(slug)
+            itemResps  = catalog.items.map(wi => toItemResponse(wi.item, wi.images))
+            comboResps = catalog.combos.map { wc =>
+                           ComboResponse(
+                             id                   = wc.combo.id.value,
+                             name                 = wc.combo.name,
+                             description          = wc.combo.description,
+                             price                = wc.combo.dailyRate.amount,
+                             attendantRequirement = wc.combo.attendantRequirement.toString,
+                             itemCompositions     = wc.compositions.map { ci =>
+                                                      ComboItemCompositionResponse(
+                                                        item     = toItemResponse(ci.item, ci.images),
+                                                        quantity = ci.quantity
+                                                      )
+                                                    }
+                           )
+                         }
+            response   = StorefrontResponse(
+                           name   = catalog.provider.tradeName,
+                           city   = catalog.provider.city,
+                           state  = catalog.provider.state,
+                           items  = itemResps,
+                           combos = comboResps
+                         )
+          yield Right(response))
+            .handleErrorWith {
+              case _: StorefrontError.NotFound => Left((StatusCode.NotFound, ErrorBody("Storefront not found"))).pure[F]
+            }
     }
 
     Http4sServerInterpreter[F]().toRoutes(List(server))

@@ -10,7 +10,7 @@ import com.locarya.config.AppConfig
 import com.locarya.domain.services.{AttendantServiceImpl, AuthServiceImpl, PaymentServiceImpl, ProviderServiceImpl}
 import org.http4s.{HttpRoutes, Request, Response}
 import org.http4s.ember.server.EmberServerBuilder
-import org.http4s.server.{Router, Server}
+import org.http4s.server.Server
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.LoggerFactory
 import org.typelevel.log4cats.slf4j.Slf4jFactory
@@ -46,15 +46,11 @@ object Main extends IOApp.Simple {
                          swaggerEnabled
                        )
 
-      apiV1Routes = Router(
-        "/api/v1" -> AuthRoutes.routes[IO](providerService, authService)
-        // ItemRoutes will be mounted here once ItemRepositoryLive is implemented:
-        // "/api/v1" -> (AuthRoutes.routes[IO](...) <+> ItemRoutes.routes[IO](itemSvc, config.jwt.secret))
-      )
-
+      // StorefrontRoutes, AvailabilityRoutes, StorefrontBookingRoutes, ItemRoutes — pending
+      // live repository implementations (ItemRepositoryLive, BookingRepositoryLive, etc.)
       routes = CorrelationIdMiddleware(
                  HealthEndpoints.routes[IO](xa) <+>
-                 apiV1Routes <+>
+                 AuthRoutes.routes[IO](providerService, authService) <+>
                  docsRoute.getOrElse(HttpRoutes.empty[IO])
                )
 

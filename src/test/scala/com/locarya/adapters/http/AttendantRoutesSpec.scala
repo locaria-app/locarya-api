@@ -57,10 +57,10 @@ class AttendantRoutesSpec extends CatsEffectSuite:
   private case class Auth(token: String, id: String)
 
   private def signupAndLogin(ctx: Ctx): IO[Auth] =
-    val signupReq = Request[IO](Method.POST, uri"/auth/signup")
+    val signupReq = Request[IO](Method.POST, uri"/api/v1/auth/signup")
       .withEntity(signupBody)
       .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
-    val loginReq = Request[IO](Method.POST, uri"/auth/login")
+    val loginReq = Request[IO](Method.POST, uri"/api/v1/auth/login")
       .withEntity(loginBody)
       .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
     for

@@ -2,14 +2,13 @@ package com.locarya.adapters.http
 
 import cats.effect.Async
 import cats.syntax.all.*
-import com.locarya.adapters.http.TapirSupport.ErrorBody
+import com.locarya.adapters.http.TapirSupport.{ErrorBody, publicBase}
 import com.locarya.domain.models.{AuthError, SignupError}
 import com.locarya.domain.ports.{AuthService, LoginRequest, ProviderService, SignupRequest}
 import io.circe.generic.auto.*
 import org.http4s.HttpRoutes
 import sttp.model.StatusCode
 import sttp.tapir.*
-import sttp.tapir.AnyEndpoint
 import sttp.tapir.generic.auto.*
 import sttp.tapir.json.circe.*
 import sttp.tapir.server.http4s.Http4sServerInterpreter
@@ -45,13 +44,13 @@ object AuthRoutes:
     storefrontSlug: String
   )
 
-  private val signupE = endpoint.post
+  private val signupE = publicBase.post
     .in("auth" / "signup")
     .in(jsonBody[SignupRequestBody])
     .out(statusCode(StatusCode.Created).and(jsonBody[SignupResponseBody]))
     .errorOut(statusCode.and(jsonBody[ErrorBody]))
 
-  private val loginE = endpoint.post
+  private val loginE = publicBase.post
     .in("auth" / "login")
     .in(jsonBody[LoginRequestBody])
     .out(jsonBody[LoginResponseBody])

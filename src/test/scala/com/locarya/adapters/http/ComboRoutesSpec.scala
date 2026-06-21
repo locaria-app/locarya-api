@@ -70,10 +70,10 @@ class ComboRoutesSpec extends CatsEffectSuite:
   private case class Auth(token: String, id: String)
 
   private def signupAndLogin(ctx: Ctx): IO[Auth] =
-    val signupReq = Request[IO](Method.POST, uri"/auth/signup")
+    val signupReq = Request[IO](Method.POST, uri"/api/v1/auth/signup")
       .withEntity(signupBody)
       .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
-    val loginReq = Request[IO](Method.POST, uri"/auth/login")
+    val loginReq = Request[IO](Method.POST, uri"/api/v1/auth/login")
       .withEntity(loginBody)
       .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
     for
@@ -99,7 +99,7 @@ class ComboRoutesSpec extends CatsEffectSuite:
     }"""
 
   private def createItem(ctx: Ctx, token: String): IO[String] =
-    val req = Request[IO](Method.POST, uri"/dashboard/items")
+    val req = Request[IO](Method.POST, uri"/api/v1/dashboard/items")
       .withEntity(validItemBody)
       .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(token))
     for
@@ -314,12 +314,12 @@ class ComboRoutesSpec extends CatsEffectSuite:
                          }"""
       login2Body     = """{"email":"outro@combos.com","password":"securepassword123"}"""
       _             <- (auth2Routes <+> ctx.comboRoutes).orNotFound(
-                         Request[IO](Method.POST, uri"/auth/signup")
+                         Request[IO](Method.POST, uri"/api/v1/auth/signup")
                            .withEntity(signup2Body)
                            .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
                        )
       loginResp2    <- (auth2Routes <+> ctx.comboRoutes).orNotFound(
-                         Request[IO](Method.POST, uri"/auth/login")
+                         Request[IO](Method.POST, uri"/api/v1/auth/login")
                            .withEntity(login2Body)
                            .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
                        )
@@ -386,12 +386,12 @@ class ComboRoutesSpec extends CatsEffectSuite:
                          }"""
       login2Body     = """{"email":"outro2@combos.com","password":"securepassword123"}"""
       _             <- (auth2Routes <+> ctx.comboRoutes).orNotFound(
-                         Request[IO](Method.POST, uri"/auth/signup")
+                         Request[IO](Method.POST, uri"/api/v1/auth/signup")
                            .withEntity(signup2Body)
                            .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
                        )
       loginResp2    <- (auth2Routes <+> ctx.comboRoutes).orNotFound(
-                         Request[IO](Method.POST, uri"/auth/login")
+                         Request[IO](Method.POST, uri"/api/v1/auth/login")
                            .withEntity(login2Body)
                            .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
                        )

@@ -13,7 +13,6 @@ import org.http4s.circe.*
 import org.http4s.dsl.io.*
 import org.http4s.headers.Authorization
 import org.http4s.implicits.*
-import org.http4s.server.Router
 import org.typelevel.ci.CIStringSyntax
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.noop.NoOpLogger
@@ -28,7 +27,7 @@ class AuthRoutesSpec extends CatsEffectSuite:
     InMemoryProviderRepository.make[IO].map { repo =>
       val providerSvc = ProviderServiceImpl[IO](repo)
       val authSvc     = AuthServiceImpl[IO](repo, testJwtSecret)
-      Router("/api/v1" -> AuthRoutes.routes[IO](providerSvc, authSvc))
+      AuthRoutes.routes[IO](providerSvc, authSvc)
     }
 
   private val validSignupBody: String =

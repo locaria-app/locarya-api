@@ -157,6 +157,35 @@ See `docs/adr/0007-testing-strategy.md`.
 - Test files mirror source paths: `AddressSpec` → `src/test/scala/com/locarya/domain/models/AddressSpec.scala`
 - Cover: valid happy path, each validation rule's rejection, and boundary/edge values
 
+## HTTP routing conventions (Tapir)
+
+All HTTP endpoints are defined with **Tapir** (`sttp.tapir`). The two base endpoints in `TapirSupport` are the **only** allowed starting points — never use raw `endpoint.*` directly:
+
+| Base | Use for | What it provides |
+|---|---|---|
+| `publicBase` | Unauthenticated routes (auth, storefront, availability, booking) | `/api/v1` path prefix |
+| `securedBase` | JWT-authenticated routes (dashboard, items, combos, …) | `/api/v1` prefix + bearer security + unified `ErrorBody` error output |
+
+```scala
+// Public endpoint — add your own errorOut
+private val myE = publicBase.get
+  .in("storefront" / path[String]("slug"))
+  .out(jsonBody[MyResponse])
+  .errorOut(statusCode.and(jsonBody[ErrorBody]))
+
+// Secured endpoint — error output is inherited from securedBase
+private val myE = securedBase
+  .in("dashboard" / "items")
+  .get
+  ...
+```
+
+**Rules enforced by convention:**
+- The `/api/v1` prefix lives in `TapirSupport`, **not** in `Router(...)` mounting in `Main`. Never wrap Tapir routes in `Router("/api/v1" -> ...)`.
+- Every `routes[F](...)` implementation must be composed into the route chain in `Main.scala` in the **same PR** that defines `allEndpoints`. If `allEndpoints` appears in the OpenAPI docs wiring, the routes must be served.
+- Tests call route handlers directly (no `Router` wrapper). Because the prefix is already in the endpoint path, test URIs must include `/api/v1/...`.
+- For endpoints that need a **different error body per status code** (e.g., a structured 409 with item-level detail), use Tapir `oneOf` with a private sealed trait instead of the shared `ErrorBody`. See `StorefrontBookingRoutes` for the pattern.
+
 ## Notes
 
 - When adding code, update this file with relevant build commands, test procedures, and architectural patterns

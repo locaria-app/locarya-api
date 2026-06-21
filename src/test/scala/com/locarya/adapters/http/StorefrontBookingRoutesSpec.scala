@@ -81,10 +81,10 @@ class StorefrontBookingRoutesSpec extends CatsEffectSuite:
   private case class Auth(token: String, id: String)
 
   private def signupAndLogin(ctx: Ctx): IO[Auth] =
-    val signupReq = Request[IO](Method.POST, uri"/auth/signup")
+    val signupReq = Request[IO](Method.POST, uri"/api/v1/auth/signup")
       .withEntity(signupBody)
       .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
-    val loginReq = Request[IO](Method.POST, uri"/auth/login")
+    val loginReq = Request[IO](Method.POST, uri"/api/v1/auth/login")
       .withEntity(loginBody)
       .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
     for
@@ -110,7 +110,7 @@ class StorefrontBookingRoutesSpec extends CatsEffectSuite:
     }"""
 
   private def createItem(ctx: Ctx, token: String): IO[String] =
-    val req = Request[IO](Method.POST, uri"/dashboard/items")
+    val req = Request[IO](Method.POST, uri"/api/v1/dashboard/items")
       .withEntity(validItemBody)
       .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(token))
     for
@@ -134,7 +134,7 @@ class StorefrontBookingRoutesSpec extends CatsEffectSuite:
     }"""
 
   private def postBooking(ctx: Ctx, slug: String, body: String, headers: Header.ToRaw*): IO[Response[IO]] =
-    val base = Request[IO](Method.POST, Uri.unsafeFromString(s"/storefront/$slug/bookings"))
+    val base = Request[IO](Method.POST, Uri.unsafeFromString(s"/api/v1/storefront/$slug/bookings"))
       .withEntity(body)
       .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
     ctx.allRoutes.orNotFound(if headers.isEmpty then base else base.putHeaders(headers*))
@@ -208,9 +208,14 @@ class StorefrontBookingRoutesSpec extends CatsEffectSuite:
       _        <- ctx.bookingRepo.create(blocker)
       response <- postBooking(ctx, slug, bookingBody(itemId, quantity = 1))
       body     <- response.as[String]
+      json      = parse(body).toOption.get
     yield
       assertEquals(response.status, Status.Conflict)
-      assert(body.contains(itemId), s"Expected 409 body to name the unavailable item: $body")
+      val unavailable = json.hcursor.downField("unavailableItems").focus.get.asArray.get
+      assert(unavailable.nonEmpty, s"Expected unavailableItems to be non-empty: $body")
+      val entry = unavailable.head
+      assertEquals(entry.hcursor.downField("itemId").as[String].toOption,  Some(itemId))
+      assertEquals(entry.hcursor.downField("availableQty").as[Int].toOption, Some(0))
   }
 
   test("POST booking returns 404 for an unknown storefront slug") {
@@ -220,4 +225,13 @@ class StorefrontBookingRoutesSpec extends CatsEffectSuite:
       itemId   <- createItem(ctx, auth.token)
       response <- postBooking(ctx, "no-such-slug", bookingBody(itemId))
     yield assertEquals(response.status, Status.NotFound)
+  }
+
+  test("StorefrontBookingRoutes.allEndpoints is non-empty and path includes api/v1/storefront/bookings") {
+    assert(StorefrontBookingRoutes.allEndpoints.nonEmpty)
+    val desc = StorefrontBookingRoutes.allEndpoints.map(_.show).mkString
+    assert(desc.contains("api"),        s"Expected 'api' prefix in endpoint: $desc")
+    assert(desc.contains("v1"),         s"Expected 'v1' prefix in endpoint: $desc")
+    assert(desc.contains("storefront"), s"Expected 'storefront' in endpoint: $desc")
+    assert(desc.contains("bookings"),   s"Expected 'bookings' in endpoint: $desc")
   }
