@@ -2,14 +2,17 @@ package com.locarya.adapters.http
 
 import cats.effect.Async
 import cats.syntax.all.*
-import com.locarya.adapters.http.middleware.AuthMiddleware
+import com.locarya.adapters.http.TapirSupport.{ErrorBody, securedBase, validateBearer}
 import com.locarya.domain.models.*
 import com.locarya.domain.ports.{CreateItemRequest, ItemService, UpdateItemRequest}
 import io.circe.generic.auto.*
-import io.circe.syntax.*
-import org.http4s.*
-import org.http4s.circe.*
-import org.http4s.dsl.Http4sDsl
+import org.http4s.HttpRoutes
+import sttp.model.StatusCode
+import sttp.tapir.*
+import sttp.tapir.AnyEndpoint
+import sttp.tapir.generic.auto.*
+import sttp.tapir.json.circe.*
+import sttp.tapir.server.http4s.Http4sServerInterpreter
 
 object ItemRoutes:
 
@@ -43,7 +46,6 @@ object ItemRoutes:
   )
 
   private case class CreateItemResponseBody(itemId: String)
-  private case class ErrorResponseBody(error: String)
 
   private def parseAttendantRequirement(s: String): Either[String, AttendantRequirement] =
     s match
@@ -64,39 +66,52 @@ object ItemRoutes:
       isActive             = item.isActive
     )
 
+  // Endpoint definitions — used both for Swagger docs and for routing
+  private val listE = securedBase.get
+    .in("dashboard" / "items")
+    .out(jsonBody[List[ItemResponseBody]])
+
+  private val createE = securedBase.post
+    .in("dashboard" / "items")
+    .in(jsonBody[CreateItemBody])
+    .out(statusCode(StatusCode.Created).and(jsonBody[CreateItemResponseBody]))
+
+  private val updateE = securedBase.put
+    .in("dashboard" / "items" / path[String]("itemId"))
+    .in(jsonBody[UpdateItemBody])
+
+  private val deactivateE = securedBase.delete
+    .in("dashboard" / "items" / path[String]("itemId"))
+
+  val allEndpoints: List[AnyEndpoint] = List(listE, createE, updateE, deactivateE)
+
   def routes[F[_]: Async](
     itemService: ItemService[F],
     jwtSecret:   String
   ): HttpRoutes[F] =
-    val dsl = Http4sDsl[F]
-    import dsl.*
 
-    given EntityDecoder[F, CreateItemBody] = jsonOf[F, CreateItemBody]
-    given EntityDecoder[F, UpdateItemBody] = jsonOf[F, UpdateItemBody]
+    type Err = (StatusCode, ErrorBody)
 
-    AuthMiddleware.withProviderId[F](jwtSecret) { rawProviderId =>
+    def security(token: String): F[Either[Err, ProviderId]] =
+      validateBearer(token, jwtSecret).pure[F]
 
-      val providerIdF: F[ProviderId] =
-        ProviderId.fromString(rawProviderId)
-          .fold(err => ItemError.InvalidInput(err).raiseError[F, ProviderId], _.pure[F])
+    def badRequest(e: Throwable): Err =
+      (StatusCode.BadRequest, ErrorBody(e.getMessage))
 
-      HttpRoutes.of[F]:
+    val listServer = listE.serverSecurityLogic[ProviderId, F](security)
+      .serverLogic { providerId => _ =>
+        itemService.listActiveItems(providerId)
+          .map(items => Right(items.map(toResponseBody)))
+          .handleError(e => Left(badRequest(e)))
+      }
 
-        case GET -> Root / "dashboard" / "items" =>
-          for
-            pid      <- providerIdF
-            items    <- itemService.listActiveItems(pid)
-            response <- Ok(items.map(toResponseBody).asJson)
-          yield response
-
-        case req @ POST -> Root / "dashboard" / "items" =>
-          req.as[CreateItemBody].flatMap { body =>
-            for
-              pid   <- providerIdF
-              dailyRate <- Money.fromAmount(body.dailyRate)
-                             .fold(err => ItemError.InvalidInput(err).raiseError[F, Money], _.pure[F])
-              req2   = CreateItemRequest(
-                         providerId           = pid,
+    val createServer = createE.serverSecurityLogic[ProviderId, F](security)
+      .serverLogic { providerId => body =>
+        (for
+          dailyRate <- Money.fromAmount(body.dailyRate)
+                         .fold(err => ItemError.InvalidInput(err).raiseError[F, Money], _.pure[F])
+          req2       = CreateItemRequest(
+                         providerId           = providerId,
                          name                 = body.name,
                          description          = body.description,
                          dailyRate            = dailyRate,
@@ -105,62 +120,54 @@ object ItemRoutes:
                                                   .fold(_ => AttendantRequirement.Optional, identity),
                          imageUrls            = body.imageUrls
                        )
-              itemId <- itemService.createItem(req2)
-              resp   <- Created(CreateItemResponseBody(itemId.value).asJson)
-            yield resp
-          }.handleErrorWith {
-            case e: ItemError =>
-              BadRequest(ErrorResponseBody(e.getMessage).asJson)
-            case _: MalformedMessageBodyFailure =>
-              BadRequest(ErrorResponseBody("Invalid or incomplete request body").asJson)
-            case _: InvalidMessageBodyFailure =>
-              BadRequest(ErrorResponseBody("Invalid request body").asJson)
-          }
+          itemId    <- itemService.createItem(req2)
+        yield Right(CreateItemResponseBody(itemId.value)))
+          .handleError(e => Left(badRequest(e)))
+      }
 
-        case req @ PUT -> Root / "dashboard" / "items" / itemIdStr =>
-          req.as[UpdateItemBody].flatMap { body =>
-            for
-              pid    <- providerIdF
-              itemId <- ItemId.fromString(itemIdStr)
-                          .fold(err => ItemError.InvalidInput(err).raiseError[F, ItemId], _.pure[F])
-              dailyRate  <- Money.fromAmount(body.dailyRate)
-                             .fold(err => ItemError.InvalidInput(err).raiseError[F, Money], _.pure[F])
-              req2    = UpdateItemRequest(
-                          itemId               = itemId,
-                          providerId           = pid,
-                          name                 = body.name,
-                          description          = body.description,
-                          dailyRate            = dailyRate,
-                          stock                = body.stock,
-                          attendantRequirement = parseAttendantRequirement(body.attendantRequirement)
-                                                   .fold(_ => AttendantRequirement.Optional, identity),
-                          imageUrls            = body.imageUrls
-                        )
-              _      <- itemService.updateItem(req2)
-              resp   <- Ok(().asJson)
-            yield resp
-          }.handleErrorWith {
-            case _: ItemError.NotFound  => NotFound(ErrorResponseBody("Item not found").asJson)
-            case _: ItemError.Forbidden => Forbidden(ErrorResponseBody("Access denied").asJson)
-            case e: ItemError           => BadRequest(ErrorResponseBody(e.getMessage).asJson)
-            case _: MalformedMessageBodyFailure =>
-              BadRequest(ErrorResponseBody("Invalid or incomplete request body").asJson)
-            case _: InvalidMessageBodyFailure =>
-              BadRequest(ErrorResponseBody("Invalid request body").asJson)
+    val updateServer = updateE.serverSecurityLogic[ProviderId, F](security)
+      .serverLogic { providerId => input =>
+        val (itemIdStr, body) = input
+        (for
+          itemId    <- ItemId.fromString(itemIdStr)
+                         .fold(err => ItemError.InvalidInput(err).raiseError[F, ItemId], _.pure[F])
+          dailyRate <- Money.fromAmount(body.dailyRate)
+                         .fold(err => ItemError.InvalidInput(err).raiseError[F, Money], _.pure[F])
+          req2       = UpdateItemRequest(
+                         itemId               = itemId,
+                         providerId           = providerId,
+                         name                 = body.name,
+                         description          = body.description,
+                         dailyRate            = dailyRate,
+                         stock                = body.stock,
+                         attendantRequirement = parseAttendantRequirement(body.attendantRequirement)
+                                                  .fold(_ => AttendantRequirement.Optional, identity),
+                         imageUrls            = body.imageUrls
+                       )
+          _         <- itemService.updateItem(req2)
+        yield Right(()))
+          .handleErrorWith {
+            case _: ItemError.NotFound  => Left((StatusCode.NotFound, ErrorBody("Item not found"))).pure[F]
+            case _: ItemError.Forbidden => Left((StatusCode.Forbidden, ErrorBody("Access denied"))).pure[F]
+            case e: ItemError           => Left(badRequest(e)).pure[F]
           }
+      }
 
-        case DELETE -> Root / "dashboard" / "items" / itemIdStr =>
-          (for
-            pid    <- providerIdF
-            itemId <- ItemId.fromString(itemIdStr)
-                        .fold(err => ItemError.InvalidInput(err).raiseError[F, ItemId], _.pure[F])
-            _      <- itemService.deactivateItem(itemId, pid)
-            resp   <- Ok(().asJson)
-          yield resp)
-            .handleErrorWith {
-              case _: ItemError.HasBookings => Conflict(ErrorResponseBody("Item has existing bookings").asJson)
-              case _: ItemError.NotFound    => NotFound(ErrorResponseBody("Item not found").asJson)
-              case _: ItemError.Forbidden   => Forbidden(ErrorResponseBody("Access denied").asJson)
-              case e: ItemError             => BadRequest(ErrorResponseBody(e.getMessage).asJson)
-            }
-    }
+    val deactivateServer = deactivateE.serverSecurityLogic[ProviderId, F](security)
+      .serverLogic { providerId => itemIdStr =>
+        (for
+          itemId <- ItemId.fromString(itemIdStr)
+                      .fold(err => ItemError.InvalidInput(err).raiseError[F, ItemId], _.pure[F])
+          _      <- itemService.deactivateItem(itemId, providerId)
+        yield Right(()))
+          .handleErrorWith {
+            case _: ItemError.HasBookings => Left((StatusCode.Conflict, ErrorBody("Item has existing bookings"))).pure[F]
+            case _: ItemError.NotFound    => Left((StatusCode.NotFound, ErrorBody("Item not found"))).pure[F]
+            case _: ItemError.Forbidden   => Left((StatusCode.Forbidden, ErrorBody("Access denied"))).pure[F]
+            case e: ItemError             => Left(badRequest(e)).pure[F]
+          }
+      }
+
+    Http4sServerInterpreter[F]().toRoutes(
+      List(listServer, createServer, updateServer, deactivateServer)
+    )

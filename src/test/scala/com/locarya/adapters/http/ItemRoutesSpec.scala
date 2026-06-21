@@ -2,7 +2,6 @@ package com.locarya.adapters.http
 
 import cats.effect.IO
 import cats.syntax.semigroupk.*
-import com.locarya.adapters.http.middleware.AuthMiddleware
 import com.locarya.domain.models.*
 import com.locarya.domain.services.{AuthServiceImpl, ItemServiceImpl, ProviderServiceImpl}
 import com.locarya.helpers.{InMemoryBookingRepository, InMemoryItemImageRepository, InMemoryItemRepository, InMemoryProviderRepository}
@@ -13,6 +12,7 @@ import org.http4s.circe.*
 import org.http4s.dsl.io.*
 import org.http4s.headers.Authorization
 import org.http4s.implicits.*
+import org.http4s.server.Router
 import org.typelevel.ci.CIStringSyntax
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.noop.NoOpLogger
@@ -42,7 +42,7 @@ class ItemRoutesSpec extends CatsEffectSuite:
       authSvc       = AuthServiceImpl[IO](providerRepo, testJwtSecret)
       itemSvc       = ItemServiceImpl[IO](itemRepo, imageRepo, bookingRepo)
       auth          = AuthRoutes.routes[IO](providerSvc, authSvc)
-      items         = ItemRoutes.routes[IO](itemSvc, testJwtSecret)
+      items         = Router("/api/v1" -> ItemRoutes.routes[IO](itemSvc, testJwtSecret))
     yield Ctx(auth, items, itemRepo, imageRepo, bookingRepo)
 
   private val signupBody =
@@ -90,7 +90,7 @@ class ItemRoutesSpec extends CatsEffectSuite:
     Authorization(Credentials.Token(AuthScheme.Bearer, token))
 
   private def createItem(ctx: Ctx, token: String): IO[String] =
-    val createReq = Request[IO](Method.POST, uri"/dashboard/items")
+    val createReq = Request[IO](Method.POST, uri"/api/v1/dashboard/items")
       .withEntity(validItemBody)
       .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(token))
     for
@@ -98,21 +98,21 @@ class ItemRoutesSpec extends CatsEffectSuite:
       body <- resp.as[String]
     yield parse(body).toOption.get.hcursor.downField("itemId").as[String].toOption.get
 
-  // ── GET /dashboard/items ─────────────────────────────────────────────────────
+  // ── GET /api/v1/dashboard/items ──────────────────────────────────────────────
 
-  test("GET /dashboard/items without token returns 401") {
+  test("GET /api/v1/dashboard/items without token returns 401") {
     for
       ctx      <- makeCtx
-      request   = Request[IO](Method.GET, uri"/dashboard/items")
+      request   = Request[IO](Method.GET, uri"/api/v1/dashboard/items")
       response <- ctx.allRoutes.orNotFound(request)
     yield assertEquals(response.status, Status.Unauthorized)
   }
 
-  test("GET /dashboard/items with valid token returns 200 and JSON array") {
+  test("GET /api/v1/dashboard/items with valid token returns 200 and JSON array") {
     for
       ctx      <- makeCtx
       auth     <- signupAndLogin(ctx)
-      request   = Request[IO](Method.GET, uri"/dashboard/items")
+      request   = Request[IO](Method.GET, uri"/api/v1/dashboard/items")
                     .withHeaders(authHeader(auth.token))
       response <- ctx.allRoutes.orNotFound(request)
       body     <- response.as[String]
@@ -122,23 +122,23 @@ class ItemRoutesSpec extends CatsEffectSuite:
       assert(json.isArray, "Expected JSON array response")
   }
 
-  // ── POST /dashboard/items ────────────────────────────────────────────────────
+  // ── POST /api/v1/dashboard/items ─────────────────────────────────────────────
 
-  test("POST /dashboard/items without token returns 401") {
+  test("POST /api/v1/dashboard/items without token returns 401") {
     for
       ctx      <- makeCtx
-      request   = Request[IO](Method.POST, uri"/dashboard/items")
+      request   = Request[IO](Method.POST, uri"/api/v1/dashboard/items")
                     .withEntity(validItemBody)
                     .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
       response <- ctx.allRoutes.orNotFound(request)
     yield assertEquals(response.status, Status.Unauthorized)
   }
 
-  test("POST /dashboard/items with valid token and body returns 201 with itemId") {
+  test("POST /api/v1/dashboard/items with valid token and body returns 201 with itemId") {
     for
       ctx      <- makeCtx
       auth     <- signupAndLogin(ctx)
-      request   = Request[IO](Method.POST, uri"/dashboard/items")
+      request   = Request[IO](Method.POST, uri"/api/v1/dashboard/items")
                     .withEntity(validItemBody)
                     .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
       response <- ctx.allRoutes.orNotFound(request)
@@ -149,19 +149,19 @@ class ItemRoutesSpec extends CatsEffectSuite:
       assert(json.hcursor.downField("itemId").focus.isDefined, s"Expected itemId in response: $body")
   }
 
-  test("POST /dashboard/items with stock = 0 returns 400") {
+  test("POST /api/v1/dashboard/items with stock = 0 returns 400") {
     val badBody = validItemBody.replace("\"stock\":                2", "\"stock\":                0")
     for
       ctx      <- makeCtx
       auth     <- signupAndLogin(ctx)
-      request   = Request[IO](Method.POST, uri"/dashboard/items")
+      request   = Request[IO](Method.POST, uri"/api/v1/dashboard/items")
                     .withEntity(badBody)
                     .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
       response <- ctx.allRoutes.orNotFound(request)
     yield assertEquals(response.status, Status.BadRequest)
   }
 
-  test("POST /dashboard/items with no imageUrls returns 400") {
+  test("POST /api/v1/dashboard/items with no imageUrls returns 400") {
     val badBody = validItemBody.replace(
       """"imageUrls":            ["https://example.com/img1.jpg","https://example.com/img2.jpg"]""",
       """"imageUrls":            []"""
@@ -169,26 +169,26 @@ class ItemRoutesSpec extends CatsEffectSuite:
     for
       ctx      <- makeCtx
       auth     <- signupAndLogin(ctx)
-      request   = Request[IO](Method.POST, uri"/dashboard/items")
+      request   = Request[IO](Method.POST, uri"/api/v1/dashboard/items")
                     .withEntity(badBody)
                     .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
       response <- ctx.allRoutes.orNotFound(request)
     yield assertEquals(response.status, Status.BadRequest)
   }
 
-  // ── PUT /dashboard/items/:id ─────────────────────────────────────────────────
+  // ── PUT /api/v1/dashboard/items/:id ──────────────────────────────────────────
 
-  test("PUT /dashboard/items/:id without token returns 401") {
+  test("PUT /api/v1/dashboard/items/:id without token returns 401") {
     for
       ctx      <- makeCtx
-      request   = Request[IO](Method.PUT, uri"/dashboard/items/some-id")
+      request   = Request[IO](Method.PUT, uri"/api/v1/dashboard/items/some-id")
                     .withEntity(validItemBody)
                     .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
       response <- ctx.allRoutes.orNotFound(request)
     yield assertEquals(response.status, Status.Unauthorized)
   }
 
-  test("PUT /dashboard/items/:id updates item and returns 200") {
+  test("PUT /api/v1/dashboard/items/:id updates item and returns 200") {
     val updatedBody =
       """{
         "name":                 "Cama Elástica Atualizada",
@@ -202,14 +202,14 @@ class ItemRoutesSpec extends CatsEffectSuite:
       ctx        <- makeCtx
       auth       <- signupAndLogin(ctx)
       itemId     <- createItem(ctx, auth.token)
-      updateReq   = Request[IO](Method.PUT, Uri.unsafeFromString(s"/dashboard/items/$itemId"))
+      updateReq   = Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/v1/dashboard/items/$itemId"))
                       .withEntity(updatedBody)
                       .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
       updateResp <- ctx.allRoutes.orNotFound(updateReq)
     yield assertEquals(updateResp.status, Status.Ok)
   }
 
-  test("PUT /dashboard/items/:id by another provider returns 403") {
+  test("PUT /api/v1/dashboard/items/:id by another provider returns 403") {
     for
       ctx          <- makeCtx
       auth1        <- signupAndLogin(ctx)
@@ -239,35 +239,35 @@ class ItemRoutesSpec extends CatsEffectSuite:
       itemId        <- createItem(ctx, auth1.token)
       // Try to update as provider2
       updateResp    <- (auth2Routes <+> ctx.itemRoutes).orNotFound(
-                         Request[IO](Method.PUT, Uri.unsafeFromString(s"/dashboard/items/$itemId"))
+                         Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/v1/dashboard/items/$itemId"))
                            .withEntity(validItemBody)
                            .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(token2))
                        )
     yield assertEquals(updateResp.status, Status.Forbidden)
   }
 
-  // ── DELETE /dashboard/items/:id ──────────────────────────────────────────────
+  // ── DELETE /api/v1/dashboard/items/:id ───────────────────────────────────────
 
-  test("DELETE /dashboard/items/:id without token returns 401") {
+  test("DELETE /api/v1/dashboard/items/:id without token returns 401") {
     for
       ctx      <- makeCtx
-      request   = Request[IO](Method.DELETE, uri"/dashboard/items/some-id")
+      request   = Request[IO](Method.DELETE, uri"/api/v1/dashboard/items/some-id")
       response <- ctx.allRoutes.orNotFound(request)
     yield assertEquals(response.status, Status.Unauthorized)
   }
 
-  test("DELETE /dashboard/items/:id soft-deletes item and returns 200") {
+  test("DELETE /api/v1/dashboard/items/:id soft-deletes item and returns 200") {
     for
       ctx      <- makeCtx
       auth     <- signupAndLogin(ctx)
       itemId   <- createItem(ctx, auth.token)
-      delReq    = Request[IO](Method.DELETE, Uri.unsafeFromString(s"/dashboard/items/$itemId"))
+      delReq    = Request[IO](Method.DELETE, Uri.unsafeFromString(s"/api/v1/dashboard/items/$itemId"))
                     .withHeaders(authHeader(auth.token))
       delResp  <- ctx.allRoutes.orNotFound(delReq)
     yield assertEquals(delResp.status, Status.Ok)
   }
 
-  test("DELETE /dashboard/items/:id when item has bookings returns 409") {
+  test("DELETE /api/v1/dashboard/items/:id when item has bookings returns 409") {
     for
       ctx     <- makeCtx
       auth    <- signupAndLogin(ctx)
@@ -283,20 +283,20 @@ class ItemRoutesSpec extends CatsEffectSuite:
                    totalAmount = Money.fromAmount(BigDecimal("100")).toOption.get
                  ).toOption.get
       _       <- ctx.bookingRepo.create(booking)
-      delReq   = Request[IO](Method.DELETE, Uri.unsafeFromString(s"/dashboard/items/$itemId"))
+      delReq   = Request[IO](Method.DELETE, Uri.unsafeFromString(s"/api/v1/dashboard/items/$itemId"))
                    .withHeaders(authHeader(auth.token))
       delResp <- ctx.allRoutes.orNotFound(delReq)
     yield assertEquals(delResp.status, Status.Conflict)
   }
 
-  // ── GET /dashboard/items returns only the provider's own items ────────────────
+  // ── GET /api/v1/dashboard/items list behaviour ────────────────────────────────
 
-  test("GET /dashboard/items returns created item in list") {
+  test("GET /api/v1/dashboard/items returns created item in list") {
     for
       ctx      <- makeCtx
       auth     <- signupAndLogin(ctx)
       itemId   <- createItem(ctx, auth.token)
-      getReq    = Request[IO](Method.GET, uri"/dashboard/items").withHeaders(authHeader(auth.token))
+      getReq    = Request[IO](Method.GET, uri"/api/v1/dashboard/items").withHeaders(authHeader(auth.token))
       getResp  <- ctx.allRoutes.orNotFound(getReq)
       getBody  <- getResp.as[String]
       json      = parse(getBody).toOption.get
@@ -307,16 +307,16 @@ class ItemRoutesSpec extends CatsEffectSuite:
         s"Expected item $itemId in response: $getBody")
   }
 
-  test("GET /dashboard/items does not return deactivated items") {
+  test("GET /api/v1/dashboard/items does not return deactivated items") {
     for
       ctx      <- makeCtx
       auth     <- signupAndLogin(ctx)
       itemId   <- createItem(ctx, auth.token)
-      delReq    = Request[IO](Method.DELETE, Uri.unsafeFromString(s"/dashboard/items/$itemId"))
+      delReq    = Request[IO](Method.DELETE, Uri.unsafeFromString(s"/api/v1/dashboard/items/$itemId"))
                     .withHeaders(authHeader(auth.token))
       _        <- ctx.allRoutes.orNotFound(delReq)
       getResp  <- ctx.allRoutes.orNotFound(
-                    Request[IO](Method.GET, uri"/dashboard/items").withHeaders(authHeader(auth.token))
+                    Request[IO](Method.GET, uri"/api/v1/dashboard/items").withHeaders(authHeader(auth.token))
                   )
       getBody  <- getResp.as[String]
       json      = parse(getBody).toOption.get
@@ -324,4 +324,16 @@ class ItemRoutesSpec extends CatsEffectSuite:
       val items = json.asArray.getOrElse(Vector.empty)
       assert(!items.exists(_.hcursor.downField("itemId").as[String].toOption.contains(itemId)),
         "Deactivated item should not appear in list")
+  }
+
+  // ── Old path (without /api/v1 prefix) must not match ─────────────────────────
+
+  test("GET /dashboard/items (without /api/v1 prefix) returns 404") {
+    for
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      request   = Request[IO](Method.GET, uri"/dashboard/items")
+                    .withHeaders(authHeader(auth.token))
+      response <- ctx.allRoutes.orNotFound(request)
+    yield assertEquals(response.status, Status.NotFound)
   }
