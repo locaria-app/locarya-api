@@ -2,17 +2,22 @@ package com.locarya.adapters.http
 
 import cats.effect.Async
 import cats.syntax.all.*
+import com.locarya.adapters.http.TapirSupport.ErrorBody
+import com.locarya.domain.models.ValidationError
 import com.locarya.domain.models.*
 import com.locarya.domain.ports.{BookingLineInput, BookingService, CreateBookingRequest, CustomerInput}
-import io.circe.Encoder
+import io.circe.Codec
 import io.circe.generic.auto.*
-import io.circe.generic.semiauto.deriveEncoder
-import io.circe.syntax.*
+import io.circe.generic.semiauto.deriveCodec
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
-import org.http4s.*
-import org.http4s.circe.*
-import org.http4s.dsl.Http4sDsl
+import org.http4s.HttpRoutes
+import sttp.model.StatusCode
+import sttp.tapir.*
+import sttp.tapir.AnyEndpoint
+import sttp.tapir.generic.auto.*
+import sttp.tapir.json.circe.*
+import sttp.tapir.server.http4s.Http4sServerInterpreter
 
 object StorefrontBookingRoutes:
 
@@ -28,10 +33,16 @@ object StorefrontBookingRoutes:
     cep:          String,
     complement:   Option[String]
   )
+  private given Codec[AddressBody]   = deriveCodec
+  private given Schema[AddressBody]  = Schema.derived
 
   private case class CustomerBody(name: String, email: String, phone: Option[String])
+  private given Codec[CustomerBody]  = deriveCodec
+  private given Schema[CustomerBody] = Schema.derived
 
   private case class ItemLineBody(itemId: String, quantity: Int)
+  private given Codec[ItemLineBody]  = deriveCodec
+  private given Schema[ItemLineBody] = Schema.derived
 
   private case class CreateBookingBody(
     items:           List[ItemLineBody],
@@ -41,6 +52,8 @@ object StorefrontBookingRoutes:
     startTime:       Option[String],
     endTime:         Option[String]
   )
+  private given Codec[CreateBookingBody]  = deriveCodec
+  private given Schema[CreateBookingBody] = Schema.derived
 
   private case class BookingResponse(
     bookingId:           String,
@@ -48,23 +61,13 @@ object StorefrontBookingRoutes:
     totalAmount:         BigDecimal,
     confirmationMessage: String
   )
-  private given Encoder[BookingResponse] = deriveEncoder
-
-  private case class UnavailableItemBody(itemId: String, availableQty: Int)
-  private given Encoder[UnavailableItemBody] = deriveEncoder
-
-  private case class ConflictBody(error: String, unavailableItems: List[UnavailableItemBody])
-  private given Encoder[ConflictBody] = deriveEncoder
-
-  private case class ErrorResponseBody(error: String)
-  private given Encoder[ErrorResponseBody] = deriveEncoder
+  private given Codec[BookingResponse]   = deriveCodec
+  private given Schema[BookingResponse]  = Schema.derived
 
   private def parseDate(raw: String): Either[ValidationError, LocalDate] =
     try Right(LocalDate.parse(raw.trim))
     catch case _: DateTimeParseException => Left(InvalidBooking(s"Invalid date: $raw — expected YYYY-MM-DD"))
 
-  /** Translate the raw request body into a domain [[CreateBookingRequest]], collecting the
-    * first validation failure as a `ValidationError`. */
   private def toRequest(slugStr: String, body: CreateBookingBody): Either[ValidationError, CreateBookingRequest] =
     for
       slug    <- StorefrontSlug.fromString(slugStr)
@@ -92,42 +95,39 @@ object StorefrontBookingRoutes:
       endTime         = body.endTime
     )
 
+  private val bookingE = endpoint.post
+    .in("storefront" / path[String]("slug") / "bookings")
+    .in(jsonBody[CreateBookingBody])
+    .out(statusCode(StatusCode.Created).and(jsonBody[BookingResponse]))
+    .errorOut(statusCode.and(jsonBody[ErrorBody]))
+
+  val allEndpoints: List[AnyEndpoint] = List(bookingE)
+
   def routes[F[_]: Async](bookingService: BookingService[F]): HttpRoutes[F] =
-    val dsl = Http4sDsl[F]
-    import dsl.*
 
-    given EntityDecoder[F, CreateBookingBody] = jsonOf[F, CreateBookingBody]
+    val server = bookingE.serverLogic[F] { case (slugStr, body) =>
+      toRequest(slugStr, body) match
+        case Left(err) =>
+          Left((StatusCode.BadRequest, ErrorBody(err.message))).pure[F]
+        case Right(request) =>
+          bookingService.createBooking(request)
+            .map { created =>
+              Right(BookingResponse(
+                bookingId           = created.bookingId.value,
+                status              = created.status.toString,
+                totalAmount         = created.totalAmount.amount,
+                confirmationMessage = confirmationMessage
+              ))
+            }
+            .handleErrorWith {
+              case e: BookingError.ItemsUnavailable =>
+                val ids = e.unavailable.map(_.id.value).mkString(", ")
+                Left((StatusCode.Conflict, ErrorBody(s"One or more items are unavailable: $ids"))).pure[F]
+              case _: BookingError.ProviderNotFound =>
+                Left((StatusCode.NotFound, ErrorBody("Storefront not found"))).pure[F]
+              case e: BookingError.InvalidInput =>
+                Left((StatusCode.BadRequest, ErrorBody(e.getMessage))).pure[F]
+            }
+    }
 
-    HttpRoutes.of[F]:
-      case req @ POST -> Root / "storefront" / slugStr / "bookings" =>
-        req.as[CreateBookingBody].flatMap { body =>
-          for
-            request <- toRequest(slugStr, body)
-                         .fold(err => BookingError.InvalidInput(err).raiseError[F, CreateBookingRequest], _.pure[F])
-            created <- bookingService.createBooking(request)
-            resp    <- Created(
-                         BookingResponse(
-                           bookingId           = created.bookingId.value,
-                           status              = created.status.toString,
-                           totalAmount         = created.totalAmount.amount,
-                           confirmationMessage = confirmationMessage
-                         ).asJson
-                       )
-          yield resp
-        }.handleErrorWith {
-          case e: BookingError.ItemsUnavailable =>
-            Conflict(
-              ConflictBody(
-                error            = "One or more items are unavailable for the requested date",
-                unavailableItems = e.unavailable.map(a => UnavailableItemBody(a.id.value, a.availableQty))
-              ).asJson
-            )
-          case _: BookingError.ProviderNotFound =>
-            NotFound(ErrorResponseBody("Storefront not found").asJson)
-          case e: BookingError.InvalidInput =>
-            BadRequest(ErrorResponseBody(e.getMessage).asJson)
-          case _: MalformedMessageBodyFailure =>
-            BadRequest(ErrorResponseBody("Invalid or incomplete request body").asJson)
-          case _: InvalidMessageBodyFailure =>
-            BadRequest(ErrorResponseBody("Invalid request body").asJson)
-        }
+    Http4sServerInterpreter[F]().toRoutes(List(server))

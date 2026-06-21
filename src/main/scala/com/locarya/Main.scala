@@ -3,7 +3,7 @@ package com.locarya
 import cats.effect._
 import cats.syntax.all._
 import com.comcast.ip4s._
-import com.locarya.adapters.http.{AttendantRoutes, AuthRoutes, HealthEndpoints, ItemRoutes, PaymentRoutes, SwaggerRoutes}
+import com.locarya.adapters.http.{AttendantRoutes, AuthRoutes, AvailabilityRoutes, HealthEndpoints, ItemRoutes, PaymentRoutes, StorefrontBookingRoutes, StorefrontRoutes, SwaggerRoutes}
 import com.locarya.adapters.http.middleware.CorrelationIdMiddleware
 import com.locarya.adapters.persistence.{Database, ProviderRepositoryLive}
 import com.locarya.config.AppConfig
@@ -37,7 +37,14 @@ object Main extends IOApp.Simple {
       authService     = AuthServiceImpl[IO](providerRepo, config.jwt.secret)
 
       swaggerEnabled = sys.env.getOrElse("SWAGGER_ENABLED", "false") == "true"
-      docsRoute      = SwaggerRoutes.maybeDocsRoute[IO](ItemRoutes.allEndpoints ++ AuthRoutes.allEndpoints, swaggerEnabled)
+      docsRoute      = SwaggerRoutes.maybeDocsRoute[IO](
+                         ItemRoutes.allEndpoints ++
+                         AuthRoutes.allEndpoints ++
+                         StorefrontRoutes.allEndpoints ++
+                         AvailabilityRoutes.allEndpoints ++
+                         StorefrontBookingRoutes.allEndpoints,
+                         swaggerEnabled
+                       )
 
       apiV1Routes = Router(
         "/api/v1" -> AuthRoutes.routes[IO](providerService, authService)

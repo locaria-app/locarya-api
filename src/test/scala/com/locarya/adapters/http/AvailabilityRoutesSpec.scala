@@ -2,6 +2,7 @@ package com.locarya.adapters.http
 
 import cats.effect.IO
 import com.locarya.domain.models.*
+import sttp.tapir.AnyEndpoint
 import com.locarya.domain.services.{AvailabilityServiceImpl, StorefrontServiceImpl}
 import com.locarya.helpers.{
   InMemoryBookingRepository,
@@ -279,4 +280,12 @@ class AvailabilityRoutesSpec extends CatsEffectSuite:
       response.status != Status.Unauthorized,
       s"Expected public access (not 401) but got ${response.status}"
     )
+  }
+
+  test("AvailabilityRoutes.allEndpoints is non-empty and documents date, items, excludeBookingId query params") {
+    assert(AvailabilityRoutes.allEndpoints.nonEmpty)
+    val desc = AvailabilityRoutes.allEndpoints.map(_.show).mkString
+    assert(desc.contains("date"),             s"Expected 'date' query param in endpoint: $desc")
+    assert(desc.contains("items"),            s"Expected 'items' query param in endpoint: $desc")
+    assert(desc.contains("excludeBookingId"), s"Expected 'excludeBookingId' query param in endpoint: $desc")
   }

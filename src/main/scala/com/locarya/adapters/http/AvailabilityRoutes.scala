@@ -2,16 +2,22 @@ package com.locarya.adapters.http
 
 import cats.effect.Async
 import cats.syntax.all.*
+import com.locarya.adapters.http.TapirSupport.ErrorBody
+import com.locarya.domain.models.ValidationError
 import com.locarya.domain.models.*
 import com.locarya.domain.ports.{AvailabilityService, StorefrontService}
-import io.circe.Encoder
-import io.circe.generic.semiauto.deriveEncoder
-import io.circe.syntax.*
+import io.circe.Codec
+import io.circe.generic.auto.*
+import io.circe.generic.semiauto.deriveCodec
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
-import org.http4s.*
-import org.http4s.circe.*
-import org.http4s.dsl.Http4sDsl
+import org.http4s.HttpRoutes
+import sttp.model.StatusCode
+import sttp.tapir.*
+import sttp.tapir.AnyEndpoint
+import sttp.tapir.generic.auto.*
+import sttp.tapir.json.circe.*
+import sttp.tapir.server.http4s.Http4sServerInterpreter
 
 object AvailabilityRoutes:
 
@@ -21,13 +27,12 @@ object AvailabilityRoutes:
     available:    Boolean,
     availableQty: Int
   )
-  private given Encoder[ItemAvailabilityResponse] = deriveEncoder
+  private given Codec[ItemAvailabilityResponse]  = deriveCodec
+  private given Schema[ItemAvailabilityResponse] = Schema.derived
 
   private case class AvailabilityResponse(date: String, items: List[ItemAvailabilityResponse])
-  private given Encoder[AvailabilityResponse] = deriveEncoder
-
-  private case class ErrorResponseBody(error: String)
-  private given Encoder[ErrorResponseBody] = deriveEncoder
+  private given Codec[AvailabilityResponse]      = deriveCodec
+  private given Schema[AvailabilityResponse]     = Schema.derived
 
   private def kindLabel(kind: AvailabilityKind): String = kind match
     case AvailabilityKind.Item    => "item"
@@ -65,46 +70,51 @@ object AvailabilityRoutes:
       case None      => Right(None)
       case Some(str) => BookingId.fromString(str.trim).map(Some(_))
 
+  private val availabilityE = endpoint.get
+    .in("storefront" / path[String]("slug") / "availability")
+    .in(query[String]("date"))
+    .in(query[Option[String]]("items"))
+    .in(query[Option[String]]("excludeBookingId"))
+    .out(jsonBody[AvailabilityResponse])
+    .errorOut(statusCode.and(jsonBody[ErrorBody]))
+
+  val allEndpoints: List[AnyEndpoint] = List(availabilityE)
+
   def routes[F[_]: Async](
     availabilityService: AvailabilityService[F],
     storefrontService:   StorefrontService[F]
   ): HttpRoutes[F] =
-    val dsl = Http4sDsl[F]
-    import dsl.*
 
-    HttpRoutes.of[F]:
-      case req @ GET -> Root / "storefront" / slugStr / "availability" =>
-        val parsed: Either[ValidationError, (StorefrontSlug, LocalDate, Option[BookingId], Option[List[(ItemId, Int)]])] =
-          for
-            slug             <- StorefrontSlug.fromString(slugStr)
-            dateRaw          <- req.uri.params.get("date")
-                                  .toRight(InvalidAvailabilityQuery("Missing required parameter: date"))
-            date             <- parseDate(dateRaw)
-            excludeBookingId <- parseExcludeBookingId(req.uri.params.get("excludeBookingId"))
-            itemsOpt         <- req.uri.params.get("items") match
-                                  case None      => Right(None)
-                                  case Some(raw) => parseItems(raw).map(Some(_))
-          yield (slug, date, excludeBookingId, itemsOpt)
+    val server = availabilityE.serverLogic[F] { case (slugStr, dateStr, itemsRaw, excludeRaw) =>
+      val parsed =
+        for
+          slug             <- StorefrontSlug.fromString(slugStr)
+          date             <- parseDate(dateStr)
+          excludeBookingId <- parseExcludeBookingId(excludeRaw)
+          itemsOpt         <- itemsRaw match
+                                case None      => Right(None)
+                                case Some(raw) => parseItems(raw).map(Some(_))
+        yield (slug, date, excludeBookingId, itemsOpt)
 
-        parsed match
-          case Left(err: ValidationError) =>
-            BadRequest(ErrorResponseBody(err.message).asJson)
-          case Right((slug, date, excludeBookingId, itemsOpt)) =>
-            // No `items` → evaluate the provider's whole active catalog for that date.
-            // The Combo's ComboId is reused as an ItemId so the service can dispatch it.
-            val requestF: F[List[(ItemId, Int)]] = itemsOpt match
-              case Some(list) => list.pure[F]
-              case None =>
-                storefrontService.getStorefront(slug).map { catalog =>
-                  catalog.items.map(wi => wi.item.id -> 1) ++
-                    catalog.combos.flatMap(wc => ItemId.fromString(wc.combo.id.value).toOption.map(_ -> 1))
-                }
-
-            (for
-              request <- requestF
-              result  <- availabilityService.checkAvailability(request, date, excludeBookingId)
-              resp    <- Ok(AvailabilityResponse(date.toString, result.map(toResponse)).asJson)
-             yield resp).handleErrorWith {
+      parsed match
+        case Left(err: ValidationError) =>
+          Left((StatusCode.BadRequest, ErrorBody(err.message))).pure[F]
+        case Right((slug, date, excludeBookingId, itemsOpt)) =>
+          val requestF: F[List[(ItemId, Int)]] = itemsOpt match
+            case Some(list) => list.pure[F]
+            case None =>
+              storefrontService.getStorefront(slug).map { catalog =>
+                catalog.items.map(wi => wi.item.id -> 1) ++
+                  catalog.combos.flatMap(wc => ItemId.fromString(wc.combo.id.value).toOption.map(_ -> 1))
+              }
+          (for
+            request <- requestF
+            result  <- availabilityService.checkAvailability(request, date, excludeBookingId)
+          yield Right(AvailabilityResponse(date.toString, result.map(toResponse))))
+            .handleErrorWith {
               case _: StorefrontError.NotFound =>
-                NotFound(ErrorResponseBody("Storefront not found").asJson)
+                Left((StatusCode.NotFound, ErrorBody("Storefront not found"))).pure[F]
             }
+    }
+
+    Http4sServerInterpreter[F]().toRoutes(List(server))
