@@ -3,7 +3,7 @@ package com.locarya
 import cats.effect._
 import cats.syntax.all._
 import com.comcast.ip4s._
-import com.locarya.adapters.http.{AttendantRoutes, AuthRoutes, AvailabilityRoutes, HealthEndpoints, ItemRoutes, PaymentRoutes, StorefrontBookingRoutes, StorefrontRoutes, SwaggerRoutes}
+import com.locarya.adapters.http.{AttendantRoutes, AuthRoutes, AvailabilityRoutes, DashboardBookingRoutes, HealthEndpoints, ItemRoutes, PaymentRoutes, StorefrontBookingRoutes, StorefrontRoutes, SwaggerRoutes}
 import com.locarya.adapters.http.middleware.CorrelationIdMiddleware
 import com.locarya.adapters.persistence.{Database, ProviderRepositoryLive}
 import com.locarya.config.AppConfig
@@ -42,7 +42,8 @@ object Main extends IOApp.Simple {
                          AuthRoutes.allEndpoints ++
                          StorefrontRoutes.allEndpoints ++
                          AvailabilityRoutes.allEndpoints ++
-                         StorefrontBookingRoutes.allEndpoints,
+                         StorefrontBookingRoutes.allEndpoints ++
+                         DashboardBookingRoutes.allEndpoints,
                          swaggerEnabled
                        )
 

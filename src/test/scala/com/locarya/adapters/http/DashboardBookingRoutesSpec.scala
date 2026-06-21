@@ -128,13 +128,13 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
 
   private def postDashboardBooking(ctx: Ctx, body: String, token: String): IO[Response[IO]] =
     ctx.allRoutes.orNotFound(
-      Request[IO](Method.POST, uri"/dashboard/bookings")
+      Request[IO](Method.POST, uri"/api/v1/dashboard/bookings")
         .withEntity(body)
         .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(token))
     )
 
   private def getDashboardBookings(ctx: Ctx, token: String, query: String = ""): IO[Response[IO]] =
-    val uri = Uri.unsafeFromString(s"/dashboard/bookings$query")
+    val uri = Uri.unsafeFromString(s"/api/v1/dashboard/bookings$query")
     ctx.allRoutes.orNotFound(
       Request[IO](Method.GET, uri)
         .withHeaders(authHeader(token))
@@ -146,7 +146,7 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
     for
       ctx  <- makeCtx
       resp <- ctx.allRoutes.orNotFound(
-                Request[IO](Method.POST, uri"/dashboard/bookings")
+                Request[IO](Method.POST, uri"/api/v1/dashboard/bookings")
                   .withEntity(bookingBody("some-id"))
                   .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
               )
@@ -156,7 +156,7 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
   test("GET /dashboard/bookings returns 401 without Authorization header") {
     for
       ctx  <- makeCtx
-      resp <- ctx.allRoutes.orNotFound(Request[IO](Method.GET, uri"/dashboard/bookings"))
+      resp <- ctx.allRoutes.orNotFound(Request[IO](Method.GET, uri"/api/v1/dashboard/bookings"))
     yield assertEquals(resp.status, Status.Unauthorized)
   }
 
@@ -220,7 +220,7 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
       ctx  <- makeCtx
       auth <- signupAndLogin(ctx)
       resp <- ctx.allRoutes.orNotFound(
-                Request[IO](Method.POST, uri"/dashboard/bookings")
+                Request[IO](Method.POST, uri"/api/v1/dashboard/bookings")
                   .withEntity("""{"bad":"json"}""")
                   .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
               )
@@ -274,7 +274,7 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
   // ── PUT /dashboard/bookings/:id/status ───────────────────────────────────
 
   private def putBookingStatus(ctx: Ctx, bookingId: String, body: String, token: String): IO[Response[IO]] =
-    val uri = Uri.unsafeFromString(s"/dashboard/bookings/$bookingId/status")
+    val uri = Uri.unsafeFromString(s"/api/v1/dashboard/bookings/$bookingId/status")
     ctx.allRoutes.orNotFound(
       Request[IO](Method.PUT, uri)
         .withEntity(body)
@@ -292,7 +292,7 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
     for
       ctx  <- makeCtx
       resp <- ctx.allRoutes.orNotFound(
-                Request[IO](Method.PUT, uri"/dashboard/bookings/some-id/status")
+                Request[IO](Method.PUT, uri"/api/v1/dashboard/bookings/some-id/status")
                   .withEntity("""{"newStatus":"in-progress"}""")
                   .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
               )
