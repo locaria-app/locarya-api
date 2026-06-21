@@ -55,6 +55,12 @@ lazy val root = project
       // JWT
       "com.github.jwt-scala" %% "jwt-circe" % "9.4.6",
 
+      // Tapir (API documentation + server interpreter)
+      "com.softwaremill.sttp.tapir" %% "tapir-core"              % "1.11.50",
+      "com.softwaremill.sttp.tapir" %% "tapir-http4s-server"     % "1.11.50",
+      "com.softwaremill.sttp.tapir" %% "tapir-swagger-ui-bundle" % "1.11.50",
+      "com.softwaremill.sttp.tapir" %% "tapir-json-circe"        % "1.11.50",
+
       // Test — in-memory port impls + stub gateways (no Testcontainers). See ADR 0007.
       "org.scalameta" %% "munit" % "1.1.0" % Test,
       "org.typelevel" %% "munit-cats-effect" % "2.1.0" % Test

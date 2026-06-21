@@ -3,13 +3,14 @@ package com.locarya
 import cats.effect._
 import cats.syntax.all._
 import com.comcast.ip4s._
-import com.locarya.adapters.http.{AttendantRoutes, AuthRoutes, HealthEndpoints, PaymentRoutes}
+import com.locarya.adapters.http.{AttendantRoutes, AuthRoutes, HealthEndpoints, ItemRoutes, PaymentRoutes, SwaggerRoutes}
 import com.locarya.adapters.http.middleware.CorrelationIdMiddleware
 import com.locarya.adapters.persistence.{Database, ProviderRepositoryLive}
 import com.locarya.config.AppConfig
 import com.locarya.domain.services.{AttendantServiceImpl, AuthServiceImpl, PaymentServiceImpl, ProviderServiceImpl}
+import org.http4s.{HttpRoutes, Request, Response}
 import org.http4s.ember.server.EmberServerBuilder
-import org.http4s.server.Server
+import org.http4s.server.{Router, Server}
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.LoggerFactory
 import org.typelevel.log4cats.slf4j.Slf4jFactory
@@ -35,9 +36,19 @@ object Main extends IOApp.Simple {
       providerService = ProviderServiceImpl[IO](providerRepo)
       authService     = AuthServiceImpl[IO](providerRepo, config.jwt.secret)
 
+      swaggerEnabled = sys.env.getOrElse("SWAGGER_ENABLED", "false") == "true"
+      docsRoute      = SwaggerRoutes.maybeDocsRoute[IO](ItemRoutes.allEndpoints, swaggerEnabled)
+
+      apiV1Routes = Router(
+        "/api/v1" -> AuthRoutes.routes[IO](providerService, authService)
+        // ItemRoutes will be mounted here once ItemRepositoryLive is implemented:
+        // "/api/v1" -> (AuthRoutes.routes[IO](...) <+> ItemRoutes.routes[IO](itemSvc, config.jwt.secret))
+      )
+
       routes = CorrelationIdMiddleware(
                  HealthEndpoints.routes[IO](xa) <+>
-                 AuthRoutes.routes[IO](providerService, authService)
+                 apiV1Routes <+>
+                 docsRoute.getOrElse(HttpRoutes.empty[IO])
                )
 
       server <- EmberServerBuilder
