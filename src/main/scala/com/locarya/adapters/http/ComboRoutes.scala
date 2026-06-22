@@ -2,14 +2,17 @@ package com.locarya.adapters.http
 
 import cats.effect.Async
 import cats.syntax.all.*
-import com.locarya.adapters.http.middleware.AuthMiddleware
+import com.locarya.adapters.http.TapirSupport.{ErrorBody, securedBase, validateBearer}
 import com.locarya.domain.models.*
 import com.locarya.domain.ports.{ComboService, CreateComboRequest, UpdateComboRequest}
 import io.circe.generic.auto.*
-import io.circe.syntax.*
-import org.http4s.*
-import org.http4s.circe.*
-import org.http4s.dsl.Http4sDsl
+import org.http4s.HttpRoutes
+import sttp.model.StatusCode
+import sttp.tapir.*
+import sttp.tapir.AnyEndpoint
+import sttp.tapir.generic.auto.*
+import sttp.tapir.json.circe.*
+import sttp.tapir.server.http4s.Http4sServerInterpreter
 
 object ComboRoutes:
 
@@ -42,7 +45,6 @@ object ComboRoutes:
   )
 
   private case class CreateComboResponseBody(comboId: String)
-  private case class ErrorResponseBody(error: String)
 
   private def toResponseBody(combo: Combo): ComboResponseBody =
     ComboResponseBody(
@@ -55,116 +57,123 @@ object ComboRoutes:
       itemCompositions = combo.items.map(c => ComboItemCompositionResponse(c.itemId.value, c.quantity))
     )
 
+  private val createComboE = securedBase.post
+    .in("dashboard" / "combos")
+    .in(jsonBody[CreateComboBody])
+    .out(statusCode(StatusCode.Created).and(jsonBody[CreateComboResponseBody]))
+
+  private val getComboE = securedBase.get
+    .in("dashboard" / "combos" / path[String]("comboId"))
+    .out(jsonBody[ComboResponseBody])
+
+  private val updateComboE = securedBase.put
+    .in("dashboard" / "combos" / path[String]("comboId"))
+    .in(jsonBody[UpdateComboBody])
+
+  private val deleteComboE = securedBase.delete
+    .in("dashboard" / "combos" / path[String]("comboId"))
+
+  val allEndpoints: List[AnyEndpoint] = List(createComboE, getComboE, updateComboE, deleteComboE)
+
   def routes[F[_]: Async](
     comboService: ComboService[F],
     jwtSecret:    String
   ): HttpRoutes[F] =
-    val dsl = Http4sDsl[F]
-    import dsl.*
 
-    given EntityDecoder[F, CreateComboBody] = jsonOf[F, CreateComboBody]
-    given EntityDecoder[F, UpdateComboBody] = jsonOf[F, UpdateComboBody]
+    type Err = (StatusCode, ErrorBody)
 
-    AuthMiddleware.withProviderId[F](jwtSecret) { rawProviderId =>
+    def security(token: String): F[Either[Err, ProviderId]] =
+      validateBearer(token, jwtSecret).pure[F]
 
-      val providerIdF: F[ProviderId] =
-        ProviderId.fromString(rawProviderId)
-          .fold(err => ComboError.InvalidInput(err).raiseError[F, ProviderId], _.pure[F])
+    def notFound(msg: String): Err   = (StatusCode.NotFound, ErrorBody(msg))
+    def badRequest(msg: String): Err = (StatusCode.BadRequest, ErrorBody(msg))
+    def forbidden(msg: String): Err  = (StatusCode.Forbidden, ErrorBody(msg))
+    def conflict(msg: String): Err   = (StatusCode.Conflict, ErrorBody(msg))
 
-      HttpRoutes.of[F]:
-
-        case req @ POST -> Root / "dashboard" / "combos" =>
-          req.as[CreateComboBody].flatMap { body =>
-            for
-              pid           <- providerIdF
-              dailyRate     <- Money.fromAmount(body.dailyRate)
-                                 .fold(err => ComboError.InvalidInput(err).raiseError[F, Money], _.pure[F])
-              compositions  <- body.itemCompositions.traverse { c =>
-                                 ItemId.fromString(c.itemId)
-                                   .fold(err => ComboError.InvalidInput(err).raiseError[F, ComboItemDefinition],
-                                         id => ComboItemDefinition(id, c.quantity).pure[F])
-                               }
-              request        = CreateComboRequest(
-                                 providerId       = pid,
-                                 name             = body.name,
-                                 description      = body.description,
-                                 dailyRate        = dailyRate,
-                                 itemCompositions = compositions
-                               )
-              comboId       <- comboService.createCombo(request)
-              resp          <- Created(CreateComboResponseBody(comboId.value).asJson)
-            yield resp
-          }.handleErrorWith {
-            case e: ComboError =>
-              BadRequest(ErrorResponseBody(e.getMessage).asJson)
-            case _: MalformedMessageBodyFailure =>
-              BadRequest(ErrorResponseBody("Invalid or incomplete request body").asJson)
-            case _: InvalidMessageBodyFailure =>
-              BadRequest(ErrorResponseBody("Invalid request body").asJson)
+    val createServer = createComboE.serverSecurityLogic[ProviderId, F](security)
+      .serverLogic { providerId => body =>
+        (for
+          dailyRate    <- Money.fromAmount(body.dailyRate)
+                           .fold(err => ComboError.InvalidInput(err).raiseError[F, Money], _.pure[F])
+          compositions <- body.itemCompositions.traverse { c =>
+                            ItemId.fromString(c.itemId)
+                              .fold(err => ComboError.InvalidInput(err).raiseError[F, ComboItemDefinition],
+                                    id => ComboItemDefinition(id, c.quantity).pure[F])
+                          }
+          request       = CreateComboRequest(
+                            providerId       = providerId,
+                            name             = body.name,
+                            description      = body.description,
+                            dailyRate        = dailyRate,
+                            itemCompositions = compositions
+                          )
+          comboId      <- comboService.createCombo(request)
+        yield Right(CreateComboResponseBody(comboId.value)))
+          .handleErrorWith {
+            case e: ComboError => Left(badRequest(e.getMessage)).pure[F]
+            case _             => Left((StatusCode.InternalServerError, ErrorBody("Internal error"))).pure[F]
           }
+      }
 
-        case GET -> Root / "dashboard" / "combos" / comboIdStr =>
-          (for
-            pid     <- providerIdF
-            comboId <- ComboId.fromString(comboIdStr)
-                         .fold(err => ComboError.InvalidInput(err).raiseError[F, ComboId], _.pure[F])
-            combo   <- comboService.getCombo(comboId, pid)
-            resp    <- Ok(toResponseBody(combo).asJson)
-          yield resp)
-            .handleErrorWith {
-              case _: ComboError.NotFound    => NotFound(ErrorResponseBody("Combo not found").asJson)
-              case _: ComboError.Forbidden   => Forbidden(ErrorResponseBody("Access denied").asJson)
-              case e: ComboError             => BadRequest(ErrorResponseBody(e.getMessage).asJson)
-            }
-
-        case req @ PUT -> Root / "dashboard" / "combos" / comboIdStr =>
-          req.as[UpdateComboBody].flatMap { body =>
-            for
-              pid          <- providerIdF
-              comboId      <- ComboId.fromString(comboIdStr)
-                                .fold(err => ComboError.InvalidInput(err).raiseError[F, ComboId], _.pure[F])
-              dailyRate    <- Money.fromAmount(body.dailyRate)
-                                .fold(err => ComboError.InvalidInput(err).raiseError[F, Money], _.pure[F])
-              compositions <- body.itemCompositions.traverse { list =>
-                                list.traverse { c =>
-                                  ItemId.fromString(c.itemId)
-                                    .fold(err => ComboError.InvalidInput(err).raiseError[F, ComboItemDefinition],
-                                          id => ComboItemDefinition(id, c.quantity).pure[F])
-                                }
-                              }
-              request       = UpdateComboRequest(
-                                comboId          = comboId,
-                                providerId       = pid,
-                                name             = body.name,
-                                description      = body.description,
-                                dailyRate        = dailyRate,
-                                itemCompositions = compositions
-                              )
-              _            <- comboService.updateCombo(request)
-              resp         <- Ok(().asJson)
-            yield resp
-          }.handleErrorWith {
-            case _: ComboError.HasBookings  => Conflict(ErrorResponseBody("Combo has existing bookings — composition cannot be changed").asJson)
-            case _: ComboError.NotFound     => NotFound(ErrorResponseBody("Combo not found").asJson)
-            case _: ComboError.Forbidden    => Forbidden(ErrorResponseBody("Access denied").asJson)
-            case e: ComboError              => BadRequest(ErrorResponseBody(e.getMessage).asJson)
-            case _: MalformedMessageBodyFailure =>
-              BadRequest(ErrorResponseBody("Invalid or incomplete request body").asJson)
-            case _: InvalidMessageBodyFailure =>
-              BadRequest(ErrorResponseBody("Invalid request body").asJson)
+    val getServer = getComboE.serverSecurityLogic[ProviderId, F](security)
+      .serverLogic { providerId => comboIdStr =>
+        (for
+          comboId <- ComboId.fromString(comboIdStr)
+                       .fold(err => ComboError.InvalidInput(err).raiseError[F, ComboId], _.pure[F])
+          combo   <- comboService.getCombo(comboId, providerId)
+        yield Right(toResponseBody(combo)))
+          .handleErrorWith {
+            case _: ComboError.NotFound  => Left(notFound("Combo not found")).pure[F]
+            case _: ComboError.Forbidden => Left(forbidden("Access denied")).pure[F]
+            case e: ComboError           => Left(badRequest(e.getMessage)).pure[F]
           }
+      }
 
-        case DELETE -> Root / "dashboard" / "combos" / comboIdStr =>
-          (for
-            pid     <- providerIdF
-            comboId <- ComboId.fromString(comboIdStr)
-                         .fold(err => ComboError.InvalidInput(err).raiseError[F, ComboId], _.pure[F])
-            _       <- comboService.softDeleteCombo(comboId, pid)
-            resp    <- Ok(().asJson)
-          yield resp)
-            .handleErrorWith {
-              case _: ComboError.NotFound    => NotFound(ErrorResponseBody("Combo not found").asJson)
-              case _: ComboError.Forbidden   => Forbidden(ErrorResponseBody("Access denied").asJson)
-              case e: ComboError             => BadRequest(ErrorResponseBody(e.getMessage).asJson)
-            }
-    }
+    val updateServer = updateComboE.serverSecurityLogic[ProviderId, F](security)
+      .serverLogic { providerId => input =>
+        val (comboIdStr, body) = input
+        (for
+          comboId      <- ComboId.fromString(comboIdStr)
+                            .fold(err => ComboError.InvalidInput(err).raiseError[F, ComboId], _.pure[F])
+          dailyRate    <- Money.fromAmount(body.dailyRate)
+                            .fold(err => ComboError.InvalidInput(err).raiseError[F, Money], _.pure[F])
+          compositions <- body.itemCompositions.traverse { list =>
+                            list.traverse { c =>
+                              ItemId.fromString(c.itemId)
+                                .fold(err => ComboError.InvalidInput(err).raiseError[F, ComboItemDefinition],
+                                      id => ComboItemDefinition(id, c.quantity).pure[F])
+                            }
+                          }
+          request       = UpdateComboRequest(
+                            comboId          = comboId,
+                            providerId       = providerId,
+                            name             = body.name,
+                            description      = body.description,
+                            dailyRate        = dailyRate,
+                            itemCompositions = compositions
+                          )
+          _            <- comboService.updateCombo(request)
+        yield Right(()))
+          .handleErrorWith {
+            case _: ComboError.HasBookings => Left(conflict("Combo has existing bookings — composition cannot be changed")).pure[F]
+            case _: ComboError.NotFound    => Left(notFound("Combo not found")).pure[F]
+            case _: ComboError.Forbidden   => Left(forbidden("Access denied")).pure[F]
+            case e: ComboError             => Left(badRequest(e.getMessage)).pure[F]
+          }
+      }
+
+    val deleteServer = deleteComboE.serverSecurityLogic[ProviderId, F](security)
+      .serverLogic { providerId => comboIdStr =>
+        (for
+          comboId <- ComboId.fromString(comboIdStr)
+                       .fold(err => ComboError.InvalidInput(err).raiseError[F, ComboId], _.pure[F])
+          _       <- comboService.softDeleteCombo(comboId, providerId)
+        yield Right(()))
+          .handleErrorWith {
+            case _: ComboError.NotFound  => Left(notFound("Combo not found")).pure[F]
+            case _: ComboError.Forbidden => Left(forbidden("Access denied")).pure[F]
+            case e: ComboError           => Left(badRequest(e.getMessage)).pure[F]
+          }
+      }
+
+    Http4sServerInterpreter[F]().toRoutes(List(createServer, getServer, updateServer, deleteServer))

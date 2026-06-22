@@ -78,7 +78,7 @@ class AttendantRoutesSpec extends CatsEffectSuite:
   private def postAttendant(ctx: Ctx, token: String, name: String = "Joao Silva", phone: String = "11999990000"): IO[Response[IO]] =
     val body = s"""{"name":"$name","phone":"$phone"}"""
     ctx.allRoutes.orNotFound(
-      Request[IO](Method.POST, uri"/dashboard/attendants")
+      Request[IO](Method.POST, uri"/api/v1/dashboard/attendants")
         .withEntity(body)
         .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(token))
     )
@@ -92,7 +92,7 @@ class AttendantRoutesSpec extends CatsEffectSuite:
     for
       ctx  <- makeCtx
       resp <- ctx.allRoutes.orNotFound(
-                Request[IO](Method.POST, uri"/dashboard/attendants")
+                Request[IO](Method.POST, uri"/api/v1/dashboard/attendants")
                   .withEntity("""{"name":"X","phone":"1"}""")
                   .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
               )
@@ -102,7 +102,7 @@ class AttendantRoutesSpec extends CatsEffectSuite:
   test("GET /dashboard/attendants returns 401 without Authorization header") {
     for
       ctx  <- makeCtx
-      resp <- ctx.allRoutes.orNotFound(Request[IO](Method.GET, uri"/dashboard/attendants"))
+      resp <- ctx.allRoutes.orNotFound(Request[IO](Method.GET, uri"/api/v1/dashboard/attendants"))
     yield assertEquals(resp.status, Status.Unauthorized)
   }
 
@@ -148,7 +148,7 @@ class AttendantRoutesSpec extends CatsEffectSuite:
       ctx  <- makeCtx
       auth <- signupAndLogin(ctx)
       resp <- ctx.allRoutes.orNotFound(
-                Request[IO](Method.POST, uri"/dashboard/attendants")
+                Request[IO](Method.POST, uri"/api/v1/dashboard/attendants")
                   .withEntity("""{"bad":"json"}""")
                   .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
               )
@@ -165,7 +165,7 @@ class AttendantRoutesSpec extends CatsEffectSuite:
       attendantId <- getAttendantId(createResp)
       updateBody   = """{"name":"Maria Updated","phone":"11777770000"}"""
       updateResp  <- ctx.allRoutes.orNotFound(
-                       Request[IO](Method.PUT, Uri.unsafeFromString(s"/dashboard/attendants/$attendantId"))
+                       Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/v1/dashboard/attendants/$attendantId"))
                          .withEntity(updateBody)
                          .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
                      )
@@ -182,7 +182,7 @@ class AttendantRoutesSpec extends CatsEffectSuite:
       auth   <- signupAndLogin(ctx)
       bogus   = AttendantId.generate.value
       resp   <- ctx.allRoutes.orNotFound(
-                  Request[IO](Method.PUT, Uri.unsafeFromString(s"/dashboard/attendants/$bogus"))
+                  Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/v1/dashboard/attendants/$bogus"))
                     .withEntity("""{"name":"X","phone":"1"}""")
                     .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
                 )
@@ -198,7 +198,7 @@ class AttendantRoutesSpec extends CatsEffectSuite:
       createResp  <- postAttendant(ctx, auth.token)
       attendantId <- getAttendantId(createResp)
       deleteResp  <- ctx.allRoutes.orNotFound(
-                       Request[IO](Method.DELETE, Uri.unsafeFromString(s"/dashboard/attendants/$attendantId"))
+                       Request[IO](Method.DELETE, Uri.unsafeFromString(s"/api/v1/dashboard/attendants/$attendantId"))
                          .withHeaders(authHeader(auth.token))
                      )
       stored      <- ctx.attendantRepo.findById(AttendantId.fromString(attendantId).toOption.get)
@@ -213,7 +213,7 @@ class AttendantRoutesSpec extends CatsEffectSuite:
       auth <- signupAndLogin(ctx)
       bogus = AttendantId.generate.value
       resp <- ctx.allRoutes.orNotFound(
-                Request[IO](Method.DELETE, Uri.unsafeFromString(s"/dashboard/attendants/$bogus"))
+                Request[IO](Method.DELETE, Uri.unsafeFromString(s"/api/v1/dashboard/attendants/$bogus"))
                   .withHeaders(authHeader(auth.token))
               )
     yield assertEquals(resp.status, Status.NotFound)
@@ -228,7 +228,7 @@ class AttendantRoutesSpec extends CatsEffectSuite:
       _    <- postAttendant(ctx, auth.token, name = "Active One")
       _    <- postAttendant(ctx, auth.token, name = "Active Two")
       resp <- ctx.allRoutes.orNotFound(
-                Request[IO](Method.GET, uri"/dashboard/attendants")
+                Request[IO](Method.GET, uri"/api/v1/dashboard/attendants")
                   .withHeaders(authHeader(auth.token))
               )
       body <- resp.as[String]
@@ -246,11 +246,11 @@ class AttendantRoutesSpec extends CatsEffectSuite:
       attendantId <- getAttendantId(createResp)
       _           <- postAttendant(ctx, auth.token, name = "Active")
       _           <- ctx.allRoutes.orNotFound(
-                       Request[IO](Method.DELETE, Uri.unsafeFromString(s"/dashboard/attendants/$attendantId"))
+                       Request[IO](Method.DELETE, Uri.unsafeFromString(s"/api/v1/dashboard/attendants/$attendantId"))
                          .withHeaders(authHeader(auth.token))
                      )
       resp <- ctx.allRoutes.orNotFound(
-                Request[IO](Method.GET, uri"/dashboard/attendants")
+                Request[IO](Method.GET, uri"/api/v1/dashboard/attendants")
                   .withHeaders(authHeader(auth.token))
               )
       body <- resp.as[String]
@@ -260,9 +260,9 @@ class AttendantRoutesSpec extends CatsEffectSuite:
       assertEquals(json.asArray.map(_.size), Some(1))
   }
 
-  // ── PUT /dashboard/bookings/:id/attendants ────────────────────────────────
+  // ── PUT /api/v1/dashboard/bookings/:id/attendants ────────────────────────────────
 
-  test("PUT /dashboard/bookings/:id/attendants assigns attendant and returns 200") {
+  test("PUT /api/v1/dashboard/bookings/:id/attendants assigns attendant and returns 200") {
     for
       ctx         <- makeCtx
       auth        <- signupAndLogin(ctx)
@@ -270,7 +270,7 @@ class AttendantRoutesSpec extends CatsEffectSuite:
       attendantId <- getAttendantId(createResp)
       bookingId    = BookingId.generate.value
       assignResp  <- ctx.allRoutes.orNotFound(
-                       Request[IO](Method.PUT, Uri.unsafeFromString(s"/dashboard/bookings/$bookingId/attendants"))
+                       Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/v1/dashboard/bookings/$bookingId/attendants"))
                          .withEntity(s"""{"attendantIds":["$attendantId"]}""")
                          .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
                      )
@@ -281,46 +281,46 @@ class AttendantRoutesSpec extends CatsEffectSuite:
       assertEquals(assigned.head.id.value, attendantId)
   }
 
-  test("PUT /dashboard/bookings/:id/attendants returns 404 for unknown attendant id") {
+  test("PUT /api/v1/dashboard/bookings/:id/attendants returns 404 for unknown attendant id") {
     for
       ctx        <- makeCtx
       auth       <- signupAndLogin(ctx)
       bookingId   = BookingId.generate.value
       bogusId     = AttendantId.generate.value
       resp       <- ctx.allRoutes.orNotFound(
-                      Request[IO](Method.PUT, Uri.unsafeFromString(s"/dashboard/bookings/$bookingId/attendants"))
+                      Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/v1/dashboard/bookings/$bookingId/attendants"))
                         .withEntity(s"""{"attendantIds":["$bogusId"]}""")
                         .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
                     )
     yield assertEquals(resp.status, Status.NotFound)
   }
 
-  test("PUT /dashboard/bookings/:id/attendants returns 400 when attendant is inactive") {
+  test("PUT /api/v1/dashboard/bookings/:id/attendants returns 400 when attendant is inactive") {
     for
       ctx         <- makeCtx
       auth        <- signupAndLogin(ctx)
       createResp  <- postAttendant(ctx, auth.token)
       attendantId <- getAttendantId(createResp)
       _           <- ctx.allRoutes.orNotFound(
-                       Request[IO](Method.DELETE, Uri.unsafeFromString(s"/dashboard/attendants/$attendantId"))
+                       Request[IO](Method.DELETE, Uri.unsafeFromString(s"/api/v1/dashboard/attendants/$attendantId"))
                          .withHeaders(authHeader(auth.token))
                      )
       bookingId    = BookingId.generate.value
       resp        <- ctx.allRoutes.orNotFound(
-                       Request[IO](Method.PUT, Uri.unsafeFromString(s"/dashboard/bookings/$bookingId/attendants"))
+                       Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/v1/dashboard/bookings/$bookingId/attendants"))
                          .withEntity(s"""{"attendantIds":["$attendantId"]}""")
                          .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
                      )
     yield assertEquals(resp.status, Status.BadRequest)
   }
 
-  test("PUT /dashboard/bookings/:id/attendants returns 401 without Authorization header") {
+  test("PUT /api/v1/dashboard/bookings/:id/attendants returns 401 without Authorization header") {
     for
       ctx        <- makeCtx
       bookingId   = BookingId.generate.value
       bogusId     = AttendantId.generate.value
       resp       <- ctx.allRoutes.orNotFound(
-                      Request[IO](Method.PUT, Uri.unsafeFromString(s"/dashboard/bookings/$bookingId/attendants"))
+                      Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/v1/dashboard/bookings/$bookingId/attendants"))
                         .withEntity(s"""{"attendantIds":["$bogusId"]}""")
                         .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
                     )

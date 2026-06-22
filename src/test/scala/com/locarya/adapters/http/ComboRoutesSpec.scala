@@ -116,7 +116,7 @@ class ComboRoutesSpec extends CatsEffectSuite:
     }"""
 
   private def createCombo(ctx: Ctx, token: String, itemId: String): IO[String] =
-    val req = Request[IO](Method.POST, uri"/dashboard/combos")
+    val req = Request[IO](Method.POST, uri"/api/v1/dashboard/combos")
       .withEntity(validComboBody(itemId))
       .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(token))
     for
@@ -131,7 +131,7 @@ class ComboRoutesSpec extends CatsEffectSuite:
       ctx      <- makeCtx
       auth     <- signupAndLogin(ctx)
       itemId   <- createItem(ctx, auth.token)
-      request   = Request[IO](Method.POST, uri"/dashboard/combos")
+      request   = Request[IO](Method.POST, uri"/api/v1/dashboard/combos")
                     .withEntity(validComboBody(itemId))
                     .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
       response <- ctx.allRoutes.orNotFound(request)
@@ -143,7 +143,7 @@ class ComboRoutesSpec extends CatsEffectSuite:
       ctx      <- makeCtx
       auth     <- signupAndLogin(ctx)
       itemId   <- createItem(ctx, auth.token)
-      request   = Request[IO](Method.POST, uri"/dashboard/combos")
+      request   = Request[IO](Method.POST, uri"/api/v1/dashboard/combos")
                     .withEntity(validComboBody(itemId))
                     .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
       response <- ctx.allRoutes.orNotFound(request)
@@ -159,7 +159,7 @@ class ComboRoutesSpec extends CatsEffectSuite:
     for
       ctx      <- makeCtx
       auth     <- signupAndLogin(ctx)
-      request   = Request[IO](Method.POST, uri"/dashboard/combos")
+      request   = Request[IO](Method.POST, uri"/api/v1/dashboard/combos")
                     .withEntity(validComboBody(fakeItemId))
                     .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
       response <- ctx.allRoutes.orNotFound(request)
@@ -173,7 +173,7 @@ class ComboRoutesSpec extends CatsEffectSuite:
       itemId   <- createItem(ctx, auth.token)
       comboId  <- createCombo(ctx, auth.token, itemId)
       // Use the combo's ID as if it were an item
-      request   = Request[IO](Method.POST, uri"/dashboard/combos")
+      request   = Request[IO](Method.POST, uri"/api/v1/dashboard/combos")
                     .withEntity(validComboBody(comboId))
                     .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
       response <- ctx.allRoutes.orNotFound(request)
@@ -186,7 +186,7 @@ class ComboRoutesSpec extends CatsEffectSuite:
       auth     <- signupAndLogin(ctx)
       itemId   <- createItem(ctx, auth.token)
       badBody   = s"""{"name":"","description":"Desc","dailyRate":100.0,"itemCompositions":[{"itemId":"$itemId","quantity":1}]}"""
-      request   = Request[IO](Method.POST, uri"/dashboard/combos")
+      request   = Request[IO](Method.POST, uri"/api/v1/dashboard/combos")
                     .withEntity(badBody)
                     .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
       response <- ctx.allRoutes.orNotFound(request)
@@ -198,7 +198,7 @@ class ComboRoutesSpec extends CatsEffectSuite:
   test("GET /dashboard/combos/:id without token returns 401") {
     for
       ctx      <- makeCtx
-      request   = Request[IO](Method.GET, uri"/dashboard/combos/some-id")
+      request   = Request[IO](Method.GET, uri"/api/v1/dashboard/combos/some-id")
       response <- ctx.allRoutes.orNotFound(request)
     yield assertEquals(response.status, Status.Unauthorized)
   }
@@ -209,7 +209,7 @@ class ComboRoutesSpec extends CatsEffectSuite:
       auth     <- signupAndLogin(ctx)
       itemId   <- createItem(ctx, auth.token)
       comboId  <- createCombo(ctx, auth.token, itemId)
-      request   = Request[IO](Method.GET, Uri.unsafeFromString(s"/dashboard/combos/$comboId"))
+      request   = Request[IO](Method.GET, Uri.unsafeFromString(s"/api/v1/dashboard/combos/$comboId"))
                     .withHeaders(authHeader(auth.token))
       response <- ctx.allRoutes.orNotFound(request)
       body     <- response.as[String]
@@ -225,7 +225,7 @@ class ComboRoutesSpec extends CatsEffectSuite:
       ctx      <- makeCtx
       auth     <- signupAndLogin(ctx)
       fakeId    = ComboId.generate.value
-      request   = Request[IO](Method.GET, Uri.unsafeFromString(s"/dashboard/combos/$fakeId"))
+      request   = Request[IO](Method.GET, Uri.unsafeFromString(s"/api/v1/dashboard/combos/$fakeId"))
                     .withHeaders(authHeader(auth.token))
       response <- ctx.allRoutes.orNotFound(request)
     yield assertEquals(response.status, Status.NotFound)
@@ -236,7 +236,7 @@ class ComboRoutesSpec extends CatsEffectSuite:
   test("PUT /dashboard/combos/:id without token returns 401") {
     for
       ctx      <- makeCtx
-      request   = Request[IO](Method.PUT, uri"/dashboard/combos/some-id")
+      request   = Request[IO](Method.PUT, uri"/api/v1/dashboard/combos/some-id")
                     .withEntity("""{"name":"x","description":"d","dailyRate":100}""")
                     .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
       response <- ctx.allRoutes.orNotFound(request)
@@ -250,7 +250,7 @@ class ComboRoutesSpec extends CatsEffectSuite:
       auth       <- signupAndLogin(ctx)
       itemId     <- createItem(ctx, auth.token)
       comboId    <- createCombo(ctx, auth.token, itemId)
-      request     = Request[IO](Method.PUT, Uri.unsafeFromString(s"/dashboard/combos/$comboId"))
+      request     = Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/v1/dashboard/combos/$comboId"))
                       .withEntity(updateBody)
                       .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
       response   <- ctx.allRoutes.orNotFound(request)
@@ -264,7 +264,7 @@ class ComboRoutesSpec extends CatsEffectSuite:
       itemId    <- createItem(ctx, auth.token)
       comboId   <- createCombo(ctx, auth.token, itemId)
       updateBody = s"""{"name":"Kit","description":"D","dailyRate":300.00,"itemCompositions":[{"itemId":"$itemId","quantity":3}]}"""
-      request    = Request[IO](Method.PUT, Uri.unsafeFromString(s"/dashboard/combos/$comboId"))
+      request    = Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/v1/dashboard/combos/$comboId"))
                      .withEntity(updateBody)
                      .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
       response  <- ctx.allRoutes.orNotFound(request)
@@ -290,7 +290,7 @@ class ComboRoutesSpec extends CatsEffectSuite:
                    ).toOption.get
       _         <- ctx.bookingRepo.create(booking)
       updateBody = s"""{"name":"Kit","description":"D","dailyRate":300.00,"itemCompositions":[{"itemId":"$itemId","quantity":5}]}"""
-      request    = Request[IO](Method.PUT, Uri.unsafeFromString(s"/dashboard/combos/$comboId"))
+      request    = Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/v1/dashboard/combos/$comboId"))
                      .withEntity(updateBody)
                      .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
       response  <- ctx.allRoutes.orNotFound(request)
@@ -327,7 +327,7 @@ class ComboRoutesSpec extends CatsEffectSuite:
       token2         = parse(loginBody2).toOption.get.hcursor.downField("token").as[String].toOption.get
       updateBody     = """{"name":"Hack","description":"","dailyRate":100.00}"""
       response      <- (auth2Routes <+> ctx.comboRoutes).orNotFound(
-                         Request[IO](Method.PUT, Uri.unsafeFromString(s"/dashboard/combos/$comboId"))
+                         Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/v1/dashboard/combos/$comboId"))
                            .withEntity(updateBody)
                            .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(token2))
                        )
@@ -339,7 +339,7 @@ class ComboRoutesSpec extends CatsEffectSuite:
   test("DELETE /dashboard/combos/:id without token returns 401") {
     for
       ctx      <- makeCtx
-      request   = Request[IO](Method.DELETE, uri"/dashboard/combos/some-id")
+      request   = Request[IO](Method.DELETE, uri"/api/v1/dashboard/combos/some-id")
       response <- ctx.allRoutes.orNotFound(request)
     yield assertEquals(response.status, Status.Unauthorized)
   }
@@ -350,7 +350,7 @@ class ComboRoutesSpec extends CatsEffectSuite:
       auth     <- signupAndLogin(ctx)
       itemId   <- createItem(ctx, auth.token)
       comboId  <- createCombo(ctx, auth.token, itemId)
-      request   = Request[IO](Method.DELETE, Uri.unsafeFromString(s"/dashboard/combos/$comboId"))
+      request   = Request[IO](Method.DELETE, Uri.unsafeFromString(s"/api/v1/dashboard/combos/$comboId"))
                     .withHeaders(authHeader(auth.token))
       response <- ctx.allRoutes.orNotFound(request)
       stored   <- ctx.comboRepo.findById(ComboId.fromString(comboId).toOption.get)
@@ -364,7 +364,7 @@ class ComboRoutesSpec extends CatsEffectSuite:
       ctx      <- makeCtx
       auth     <- signupAndLogin(ctx)
       fakeId    = ComboId.generate.value
-      request   = Request[IO](Method.DELETE, Uri.unsafeFromString(s"/dashboard/combos/$fakeId"))
+      request   = Request[IO](Method.DELETE, Uri.unsafeFromString(s"/api/v1/dashboard/combos/$fakeId"))
                     .withHeaders(authHeader(auth.token))
       response <- ctx.allRoutes.orNotFound(request)
     yield assertEquals(response.status, Status.NotFound)
@@ -398,7 +398,7 @@ class ComboRoutesSpec extends CatsEffectSuite:
       loginBody2    <- loginResp2.as[String]
       token2         = parse(loginBody2).toOption.get.hcursor.downField("token").as[String].toOption.get
       response      <- (auth2Routes <+> ctx.comboRoutes).orNotFound(
-                         Request[IO](Method.DELETE, Uri.unsafeFromString(s"/dashboard/combos/$comboId"))
+                         Request[IO](Method.DELETE, Uri.unsafeFromString(s"/api/v1/dashboard/combos/$comboId"))
                            .withHeaders(authHeader(token2))
                        )
     yield assertEquals(response.status, Status.Forbidden)
