@@ -3,6 +3,7 @@ package com.locarya
 import cats.effect._
 import cats.syntax.all._
 import com.comcast.ip4s._
+import org.flywaydb.core.Flyway
 import com.locarya.adapters.http.{AttendantRoutes, AuthRoutes, AvailabilityRoutes, ComboRoutes, DashboardBookingRoutes, HealthEndpoints, ItemRoutes, PaymentRoutes, StorefrontBookingRoutes, StorefrontRoutes, SwaggerRoutes}
 import com.locarya.adapters.http.middleware.CorrelationIdMiddleware
 import com.locarya.adapters.persistence.{Database, ProviderRepositoryLive}
@@ -25,6 +26,14 @@ object Main extends IOApp.Simple {
     (for {
       config <- AppConfig.load[IO]
       _ <- Resource.eval(logger.info("Starting Locarya API"))
+
+      _ <- Resource.eval(IO.blocking {
+             Flyway.configure()
+               .dataSource(config.database.url, config.database.user, config.database.password)
+               .locations("classpath:db/migration")
+               .load()
+               .migrate()
+           }.flatMap(r => logger.info(s"Flyway: ${r.migrationsExecuted} migration(s) applied")))
 
       xa <- Database.transactor[IO](
         config.database.url,

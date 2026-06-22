@@ -7,6 +7,7 @@ import com.locarya.domain.models.{AuthError, SignupError}
 import com.locarya.domain.ports.{AuthService, LoginRequest, ProviderService, SignupRequest}
 import io.circe.generic.auto.*
 import org.http4s.HttpRoutes
+import org.typelevel.log4cats.Logger
 import sttp.model.StatusCode
 import sttp.tapir.*
 import sttp.tapir.generic.auto.*
@@ -58,7 +59,7 @@ object AuthRoutes:
 
   val allEndpoints: List[AnyEndpoint] = List(signupE, loginE)
 
-  def routes[F[_]: Async](
+  def routes[F[_]: Async: Logger](
     providerService: ProviderService[F],
     authService:     AuthService[F]
   ): HttpRoutes[F] =
@@ -82,8 +83,9 @@ object AuthRoutes:
             Left((StatusCode.Conflict, ErrorBody(s"Email already registered: $email"))).pure[F]
           case SignupError.InvalidInput(err) =>
             Left((StatusCode.BadRequest, ErrorBody(err.toString))).pure[F]
-          case _ =>
-            Left((StatusCode.InternalServerError, ErrorBody("Internal server error"))).pure[F]
+          case ex =>
+            Logger[F].error(ex)("Unexpected error during signup") *>
+              Left((StatusCode.InternalServerError, ErrorBody("Internal server error"))).pure[F]
         }
     }
 
@@ -101,8 +103,9 @@ object AuthRoutes:
         .handleErrorWith {
           case _: AuthError =>
             Left((StatusCode.Unauthorized, ErrorBody("Invalid credentials"))).pure[F]
-          case _ =>
-            Left((StatusCode.InternalServerError, ErrorBody("Internal server error"))).pure[F]
+          case ex =>
+            Logger[F].error(ex)("Unexpected error during login") *>
+              Left((StatusCode.InternalServerError, ErrorBody("Internal server error"))).pure[F]
         }
     }
 
