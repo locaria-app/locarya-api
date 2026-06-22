@@ -74,5 +74,16 @@ lazy val root = project
     flywayUrl := "jdbc:postgresql://localhost:5432/locarya",
     flywayUser := "locarya",
     flywayPassword := "locarya_dev_password",
-    flywayLocations := Seq("filesystem:src/main/resources/db/migration")
+    flywayLocations := Seq("filesystem:src/main/resources/db/migration"),
+
+    // Assembly (fat JAR for Docker)
+    assembly / mainClass := Some("com.locarya.Main"),
+    assembly / assemblyJarName := "locarya-api.jar",
+    assembly / assemblyMergeStrategy := {
+      case PathList("META-INF", "MANIFEST.MF")  => MergeStrategy.discard
+      case PathList("META-INF", "services", _*) => MergeStrategy.concat
+      case PathList("META-INF", _*)             => MergeStrategy.discard
+      case "module-info.class"                  => MergeStrategy.discard
+      case _                                    => MergeStrategy.first
+    }
   )
