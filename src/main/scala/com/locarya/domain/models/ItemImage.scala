@@ -11,6 +11,14 @@ final case class ItemImage private (
 object ItemImage:
   val MaxImages = 5
 
+  def reconstruct(
+    id:           ItemImageId,
+    itemId:       ItemId,
+    imageUrl:     URL,
+    displayOrder: Int,
+    isPrimary:    Boolean
+  ): ItemImage = ItemImage(id, itemId, imageUrl, displayOrder, isPrimary)
+
   def create(
     itemId: ItemId,
     imageUrls: List[String]
