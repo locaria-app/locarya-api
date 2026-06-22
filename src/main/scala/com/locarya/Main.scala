@@ -6,7 +6,7 @@ import com.comcast.ip4s._
 import org.flywaydb.core.Flyway
 import com.locarya.adapters.http.{AttendantRoutes, AuthRoutes, AvailabilityRoutes, ComboRoutes, DashboardBookingRoutes, HealthEndpoints, ItemRoutes, PaymentRoutes, StorefrontBookingRoutes, StorefrontRoutes, SwaggerRoutes}
 import com.locarya.adapters.http.middleware.CorrelationIdMiddleware
-import com.locarya.adapters.persistence.{Database, ItemRepositoryLive, ProviderRepositoryLive}
+import com.locarya.adapters.persistence.{Database, ItemImageRepositoryLive, ItemRepositoryLive, ProviderRepositoryLive}
 import com.locarya.config.AppConfig
 import com.locarya.domain.services.{AttendantServiceImpl, AuthServiceImpl, PaymentServiceImpl, ProviderServiceImpl}
 import org.http4s.{HttpRoutes, Request, Response}
@@ -43,6 +43,7 @@ object Main extends IOApp.Simple {
 
       providerRepo    = ProviderRepositoryLive.make[IO](xa)
       itemRepo        = ItemRepositoryLive.make[IO](xa)
+      itemImageRepo   = ItemImageRepositoryLive.make[IO](xa)
       providerService = ProviderServiceImpl[IO](providerRepo)
       authService     = AuthServiceImpl[IO](providerRepo, config.jwt.secret)
 
