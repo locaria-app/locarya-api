@@ -117,7 +117,7 @@ class StorefrontRoutesSpec extends CatsEffectSuite:
     }"""
 
   private def createCombo(ctx: Ctx, token: String, itemId: String): IO[String] =
-    val req = Request[IO](Method.POST, uri"/dashboard/combos")
+    val req = Request[IO](Method.POST, uri"/api/v1/dashboard/combos")
       .withEntity(validComboBody(itemId))
       .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(token))
     for
@@ -236,7 +236,7 @@ class StorefrontRoutesSpec extends CatsEffectSuite:
       itemId   <- createItem(ctx, auth.token)
       comboId  <- createCombo(ctx, auth.token, itemId)
       _        <- ctx.allRoutes.orNotFound(
-                    Request[IO](Method.DELETE, Uri.unsafeFromString(s"/dashboard/combos/$comboId"))
+                    Request[IO](Method.DELETE, Uri.unsafeFromString(s"/api/v1/dashboard/combos/$comboId"))
                       .withHeaders(authHeader(auth.token))
                   )
       slug     <- getSlug(ctx, auth.id)

@@ -2,16 +2,17 @@ package com.locarya.adapters.http
 
 import cats.effect.Async
 import cats.syntax.all.*
-import com.locarya.adapters.http.middleware.AuthMiddleware
+import com.locarya.adapters.http.TapirSupport.{ErrorBody, securedBase, validateBearer}
 import com.locarya.domain.models.*
 import com.locarya.domain.ports.{PaymentService, PaymentSummary}
-import io.circe.Encoder
 import io.circe.generic.auto.*
-import io.circe.generic.semiauto.deriveEncoder
-import io.circe.syntax.*
-import org.http4s.*
-import org.http4s.circe.*
-import org.http4s.dsl.Http4sDsl
+import org.http4s.HttpRoutes
+import sttp.model.StatusCode
+import sttp.tapir.*
+import sttp.tapir.AnyEndpoint
+import sttp.tapir.generic.auto.*
+import sttp.tapir.json.circe.*
+import sttp.tapir.server.http4s.Http4sServerInterpreter
 
 object PaymentRoutes:
 
@@ -29,23 +30,17 @@ object PaymentRoutes:
     status:    String,
     note:      Option[String]
   )
-  private given Encoder[PaymentResponse] = deriveEncoder
 
   private case class SummaryResponse(
     total:      BigDecimal,
     paid:       BigDecimal,
     balanceDue: BigDecimal
   )
-  private given Encoder[SummaryResponse] = deriveEncoder
 
   private case class ListPaymentsResponse(
     payments: List[PaymentResponse],
     summary:  SummaryResponse
   )
-  private given Encoder[ListPaymentsResponse] = deriveEncoder
-
-  private case class ErrorResponseBody(error: String)
-  private given Encoder[ErrorResponseBody] = deriveEncoder
 
   private def toPaymentResponse(p: Payment): PaymentResponse =
     PaymentResponse(
@@ -60,61 +55,66 @@ object PaymentRoutes:
   private def toSummaryResponse(s: PaymentSummary): SummaryResponse =
     SummaryResponse(s.total, s.paid, s.balanceDue)
 
+  private val recordPaymentE = securedBase.post
+    .in("dashboard" / "bookings" / path[String]("bookingId") / "payments")
+    .in(jsonBody[RecordPaymentBody])
+    .out(statusCode(StatusCode.Created).and(jsonBody[PaymentResponse]))
+
+  private val listPaymentsE = securedBase.get
+    .in("dashboard" / "bookings" / path[String]("bookingId") / "payments")
+    .out(jsonBody[ListPaymentsResponse])
+
+  val allEndpoints: List[AnyEndpoint] = List(recordPaymentE, listPaymentsE)
+
   def routes[F[_]: Async](
     paymentService: PaymentService[F],
     jwtSecret:      String
   ): HttpRoutes[F] =
-    val dsl = Http4sDsl[F]
-    import dsl.*
 
-    given EntityDecoder[F, RecordPaymentBody] = jsonOf[F, RecordPaymentBody]
+    type Err = (StatusCode, ErrorBody)
 
-    AuthMiddleware.withProviderId[F](jwtSecret) { rawProviderId =>
-      val providerIdF: F[ProviderId] =
-        ProviderId.fromString(rawProviderId)
-          .fold(err => PaymentError.InvalidInput(err).raiseError[F, ProviderId], _.pure[F])
+    def security(token: String): F[Either[Err, ProviderId]] =
+      validateBearer(token, jwtSecret).pure[F]
 
-      HttpRoutes.of[F]:
+    def notFound(msg: String): Err   = (StatusCode.NotFound, ErrorBody(msg))
+    def badRequest(msg: String): Err = (StatusCode.BadRequest, ErrorBody(msg))
+    def forbidden(msg: String): Err  = (StatusCode.Forbidden, ErrorBody(msg))
 
-        case req @ POST -> Root / "dashboard" / "bookings" / bookingIdStr / "payments" =>
-          req.as[RecordPaymentBody].flatMap { body =>
-            (for
-              pid       <- providerIdF
-              bookingId <- BookingId.fromString(bookingIdStr)
-                             .fold(err => PaymentError.InvalidInput(err).raiseError[F, BookingId], _.pure[F])
-              method    <- PaymentMethod.decode(body.method)
-                             .fold(err => PaymentError.InvalidInput(err).raiseError[F, PaymentMethod], _.pure[F])
-              payment   <- paymentService.recordPayment(pid, bookingId, body.amount, method, body.note)
-              resp      <- Created(toPaymentResponse(payment).asJson)
-            yield resp).handleErrorWith {
-              case _: PaymentError.BookingNotFound     => NotFound(ErrorResponseBody("Booking not found").asJson)
-              case _: PaymentError.Forbidden           => Forbidden(ErrorResponseBody("Access denied").asJson)
-              case e: PaymentError.InvalidInput        => BadRequest(ErrorResponseBody(e.getMessage).asJson)
-              case _: MalformedMessageBodyFailure      => BadRequest(ErrorResponseBody("Invalid or incomplete request body").asJson)
-              case _: InvalidMessageBodyFailure        => BadRequest(ErrorResponseBody("Invalid request body").asJson)
-            }
-          }.handleErrorWith {
-            case _: MalformedMessageBodyFailure => BadRequest(ErrorResponseBody("Invalid or incomplete request body").asJson)
-            case _: InvalidMessageBodyFailure   => BadRequest(ErrorResponseBody("Invalid request body").asJson)
+    val recordServer = recordPaymentE.serverSecurityLogic[ProviderId, F](security)
+      .serverLogic { providerId => input =>
+        val (bookingIdStr, body) = input
+        (for
+          bookingId <- BookingId.fromString(bookingIdStr)
+                         .fold(err => PaymentError.InvalidInput(err).raiseError[F, BookingId], _.pure[F])
+          method    <- PaymentMethod.decode(body.method)
+                         .fold(err => PaymentError.InvalidInput(err).raiseError[F, PaymentMethod], _.pure[F])
+          payment   <- paymentService.recordPayment(providerId, bookingId, body.amount, method, body.note)
+        yield Right(toPaymentResponse(payment)))
+          .handleErrorWith {
+            case _: PaymentError.BookingNotFound => Left(notFound("Booking not found")).pure[F]
+            case _: PaymentError.Forbidden       => Left(forbidden("Access denied")).pure[F]
+            case e: PaymentError.InvalidInput    => Left(badRequest(e.getMessage)).pure[F]
+            case e: PaymentError                 => Left(badRequest(e.getMessage)).pure[F]
           }
+      }
 
-        case GET -> Root / "dashboard" / "bookings" / bookingIdStr / "payments" =>
-          (for
-            pid       <- providerIdF
-            bookingId <- BookingId.fromString(bookingIdStr)
-                           .fold(err => PaymentError.InvalidInput(err).raiseError[F, BookingId], _.pure[F])
-            payments  <- paymentService.listPayments(pid, bookingId)
-            summary   <- paymentService.getPaymentSummary(pid, bookingId)
-            resp      <- Ok(
-                           ListPaymentsResponse(
-                             payments = payments.map(toPaymentResponse),
-                             summary  = toSummaryResponse(summary)
-                           ).asJson
-                         )
-          yield resp).handleErrorWith {
-            case _: PaymentError.BookingNotFound => NotFound(ErrorResponseBody("Booking not found").asJson)
-            case _: PaymentError.Forbidden       => Forbidden(ErrorResponseBody("Access denied").asJson)
-            case e: PaymentError                 => BadRequest(ErrorResponseBody(e.getMessage).asJson)
-            case _                               => InternalServerError(ErrorResponseBody("Internal error").asJson)
+    val listServer = listPaymentsE.serverSecurityLogic[ProviderId, F](security)
+      .serverLogic { providerId => bookingIdStr =>
+        (for
+          bookingId <- BookingId.fromString(bookingIdStr)
+                         .fold(err => PaymentError.InvalidInput(err).raiseError[F, BookingId], _.pure[F])
+          payments  <- paymentService.listPayments(providerId, bookingId)
+          summary   <- paymentService.getPaymentSummary(providerId, bookingId)
+        yield Right(ListPaymentsResponse(
+          payments = payments.map(toPaymentResponse),
+          summary  = toSummaryResponse(summary)
+        )))
+          .handleErrorWith {
+            case _: PaymentError.BookingNotFound => Left(notFound("Booking not found")).pure[F]
+            case _: PaymentError.Forbidden       => Left(forbidden("Access denied")).pure[F]
+            case e: PaymentError                 => Left(badRequest(e.getMessage)).pure[F]
+            case _                               => Left((StatusCode.InternalServerError, ErrorBody("Internal error"))).pure[F]
           }
-    }
+      }
+
+    Http4sServerInterpreter[F]().toRoutes(List(recordServer, listServer))

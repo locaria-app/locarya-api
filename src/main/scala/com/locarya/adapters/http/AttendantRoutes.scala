@@ -2,14 +2,17 @@ package com.locarya.adapters.http
 
 import cats.effect.Async
 import cats.syntax.all.*
-import com.locarya.adapters.http.middleware.AuthMiddleware
+import com.locarya.adapters.http.TapirSupport.{ErrorBody, securedBase, validateBearer}
 import com.locarya.domain.models.*
 import com.locarya.domain.ports.{AssignAttendantsRequest, AttendantService, CreateAttendantRequest, UpdateAttendantRequest}
 import io.circe.generic.auto.*
-import io.circe.syntax.*
-import org.http4s.*
-import org.http4s.circe.*
-import org.http4s.dsl.Http4sDsl
+import org.http4s.HttpRoutes
+import sttp.model.StatusCode
+import sttp.tapir.*
+import sttp.tapir.AnyEndpoint
+import sttp.tapir.generic.auto.*
+import sttp.tapir.json.circe.*
+import sttp.tapir.server.http4s.Http4sServerInterpreter
 
 object AttendantRoutes:
 
@@ -26,115 +29,119 @@ object AttendantRoutes:
   )
 
   private case class CreateAttendantResponse(attendantId: String)
-  private case class ErrorResponseBody(error: String)
 
   private def toResponse(a: Attendant): AttendantResponse =
     AttendantResponse(a.id.value, a.providerId.value, a.name, a.phone, a.isActive)
+
+  private val listAttendantsE = securedBase.get
+    .in("dashboard" / "attendants")
+    .out(jsonBody[List[AttendantResponse]])
+
+  private val createAttendantE = securedBase.post
+    .in("dashboard" / "attendants")
+    .in(jsonBody[CreateAttendantBody])
+    .out(statusCode(StatusCode.Created).and(jsonBody[CreateAttendantResponse]))
+
+  private val updateAttendantE = securedBase.put
+    .in("dashboard" / "attendants" / path[String]("attendantId"))
+    .in(jsonBody[UpdateAttendantBody])
+
+  private val deleteAttendantE = securedBase.delete
+    .in("dashboard" / "attendants" / path[String]("attendantId"))
+
+  private val assignAttendantsE = securedBase.put
+    .in("dashboard" / "bookings" / path[String]("bookingId") / "attendants")
+    .in(jsonBody[AssignAttendantsBody])
+
+  val allEndpoints: List[AnyEndpoint] =
+    List(listAttendantsE, createAttendantE, updateAttendantE, deleteAttendantE, assignAttendantsE)
 
   def routes[F[_]: Async](
     attendantService: AttendantService[F],
     jwtSecret:        String
   ): HttpRoutes[F] =
-    val dsl = Http4sDsl[F]
-    import dsl.*
 
-    given EntityDecoder[F, CreateAttendantBody] = jsonOf[F, CreateAttendantBody]
-    given EntityDecoder[F, UpdateAttendantBody] = jsonOf[F, UpdateAttendantBody]
-    given EntityDecoder[F, AssignAttendantsBody] = jsonOf[F, AssignAttendantsBody]
+    type Err = (StatusCode, ErrorBody)
 
-    AuthMiddleware.withProviderId[F](jwtSecret) { rawProviderId =>
+    def security(token: String): F[Either[Err, ProviderId]] =
+      validateBearer(token, jwtSecret).pure[F]
 
-      val providerIdF: F[ProviderId] =
-        ProviderId.fromString(rawProviderId)
-          .fold(err => AttendantError.InvalidInput(err).raiseError[F, ProviderId], _.pure[F])
+    def notFound(msg: String): Err   = (StatusCode.NotFound, ErrorBody(msg))
+    def badRequest(msg: String): Err = (StatusCode.BadRequest, ErrorBody(msg))
+    def forbidden(msg: String): Err  = (StatusCode.Forbidden, ErrorBody(msg))
 
-      HttpRoutes.of[F]:
-
-        case GET -> Root / "dashboard" / "attendants" =>
-          (for
-            pid       <- providerIdF
-            attendants <- attendantService.listActiveAttendants(pid)
-            resp      <- Ok(attendants.map(toResponse).asJson)
-          yield resp).handleErrorWith {
-            case e: AttendantError => BadRequest(ErrorResponseBody(e.getMessage).asJson)
-            case _                 => InternalServerError(ErrorResponseBody("Internal error").asJson)
+    val listServer = listAttendantsE.serverSecurityLogic[ProviderId, F](security)
+      .serverLogic { providerId => _ =>
+        attendantService.listActiveAttendants(providerId)
+          .map(list => Right(list.map(toResponse)))
+          .handleErrorWith {
+            case e: AttendantError => Left(badRequest(e.getMessage)).pure[F]
+            case _                 => Left((StatusCode.InternalServerError, ErrorBody("Internal error"))).pure[F]
           }
+      }
 
-        case req @ POST -> Root / "dashboard" / "attendants" =>
-          req.as[CreateAttendantBody].flatMap { body =>
-            (for
-              pid  <- providerIdF
-              req2  = CreateAttendantRequest(pid, body.name, body.phone)
-              id   <- attendantService.createAttendant(req2)
-              resp <- Created(CreateAttendantResponse(id.value).asJson)
-            yield resp).handleErrorWith {
-              case e: AttendantError.InvalidInput => BadRequest(ErrorResponseBody(e.getMessage).asJson)
-              case e: AttendantError              => BadRequest(ErrorResponseBody(e.getMessage).asJson)
-            }
-          }.handleErrorWith {
-            case e: AttendantError.InvalidInput   => BadRequest(ErrorResponseBody(e.getMessage).asJson)
-            case _: MalformedMessageBodyFailure   => BadRequest(ErrorResponseBody("Invalid or incomplete request body").asJson)
-            case _: InvalidMessageBodyFailure     => BadRequest(ErrorResponseBody("Invalid request body").asJson)
+    val createServer = createAttendantE.serverSecurityLogic[ProviderId, F](security)
+      .serverLogic { providerId => body =>
+        attendantService.createAttendant(CreateAttendantRequest(providerId, body.name, body.phone))
+          .map(id => Right(CreateAttendantResponse(id.value)))
+          .handleErrorWith {
+            case e: AttendantError => Left(badRequest(e.getMessage)).pure[F]
+            case _                 => Left((StatusCode.InternalServerError, ErrorBody("Internal error"))).pure[F]
           }
+      }
 
-        case req @ PUT -> Root / "dashboard" / "attendants" / attendantIdStr =>
-          req.as[UpdateAttendantBody].flatMap { body =>
-            (for
-              pid         <- providerIdF
-              attendantId <- AttendantId.fromString(attendantIdStr)
-                               .fold(err => AttendantError.InvalidInput(err).raiseError[F, AttendantId], _.pure[F])
-              req2         = UpdateAttendantRequest(attendantId, pid, body.name, body.phone)
-              _           <- attendantService.updateAttendant(req2)
-              resp        <- Ok(().asJson)
-            yield resp).handleErrorWith {
-              case _: AttendantError.AttendantNotFound => NotFound(ErrorResponseBody("Attendant not found").asJson)
-              case _: AttendantError.Forbidden         => Forbidden(ErrorResponseBody("Access denied").asJson)
-              case e: AttendantError                   => BadRequest(ErrorResponseBody(e.getMessage).asJson)
-              case _: MalformedMessageBodyFailure      => BadRequest(ErrorResponseBody("Invalid or incomplete request body").asJson)
-              case _: InvalidMessageBodyFailure        => BadRequest(ErrorResponseBody("Invalid request body").asJson)
-            }
-          }.handleErrorWith {
-            case _: MalformedMessageBodyFailure => BadRequest(ErrorResponseBody("Invalid or incomplete request body").asJson)
-            case _: InvalidMessageBodyFailure   => BadRequest(ErrorResponseBody("Invalid request body").asJson)
+    val updateServer = updateAttendantE.serverSecurityLogic[ProviderId, F](security)
+      .serverLogic { providerId => input =>
+        val (attendantIdStr, body) = input
+        (for
+          attendantId <- AttendantId.fromString(attendantIdStr)
+                           .fold(err => AttendantError.InvalidInput(err).raiseError[F, AttendantId], _.pure[F])
+          req2         = UpdateAttendantRequest(attendantId, providerId, body.name, body.phone)
+          _           <- attendantService.updateAttendant(req2)
+        yield Right(()))
+          .handleErrorWith {
+            case _: AttendantError.AttendantNotFound => Left(notFound("Attendant not found")).pure[F]
+            case _: AttendantError.Forbidden         => Left(forbidden("Access denied")).pure[F]
+            case e: AttendantError                   => Left(badRequest(e.getMessage)).pure[F]
           }
+      }
 
-        case DELETE -> Root / "dashboard" / "attendants" / attendantIdStr =>
-          (for
-            pid         <- providerIdF
-            attendantId <- AttendantId.fromString(attendantIdStr)
-                             .fold(err => AttendantError.InvalidInput(err).raiseError[F, AttendantId], _.pure[F])
-            _           <- attendantService.deactivateAttendant(attendantId, pid)
-            resp        <- Ok(().asJson)
-          yield resp).handleErrorWith {
-            case _: AttendantError.AttendantNotFound => NotFound(ErrorResponseBody("Attendant not found").asJson)
-            case _: AttendantError.Forbidden         => Forbidden(ErrorResponseBody("Access denied").asJson)
-            case e: AttendantError                   => BadRequest(ErrorResponseBody(e.getMessage).asJson)
+    val deleteServer = deleteAttendantE.serverSecurityLogic[ProviderId, F](security)
+      .serverLogic { providerId => attendantIdStr =>
+        (for
+          attendantId <- AttendantId.fromString(attendantIdStr)
+                           .fold(err => AttendantError.InvalidInput(err).raiseError[F, AttendantId], _.pure[F])
+          _           <- attendantService.deactivateAttendant(attendantId, providerId)
+        yield Right(()))
+          .handleErrorWith {
+            case _: AttendantError.AttendantNotFound => Left(notFound("Attendant not found")).pure[F]
+            case _: AttendantError.Forbidden         => Left(forbidden("Access denied")).pure[F]
+            case e: AttendantError                   => Left(badRequest(e.getMessage)).pure[F]
           }
+      }
 
-        case req @ PUT -> Root / "dashboard" / "bookings" / bookingIdStr / "attendants" =>
-          req.as[AssignAttendantsBody].flatMap { body =>
-            (for
-              pid         <- providerIdF
-              bookingId   <- BookingId.fromString(bookingIdStr)
-                               .fold(err => AttendantError.InvalidInput(err).raiseError[F, BookingId], _.pure[F])
-              attendantIds <- body.attendantIds.traverse { idStr =>
-                                AttendantId.fromString(idStr)
-                                  .fold(err => AttendantError.InvalidInput(err).raiseError[F, AttendantId], _.pure[F])
-                              }
-              req2         = AssignAttendantsRequest(bookingId, pid, attendantIds)
-              _           <- attendantService.assignAttendants(req2)
-              resp        <- Ok(().asJson)
-            yield resp).handleErrorWith {
-              case _: AttendantError.AttendantNotFound => NotFound(ErrorResponseBody("Attendant not found").asJson)
-              case _: AttendantError.BookingNotFound   => NotFound(ErrorResponseBody("Booking not found").asJson)
-              case _: AttendantError.Forbidden         => Forbidden(ErrorResponseBody("Access denied").asJson)
-              case _: AttendantError.AttendantInactive => BadRequest(ErrorResponseBody("Attendant is inactive").asJson)
-              case e: AttendantError                   => BadRequest(ErrorResponseBody(e.getMessage).asJson)
-              case _: MalformedMessageBodyFailure      => BadRequest(ErrorResponseBody("Invalid or incomplete request body").asJson)
-              case _: InvalidMessageBodyFailure        => BadRequest(ErrorResponseBody("Invalid request body").asJson)
-            }
-          }.handleErrorWith {
-            case _: MalformedMessageBodyFailure => BadRequest(ErrorResponseBody("Invalid or incomplete request body").asJson)
-            case _: InvalidMessageBodyFailure   => BadRequest(ErrorResponseBody("Invalid request body").asJson)
+    val assignServer = assignAttendantsE.serverSecurityLogic[ProviderId, F](security)
+      .serverLogic { providerId => input =>
+        val (bookingIdStr, body) = input
+        (for
+          bookingId    <- BookingId.fromString(bookingIdStr)
+                            .fold(err => AttendantError.InvalidInput(err).raiseError[F, BookingId], _.pure[F])
+          attendantIds <- body.attendantIds.traverse { idStr =>
+                            AttendantId.fromString(idStr)
+                              .fold(err => AttendantError.InvalidInput(err).raiseError[F, AttendantId], _.pure[F])
+                          }
+          req2          = AssignAttendantsRequest(bookingId, providerId, attendantIds)
+          _            <- attendantService.assignAttendants(req2)
+        yield Right(()))
+          .handleErrorWith {
+            case _: AttendantError.AttendantNotFound => Left(notFound("Attendant not found")).pure[F]
+            case _: AttendantError.BookingNotFound   => Left(notFound("Booking not found")).pure[F]
+            case _: AttendantError.Forbidden         => Left(forbidden("Access denied")).pure[F]
+            case _: AttendantError.AttendantInactive => Left(badRequest("Attendant is inactive")).pure[F]
+            case e: AttendantError                   => Left(badRequest(e.getMessage)).pure[F]
           }
-    }
+      }
+
+    Http4sServerInterpreter[F]().toRoutes(
+      List(listServer, createServer, updateServer, deleteServer, assignServer)
+    )

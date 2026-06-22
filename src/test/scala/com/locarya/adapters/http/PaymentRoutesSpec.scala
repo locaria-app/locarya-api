@@ -97,14 +97,14 @@ class PaymentRoutesSpec extends CatsEffectSuite:
 
   private def postPayment(ctx: Ctx, bookingId: String, body: String, token: String): IO[Response[IO]] =
     ctx.allRoutes.orNotFound(
-      Request[IO](Method.POST, Uri.unsafeFromString(s"/dashboard/bookings/$bookingId/payments"))
+      Request[IO](Method.POST, Uri.unsafeFromString(s"/api/v1/dashboard/bookings/$bookingId/payments"))
         .withEntity(body)
         .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(token))
     )
 
   private def getPayments(ctx: Ctx, bookingId: String, token: String): IO[Response[IO]] =
     ctx.allRoutes.orNotFound(
-      Request[IO](Method.GET, Uri.unsafeFromString(s"/dashboard/bookings/$bookingId/payments"))
+      Request[IO](Method.GET, Uri.unsafeFromString(s"/api/v1/dashboard/bookings/$bookingId/payments"))
         .withHeaders(authHeader(token))
     )
 
@@ -113,31 +113,31 @@ class PaymentRoutesSpec extends CatsEffectSuite:
 
   // ── Auth guard ────────────────────────────────────────────────────────────
 
-  test("POST /dashboard/bookings/:id/payments returns 401 without Authorization header") {
+  test("POST /api/v1/dashboard/bookings/:id/payments returns 401 without Authorization header") {
     for
       ctx      <- makeCtx
       bookingId = BookingId.generate.value
       resp     <- ctx.allRoutes.orNotFound(
-                    Request[IO](Method.POST, Uri.unsafeFromString(s"/dashboard/bookings/$bookingId/payments"))
+                    Request[IO](Method.POST, Uri.unsafeFromString(s"/api/v1/dashboard/bookings/$bookingId/payments"))
                       .withEntity(validPaymentBody)
                       .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
                   )
     yield assertEquals(resp.status, Status.Unauthorized)
   }
 
-  test("GET /dashboard/bookings/:id/payments returns 401 without Authorization header") {
+  test("GET /api/v1/dashboard/bookings/:id/payments returns 401 without Authorization header") {
     for
       ctx      <- makeCtx
       bookingId = BookingId.generate.value
       resp     <- ctx.allRoutes.orNotFound(
-                    Request[IO](Method.GET, Uri.unsafeFromString(s"/dashboard/bookings/$bookingId/payments"))
+                    Request[IO](Method.GET, Uri.unsafeFromString(s"/api/v1/dashboard/bookings/$bookingId/payments"))
                   )
     yield assertEquals(resp.status, Status.Unauthorized)
   }
 
-  // ── POST /dashboard/bookings/:id/payments ─────────────────────────────────
+  // ── POST /api/v1/dashboard/bookings/:id/payments ─────────────────────────────────
 
-  test("POST /dashboard/bookings/:id/payments returns 201 with paymentId and status=confirmed") {
+  test("POST /api/v1/dashboard/bookings/:id/payments returns 201 with paymentId and status=confirmed") {
     for
       ctx       <- makeCtx
       auth      <- signupAndLogin(ctx)
@@ -152,7 +152,7 @@ class PaymentRoutesSpec extends CatsEffectSuite:
       assertEquals(json.hcursor.downField("status").as[String].toOption, Some("confirmed"))
   }
 
-  test("POST /dashboard/bookings/:id/payments persists payment with method=pix_manual") {
+  test("POST /api/v1/dashboard/bookings/:id/payments persists payment with method=pix_manual") {
     for
       ctx       <- makeCtx
       auth      <- signupAndLogin(ctx)
@@ -168,7 +168,7 @@ class PaymentRoutesSpec extends CatsEffectSuite:
       assertEquals(found.head.amount.amount, BigDecimal("200.0"))
   }
 
-  test("POST /dashboard/bookings/:id/payments accepts optional note") {
+  test("POST /api/v1/dashboard/bookings/:id/payments accepts optional note") {
     for
       ctx       <- makeCtx
       auth      <- signupAndLogin(ctx)
@@ -182,7 +182,7 @@ class PaymentRoutesSpec extends CatsEffectSuite:
       assertEquals(found.head.note, Some("entrada"))
   }
 
-  test("POST /dashboard/bookings/:id/payments returns 404 for unknown booking") {
+  test("POST /api/v1/dashboard/bookings/:id/payments returns 404 for unknown booking") {
     for
       ctx   <- makeCtx
       auth  <- signupAndLogin(ctx)
@@ -191,7 +191,7 @@ class PaymentRoutesSpec extends CatsEffectSuite:
     yield assertEquals(resp.status, Status.NotFound)
   }
 
-  test("POST /dashboard/bookings/:id/payments returns 403 for another provider's booking") {
+  test("POST /api/v1/dashboard/bookings/:id/payments returns 403 for another provider's booking") {
     for
       ctx       <- makeCtx
       auth1     <- signupAndLogin(ctx)
@@ -217,7 +217,7 @@ class PaymentRoutesSpec extends CatsEffectSuite:
     yield assertEquals(resp.status, Status.Forbidden)
   }
 
-  test("POST /dashboard/bookings/:id/payments returns 400 for zero amount") {
+  test("POST /api/v1/dashboard/bookings/:id/payments returns 400 for zero amount") {
     for
       ctx       <- makeCtx
       auth      <- signupAndLogin(ctx)
@@ -227,7 +227,7 @@ class PaymentRoutesSpec extends CatsEffectSuite:
     yield assertEquals(resp.status, Status.BadRequest)
   }
 
-  test("POST /dashboard/bookings/:id/payments returns 400 for malformed body") {
+  test("POST /api/v1/dashboard/bookings/:id/payments returns 400 for malformed body") {
     for
       ctx       <- makeCtx
       auth      <- signupAndLogin(ctx)
@@ -237,9 +237,9 @@ class PaymentRoutesSpec extends CatsEffectSuite:
     yield assertEquals(resp.status, Status.BadRequest)
   }
 
-  // ── GET /dashboard/bookings/:id/payments ─────────────────────────────────
+  // ── GET /api/v1/dashboard/bookings/:id/payments ─────────────────────────────────
 
-  test("GET /dashboard/bookings/:id/payments returns both payments with correct amounts") {
+  test("GET /api/v1/dashboard/bookings/:id/payments returns both payments with correct amounts") {
     for
       ctx       <- makeCtx
       auth      <- signupAndLogin(ctx)
@@ -258,7 +258,7 @@ class PaymentRoutesSpec extends CatsEffectSuite:
       assertEquals(payments.size, 2)
   }
 
-  test("GET /dashboard/bookings/:id/payments returns summary with balanceDue") {
+  test("GET /api/v1/dashboard/bookings/:id/payments returns summary with balanceDue") {
     for
       ctx       <- makeCtx
       auth      <- signupAndLogin(ctx)
@@ -278,7 +278,7 @@ class PaymentRoutesSpec extends CatsEffectSuite:
       assertEquals(summary.downField("balanceDue").as[BigDecimal].toOption, Some(BigDecimal("300.0")))
   }
 
-  test("GET /dashboard/bookings/:id/payments returns 403 for another provider's booking") {
+  test("GET /api/v1/dashboard/bookings/:id/payments returns 403 for another provider's booking") {
     for
       ctx       <- makeCtx
       auth1     <- signupAndLogin(ctx)
@@ -303,7 +303,7 @@ class PaymentRoutesSpec extends CatsEffectSuite:
     yield assertEquals(resp.status, Status.Forbidden)
   }
 
-  test("GET /dashboard/bookings/:id/payments returns 404 for unknown booking") {
+  test("GET /api/v1/dashboard/bookings/:id/payments returns 404 for unknown booking") {
     for
       ctx  <- makeCtx
       auth <- signupAndLogin(ctx)
