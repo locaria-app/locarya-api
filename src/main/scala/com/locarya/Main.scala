@@ -6,9 +6,9 @@ import com.comcast.ip4s._
 import org.flywaydb.core.Flyway
 import com.locarya.adapters.http.{AttendantRoutes, AuthRoutes, AvailabilityRoutes, ComboRoutes, DashboardBookingRoutes, HealthEndpoints, ItemRoutes, PaymentRoutes, StorefrontBookingRoutes, StorefrontRoutes, SwaggerRoutes}
 import com.locarya.adapters.http.middleware.CorrelationIdMiddleware
-import com.locarya.adapters.persistence.{AttendantRepositoryLive, ComboRepositoryLive, CustomerRepositoryLive, Database, ItemImageRepositoryLive, ItemRepositoryLive, ProviderRepositoryLive}
+import com.locarya.adapters.persistence.{AttendantRepositoryLive, BookingRepositoryLive, ComboRepositoryLive, CustomerRepositoryLive, Database, ItemImageRepositoryLive, ItemRepositoryLive, ProviderRepositoryLive}
 import com.locarya.config.AppConfig
-import com.locarya.domain.services.{AttendantServiceImpl, AuthServiceImpl, PaymentServiceImpl, ProviderServiceImpl}
+import com.locarya.domain.services.{AttendantServiceImpl, AuthServiceImpl, AvailabilityServiceImpl, BookingServiceImpl, ComboServiceImpl, ItemServiceImpl, PaymentServiceImpl, ProviderServiceImpl, StorefrontServiceImpl}
 import org.http4s.{HttpRoutes, Request, Response}
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.server.Server
@@ -41,14 +41,21 @@ object Main extends IOApp.Simple {
         config.database.password
       )
 
-      providerRepo    = ProviderRepositoryLive.make[IO](xa)
-      itemRepo        = ItemRepositoryLive.make[IO](xa)
-      itemImageRepo   = ItemImageRepositoryLive.make[IO](xa)
-      comboRepo       = ComboRepositoryLive.make[IO](xa)
-      attendantRepo   = AttendantRepositoryLive.make[IO](xa)
-      customerRepo    = CustomerRepositoryLive.make[IO](xa)
-      providerService = ProviderServiceImpl[IO](providerRepo)
-      authService     = AuthServiceImpl[IO](providerRepo, config.jwt.secret)
+      providerRepo        = ProviderRepositoryLive.make[IO](xa)
+      itemRepo            = ItemRepositoryLive.make[IO](xa)
+      itemImageRepo       = ItemImageRepositoryLive.make[IO](xa)
+      comboRepo           = ComboRepositoryLive.make[IO](xa)
+      attendantRepo       = AttendantRepositoryLive.make[IO](xa)
+      customerRepo        = CustomerRepositoryLive.make[IO](xa)
+      bookingRepo         = BookingRepositoryLive.make[IO](xa)
+      providerService     = ProviderServiceImpl[IO](providerRepo)
+      authService         = AuthServiceImpl[IO](providerRepo, config.jwt.secret)
+      availabilityService = AvailabilityServiceImpl[IO](itemRepo, comboRepo, bookingRepo)
+      bookingService      = BookingServiceImpl[IO](providerRepo, customerRepo, bookingRepo, itemRepo, comboRepo, availabilityService, attendantRepo)
+      itemService         = ItemServiceImpl[IO](itemRepo, itemImageRepo, bookingRepo)
+      comboService        = ComboServiceImpl[IO](comboRepo, itemRepo, bookingRepo)
+      attendantService    = AttendantServiceImpl[IO](attendantRepo, bookingRepo)
+      storefrontService   = StorefrontServiceImpl[IO](providerRepo, itemRepo, itemImageRepo, comboRepo)
 
       swaggerEnabled = sys.env.getOrElse("SWAGGER_ENABLED", "false") == "true"
       docsRoute      = SwaggerRoutes.maybeDocsRoute[IO](
@@ -64,11 +71,16 @@ object Main extends IOApp.Simple {
                          swaggerEnabled
                        )
 
-      // ItemRoutes — pending ItemImageRepositoryLive and BookingRepositoryLive (no live impl yet).
-      // StorefrontRoutes, AvailabilityRoutes, StorefrontBookingRoutes — pending BookingRepositoryLive.
       routes = CorrelationIdMiddleware(
                  HealthEndpoints.routes[IO](xa) <+>
                  AuthRoutes.routes[IO](providerService, authService) <+>
+                 StorefrontRoutes.routes[IO](storefrontService) <+>
+                 AvailabilityRoutes.routes[IO](availabilityService, storefrontService) <+>
+                 StorefrontBookingRoutes.routes[IO](bookingService) <+>
+                 DashboardBookingRoutes.routes[IO](bookingService, config.jwt.secret) <+>
+                 ItemRoutes.routes[IO](itemService, config.jwt.secret) <+>
+                 ComboRoutes.routes[IO](comboService, config.jwt.secret) <+>
+                 AttendantRoutes.routes[IO](attendantService, config.jwt.secret) <+>
                  docsRoute.getOrElse(HttpRoutes.empty[IO])
                )
 
