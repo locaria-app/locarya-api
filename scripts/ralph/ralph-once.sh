@@ -240,19 +240,26 @@ if halt_in "$TDD_RAW" '<needs-human>'; then
 fi
 cleanup "$TDD_RAW" "$TDD_LOG" "$BRIEF_FILE"
 
-# 3. Open the PR. Fresh session — no /tdd context carried over.
+# 3. Open the PR — skip if /tdd already opened it.
 #    BRANCH was created by the script (from main) before step 1 — the name is
 #    deterministic; we pass it explicitly rather than reading git state.
 #    pr-runner never merges and never pushes to main.
 vlog "step 3/3: pr-runner..."
 STEP_START=$(date +%s)
-PR_RAW="$RALPH_TMP/issue-$N-pr.raw.jsonl"
-run_claude "$PR_RAW" --session-id "$PR_SID" --permission-mode acceptEdits \
-  -p "Use the pr-runner subagent for issue #$N. \
+EXISTING_PR="$(gh pr list --head "$BRANCH" --json number -q '.[0].number' 2>/dev/null || true)"
+if [ -n "$EXISTING_PR" ]; then
+  vlog "PR #$EXISTING_PR already open for branch $BRANCH — skipping pr-runner (saved ~\$0.20)"
+  echo ">> PR #$EXISTING_PR already open (opened by /tdd) — skipping pr-runner."
+  record_telemetry "pr-runner" "/dev/null" "0"
+else
+  PR_RAW="$RALPH_TMP/issue-$N-pr.raw.jsonl"
+  run_claude "$PR_RAW" --session-id "$PR_SID" --permission-mode acceptEdits \
+    -p "Use the pr-runner subagent for issue #$N. \
 The code is already committed on branch '$BRANCH' — do not create a new branch or re-commit. \
 Open the PR targeting main and stop — do not merge."
-record_telemetry "pr-runner" "$PR_RAW" "$(( $(date +%s) - STEP_START ))"
-cleanup "$PR_RAW"
+  record_telemetry "pr-runner" "$PR_RAW" "$(( $(date +%s) - STEP_START ))"
+  cleanup "$PR_RAW"
+fi
 vlog "step 3/3 done ($(elapsed $STEP_START))"
 vlog "total: $(elapsed $LOOP_START)"
 
