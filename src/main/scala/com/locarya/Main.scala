@@ -6,7 +6,7 @@ import com.comcast.ip4s._
 import org.flywaydb.core.Flyway
 import com.locarya.adapters.http.{AttendantRoutes, AuthRoutes, AvailabilityRoutes, ComboRoutes, DashboardBookingRoutes, HealthEndpoints, ItemRoutes, PaymentRoutes, StorefrontBookingRoutes, StorefrontRoutes, SwaggerRoutes}
 import com.locarya.adapters.http.middleware.CorrelationIdMiddleware
-import com.locarya.adapters.persistence.{AttendantRepositoryLive, BookingRepositoryLive, ComboRepositoryLive, CustomerRepositoryLive, Database, ItemImageRepositoryLive, ItemRepositoryLive, ProviderRepositoryLive}
+import com.locarya.adapters.persistence.{AttendantRepositoryLive, BookingRepositoryLive, ComboRepositoryLive, CustomerRepositoryLive, Database, ItemImageRepositoryLive, ItemRepositoryLive, PaymentRepositoryLive, ProviderRepositoryLive}
 import com.locarya.config.AppConfig
 import com.locarya.domain.services.{AttendantServiceImpl, AuthServiceImpl, AvailabilityServiceImpl, BookingServiceImpl, ComboServiceImpl, ItemServiceImpl, PaymentServiceImpl, ProviderServiceImpl, StorefrontServiceImpl}
 import org.http4s.{HttpRoutes, Request, Response}
@@ -48,6 +48,7 @@ object Main extends IOApp.Simple {
       attendantRepo       = AttendantRepositoryLive.make[IO](xa)
       customerRepo        = CustomerRepositoryLive.make[IO](xa)
       bookingRepo         = BookingRepositoryLive.make[IO](xa)
+      paymentRepo         = PaymentRepositoryLive.make[IO](xa)
       providerService     = ProviderServiceImpl[IO](providerRepo)
       authService         = AuthServiceImpl[IO](providerRepo, config.jwt.secret)
       availabilityService = AvailabilityServiceImpl[IO](itemRepo, comboRepo, bookingRepo)
@@ -55,6 +56,7 @@ object Main extends IOApp.Simple {
       itemService         = ItemServiceImpl[IO](itemRepo, itemImageRepo, bookingRepo)
       comboService        = ComboServiceImpl[IO](comboRepo, itemRepo, bookingRepo)
       attendantService    = AttendantServiceImpl[IO](attendantRepo, bookingRepo)
+      paymentService      = PaymentServiceImpl[IO](bookingRepo, paymentRepo)
       storefrontService   = StorefrontServiceImpl[IO](providerRepo, itemRepo, itemImageRepo, comboRepo)
 
       swaggerEnabled = sys.env.getOrElse("SWAGGER_ENABLED", "false") == "true"
@@ -81,6 +83,7 @@ object Main extends IOApp.Simple {
                  ItemRoutes.routes[IO](itemService, config.jwt.secret) <+>
                  ComboRoutes.routes[IO](comboService, config.jwt.secret) <+>
                  AttendantRoutes.routes[IO](attendantService, config.jwt.secret) <+>
+                 PaymentRoutes.routes[IO](paymentService, config.jwt.secret) <+>
                  docsRoute.getOrElse(HttpRoutes.empty[IO])
                )
 
