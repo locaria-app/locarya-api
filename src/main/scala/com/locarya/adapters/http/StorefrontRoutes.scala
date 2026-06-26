@@ -17,6 +17,17 @@ import sttp.tapir.server.http4s.Http4sServerInterpreter
 
 object StorefrontRoutes:
 
+  private case class StoreConfigResponse(
+    primaryColor:   Option[String],
+    logoUrl:        Option[String],
+    whatsappNumber: Option[String],
+    phoneNumber:    Option[String],
+    businessHours:  Option[String],
+    tagline:        Option[String]
+  )
+  private given Codec[StoreConfigResponse]  = deriveCodec
+  private given Schema[StoreConfigResponse] = Schema.derived
+
   private case class ImageResponse(url: String, isPrimary: Boolean, displayOrder: Int)
   private given Codec[ImageResponse]         = deriveCodec
   private given Schema[ImageResponse]        = Schema.derived
@@ -53,7 +64,8 @@ object StorefrontRoutes:
     city:   String,
     state:  String,
     items:  List[ItemResponse],
-    combos: List[ComboResponse]
+    combos: List[ComboResponse],
+    config: StoreConfigResponse
   )
   private given Codec[StorefrontResponse]    = deriveCodec
   private given Schema[StorefrontResponse]   = Schema.derived
@@ -100,12 +112,21 @@ object StorefrontRoutes:
                                                     }
                            )
                          }
+            sc         = catalog.provider.storeConfig
             response   = StorefrontResponse(
                            name   = catalog.provider.tradeName,
                            city   = catalog.provider.city,
                            state  = catalog.provider.state,
                            items  = itemResps,
-                           combos = comboResps
+                           combos = comboResps,
+                           config = StoreConfigResponse(
+                             primaryColor   = sc.primaryColor,
+                             logoUrl        = sc.logoUrl,
+                             whatsappNumber = sc.whatsappNumber,
+                             phoneNumber    = sc.phoneNumber,
+                             businessHours  = sc.businessHours,
+                             tagline        = sc.tagline
+                           )
                          )
           yield Right(response))
             .handleErrorWith {

@@ -278,3 +278,44 @@ class StorefrontRoutesSpec extends CatsEffectSuite:
     assert(desc.contains("v1"),        s"Expected 'v1' prefix in endpoint: $desc")
     assert(desc.contains("storefront"), s"Expected 'storefront' in endpoint: $desc")
   }
+
+  test("GET /storefront/:slug response includes config object with all six branding fields") {
+    for
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      slug     <- getSlug(ctx, auth.id)
+      request   = Request[IO](Method.GET, Uri.unsafeFromString(s"/api/v1/storefront/$slug"))
+      response <- ctx.allRoutes.orNotFound(request)
+      body     <- response.as[String]
+      json      = parse(body).toOption.get
+      config    = json.hcursor.downField("config")
+    yield
+      assertEquals(response.status, Status.Ok)
+      assert(config.focus.isDefined,                             s"Expected config in response: $body")
+      assert(config.downField("primaryColor").focus.isDefined,   s"Missing config.primaryColor: $body")
+      assert(config.downField("logoUrl").focus.isDefined,        s"Missing config.logoUrl: $body")
+      assert(config.downField("whatsappNumber").focus.isDefined, s"Missing config.whatsappNumber: $body")
+      assert(config.downField("phoneNumber").focus.isDefined,    s"Missing config.phoneNumber: $body")
+      assert(config.downField("businessHours").focus.isDefined,  s"Missing config.businessHours: $body")
+      assert(config.downField("tagline").focus.isDefined,        s"Missing config.tagline: $body")
+  }
+
+  test("GET /storefront/:slug with no storeConfig set returns default primaryColor and null optional fields") {
+    for
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      slug     <- getSlug(ctx, auth.id)
+      request   = Request[IO](Method.GET, Uri.unsafeFromString(s"/api/v1/storefront/$slug"))
+      response <- ctx.allRoutes.orNotFound(request)
+      body     <- response.as[String]
+      json      = parse(body).toOption.get
+      config    = json.hcursor.downField("config")
+    yield
+      assertEquals(response.status, Status.Ok)
+      assertEquals(config.downField("primaryColor").as[Option[String]].toOption.flatten,   Some("#F26A1B"))
+      assertEquals(config.downField("logoUrl").as[Option[String]].toOption.flatten,        None)
+      assertEquals(config.downField("whatsappNumber").as[Option[String]].toOption.flatten, None)
+      assertEquals(config.downField("phoneNumber").as[Option[String]].toOption.flatten,    None)
+      assertEquals(config.downField("businessHours").as[Option[String]].toOption.flatten,  None)
+      assertEquals(config.downField("tagline").as[Option[String]].toOption.flatten,        None)
+  }

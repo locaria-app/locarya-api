@@ -13,7 +13,8 @@ final case class Provider private (
   passwordHash:   String,
   planTier:       PlanTier,
   storefrontSlug: StorefrontSlug,
-  isActive:       Boolean
+  isActive:       Boolean,
+  storeConfig:    StoreConfig    = StoreConfig()
 )
 
 object Provider:
@@ -28,7 +29,8 @@ object Provider:
     passwordHash:   String         = "",
     planTier:       PlanTier       = PlanTier.Freemium,
     storefrontSlug: StorefrontSlug = StorefrontSlug.fromString("placeholder-000000").toOption.get,
-    isActive:       Boolean        = true
+    isActive:       Boolean        = true,
+    storeConfig:    StoreConfig    = StoreConfig()
   ): Either[ValidationError, Provider] =
     if businessName.trim.isEmpty then
       Left(InvalidProvider("Business name cannot be empty"))
@@ -45,7 +47,7 @@ object Provider:
           businessName.trim, tradeName.trim,
           city.trim, state.trim,
           passwordHash, planTier, storefrontSlug,
-          isActive
+          isActive, storeConfig
         )
       )
 
