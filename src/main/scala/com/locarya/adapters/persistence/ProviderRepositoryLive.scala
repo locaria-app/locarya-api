@@ -7,10 +7,15 @@ import com.locarya.domain.ports.ProviderRepository
 import doobie.*
 import doobie.implicits.*
 import doobie.postgres.implicits.*
+import io.circe.Decoder
+import io.circe.generic.semiauto.deriveDecoder
+import io.circe.parser.decode as circeDecoder
 import java.util.UUID
 
 class ProviderRepositoryLive[F[_]: Async] private (xa: Transactor[F])
     extends ProviderRepository[F]:
+
+  private given Decoder[StoreConfig] = deriveDecoder
 
   private case class ProviderRow(
     id:             UUID,
@@ -24,10 +29,14 @@ class ProviderRepositoryLive[F[_]: Async] private (xa: Transactor[F])
     passwordHash:   String,
     plan:           String,
     storefrontSlug: String,
-    isActive:       Boolean
+    isActive:       Boolean,
+    storeConfig:    Option[String]
   ) derives Read
 
   private def rowToProvider(row: ProviderRow): F[Provider] =
+    val storeConfig = row.storeConfig
+      .flatMap(json => circeDecoder[StoreConfig](json).toOption)
+      .getOrElse(StoreConfig())
     val result = for
       id      <- ProviderId.fromString(row.id.toString)
       email   <- Email.fromString(row.email)
@@ -48,7 +57,8 @@ class ProviderRepositoryLive[F[_]: Async] private (xa: Transactor[F])
                    passwordHash   = row.passwordHash,
                    planTier       = planTier,
                    storefrontSlug = slug,
-                   isActive       = row.isActive
+                   isActive       = row.isActive,
+                   storeConfig    = storeConfig
                  )
     yield p
     result.fold(
@@ -58,7 +68,8 @@ class ProviderRepositoryLive[F[_]: Async] private (xa: Transactor[F])
 
   private val selectBase = fr"""
     SELECT id, email, cpf, cnpj, business_name, trade_name,
-           city, state, password_hash, plan, storefront_slug, is_active
+           city, state, password_hash, plan, storefront_slug, is_active,
+           store_config
     FROM providers
   """
 
