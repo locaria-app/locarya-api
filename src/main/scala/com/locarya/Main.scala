@@ -4,7 +4,7 @@ import cats.effect._
 import cats.syntax.all._
 import com.comcast.ip4s._
 import org.flywaydb.core.Flyway
-import com.locarya.adapters.http.{AttendantRoutes, AuthRoutes, AvailabilityRoutes, ComboRoutes, DashboardBookingRoutes, HealthEndpoints, ItemRoutes, PaymentRoutes, StorefrontBookingRoutes, StorefrontRoutes, SwaggerRoutes}
+import com.locarya.adapters.http.{AttendantRoutes, AuthRoutes, AvailabilityRoutes, ComboRoutes, DashboardBookingRoutes, DashboardProviderRoutes, HealthEndpoints, ItemRoutes, PaymentRoutes, StorefrontBookingRoutes, StorefrontRoutes, SwaggerRoutes}
 import com.locarya.adapters.http.middleware.CorrelationIdMiddleware
 import com.locarya.adapters.persistence.{AttendantRepositoryLive, BookingRepositoryLive, ComboRepositoryLive, CustomerRepositoryLive, Database, ItemImageRepositoryLive, ItemRepositoryLive, PaymentRepositoryLive, ProviderRepositoryLive}
 import com.locarya.config.AppConfig
@@ -67,6 +67,7 @@ object Main extends IOApp.Simple {
                          AvailabilityRoutes.allEndpoints ++
                          StorefrontBookingRoutes.allEndpoints ++
                          DashboardBookingRoutes.allEndpoints ++
+                         DashboardProviderRoutes.allEndpoints ++
                          ComboRoutes.allEndpoints ++
                          AttendantRoutes.allEndpoints ++
                          PaymentRoutes.allEndpoints,
@@ -80,6 +81,7 @@ object Main extends IOApp.Simple {
                  AvailabilityRoutes.routes[IO](availabilityService, storefrontService) <+>
                  StorefrontBookingRoutes.routes[IO](bookingService) <+>
                  DashboardBookingRoutes.routes[IO](bookingService, config.jwt.secret) <+>
+                 DashboardProviderRoutes.routes[IO](providerService, config.jwt.secret) <+>
                  ItemRoutes.routes[IO](itemService, config.jwt.secret) <+>
                  ComboRoutes.routes[IO](comboService, config.jwt.secret) <+>
                  AttendantRoutes.routes[IO](attendantService, config.jwt.secret) <+>

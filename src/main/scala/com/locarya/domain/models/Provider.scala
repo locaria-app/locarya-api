@@ -55,5 +55,6 @@ object Provider:
     subscription.isActiveOn(date)
 
   extension (p: Provider) {
-    def deactivate: Provider = p.copy(isActive = false)
+    def deactivate: Provider                          = p.copy(isActive = false)
+    def withStoreConfig(config: StoreConfig): Provider = p.copy(storeConfig = config)
   }

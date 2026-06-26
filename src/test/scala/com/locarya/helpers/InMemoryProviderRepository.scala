@@ -30,6 +30,15 @@ final class InMemoryProviderRepository[F[_]: Async] private (
   def findBySlug(slug: StorefrontSlug): F[Option[Provider]] =
     state.get.map(_.values.find(_.storefrontSlug == slug))
 
+  def updateStoreConfig(id: ProviderId, config: StoreConfig): F[Provider] =
+    state.modify { store =>
+      store.get(id) match
+        case None    => (store, new RuntimeException(s"Provider ${id.value} not found").raiseError[F, Provider])
+        case Some(p) =>
+          val updated = p.withStoreConfig(config)
+          (store + (id -> updated), updated.pure[F])
+    }.flatten
+
 object InMemoryProviderRepository:
   def make[F[_]: Async]: F[InMemoryProviderRepository[F]] =
     Ref.of[F, Map[ProviderId, Provider]](Map.empty).map(new InMemoryProviderRepository(_))

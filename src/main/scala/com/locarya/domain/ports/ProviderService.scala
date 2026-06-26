@@ -19,3 +19,5 @@ final case class SignupResult(
 
 trait ProviderService[F[_]]:
   def signup(request: SignupRequest): F[SignupResult]
+  def findById(id: ProviderId): F[Option[Provider]]
+  def updateStoreConfig(providerId: ProviderId, config: StoreConfig): F[Provider]

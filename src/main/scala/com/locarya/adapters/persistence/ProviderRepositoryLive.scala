@@ -7,15 +7,17 @@ import com.locarya.domain.ports.ProviderRepository
 import doobie.*
 import doobie.implicits.*
 import doobie.postgres.implicits.*
-import io.circe.Decoder
-import io.circe.generic.semiauto.deriveDecoder
+import io.circe.{Decoder, Encoder}
+import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import io.circe.parser.decode as circeDecoder
+import io.circe.syntax.*
 import java.util.UUID
 
 class ProviderRepositoryLive[F[_]: Async] private (xa: Transactor[F])
     extends ProviderRepository[F]:
 
   private given Decoder[StoreConfig] = deriveDecoder
+  private given Encoder[StoreConfig] = deriveEncoder
 
   private case class ProviderRow(
     id:             UUID,
@@ -137,6 +139,17 @@ class ProviderRepositoryLive[F[_]: Async] private (xa: Transactor[F])
       .option
       .transact(xa)
       .flatMap(_.traverse(rowToProvider))
+
+  def updateStoreConfig(id: ProviderId, config: StoreConfig): F[Provider] =
+    val uuid    = UUID.fromString(id.value)
+    val jsonStr = config.asJson.noSpaces
+    sql"""
+      UPDATE providers SET store_config = $jsonStr::jsonb, updated_at = NOW()
+      WHERE id = $uuid
+    """.update.run.transact(xa) >> findById(id).flatMap {
+      case Some(p) => p.pure[F]
+      case None    => Async[F].raiseError(new RuntimeException(s"Provider ${id.value} not found after update"))
+    }
 
 object ProviderRepositoryLive:
   def make[F[_]: Async](xa: Transactor[F]): ProviderRepository[F] =
