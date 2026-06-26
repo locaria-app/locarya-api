@@ -143,3 +143,24 @@ class ProviderServiceSpec extends CatsEffectSuite:
       result <- svc.signup(validRequest.copy(name = "")).attempt
     yield assert(result.isLeft, "Expected failure with empty name")
   }
+
+  test("updateStoreConfig delegates to repository and returns provider with new config") {
+    val newConfig = StoreConfig(primaryColor = Some("#123456"), tagline = Some("Alugue aqui!"))
+    for
+      repo    <- InMemoryProviderRepository.make[IO]
+      svc      = ProviderServiceImpl[IO](repo)
+      result  <- svc.signup(validRequest)
+      updated <- svc.updateStoreConfig(result.providerId, newConfig)
+    yield
+      assertEquals(updated.storeConfig.primaryColor, Some("#123456"))
+      assertEquals(updated.storeConfig.tagline, Some("Alugue aqui!"))
+  }
+
+  test("updateStoreConfig raises ProviderError.NotFound for unknown provider") {
+    for
+      svc    <- makeService
+      result <- svc.updateStoreConfig(ProviderId.generate, StoreConfig()).attempt
+    yield result match
+      case Left(_: ProviderError.NotFound) => ()
+      case other => fail(s"Expected ProviderError.NotFound but got: $other")
+  }
