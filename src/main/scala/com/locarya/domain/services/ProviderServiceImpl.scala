@@ -75,6 +75,15 @@ class ProviderServiceImpl[F[_]: Sync: Logger](
       case None    => ().pure[F]
     }
 
+  def findById(id: ProviderId): F[Option[Provider]] =
+    repo.findById(id)
+
+  def updateStoreConfig(providerId: ProviderId, config: StoreConfig): F[Provider] =
+    repo.findById(providerId).flatMap {
+      case None    => ProviderError.NotFound(providerId).raiseError[F, Provider]
+      case Some(_) => repo.updateStoreConfig(providerId, config)
+    }
+
   private def uniqueSlug(tradeName: String, attempts: Int = 5): F[StorefrontSlug] =
     if attempts <= 0 then
       new RuntimeException("Failed to generate unique slug after retries").raiseError
