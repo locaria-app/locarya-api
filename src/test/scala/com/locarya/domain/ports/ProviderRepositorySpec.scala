@@ -111,3 +111,24 @@ class ProviderRepositorySpec extends CatsEffectSuite:
       found <- repo.findBySlug(slug1)
     yield assertEquals(found, Some(p1))
   }
+
+  test("updateStoreConfig stores new config and findById reflects the update") {
+    val config = StoreConfig(primaryColor = Some("#FF0000"), tagline = Some("Festa!"))
+    for
+      repo    <- makeRepo
+      p        = makeProvider()
+      _       <- repo.create(p)
+      updated <- repo.updateStoreConfig(p.id, config)
+      found   <- repo.findById(p.id)
+    yield
+      assertEquals(updated.storeConfig, config)
+      assertEquals(found.map(_.storeConfig), Some(config))
+  }
+
+  test("updateStoreConfig raises when provider is not found") {
+    val config = StoreConfig(primaryColor = Some("#123456"))
+    for
+      repo   <- makeRepo
+      result <- repo.updateStoreConfig(ProviderId.generate, config).attempt
+    yield assert(result.isLeft, "Expected failure when updating non-existent provider")
+  }
