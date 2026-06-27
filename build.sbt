@@ -77,6 +77,7 @@ lazy val root = project
     flywayLocations := Seq("filesystem:src/main/resources/db/migration"),
 
     // Assembly (fat JAR for Docker)
+    Compile / mainClass := Some("com.locarya.Main"),
     assembly / mainClass := Some("com.locarya.Main"),
     assembly / assemblyJarName := "locarya-api.jar",
     assembly / assemblyMergeStrategy := {
