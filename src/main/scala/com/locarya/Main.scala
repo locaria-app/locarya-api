@@ -12,6 +12,7 @@ import com.locarya.domain.services.{AttendantServiceImpl, AuthServiceImpl, Avail
 import org.http4s.{HttpRoutes, Request, Response}
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.server.Server
+import org.http4s.server.middleware.{Logger => HttpLogger}
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.LoggerFactory
 import org.typelevel.log4cats.slf4j.Slf4jFactory
@@ -89,11 +90,14 @@ object Main extends IOApp.Simple {
                  docsRoute.getOrElse(HttpRoutes.empty[IO])
                )
 
+      logBody = sys.env.getOrElse("LOG_HTTP_BODY", "false") == "true"
+      httpApp = HttpLogger.httpApp[IO](logHeaders = false, logBody = logBody)(routes.orNotFound)
+
       server <- EmberServerBuilder
         .default[IO]
         .withHost(Host.fromString(config.http.host).getOrElse(host"0.0.0.0"))
         .withPort(Port.fromInt(config.http.port).getOrElse(port"8080"))
-        .withHttpApp(routes.orNotFound)
+        .withHttpApp(httpApp)
         .build
 
       _ <- Resource.eval(logger.info(s"Server started at http://${config.http.host}:${config.http.port}"))
