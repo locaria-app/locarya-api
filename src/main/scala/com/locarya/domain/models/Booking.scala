@@ -29,7 +29,8 @@ final case class Booking private (
   status: BookingStatus,
   attendantId: Option[AttendantId],
   deliveryAddress: Option[Address],
-  createdBy: BookingCreator
+  createdBy: BookingCreator,
+  bookingCode: BookingCode
 )
 
 object Booking {
@@ -44,7 +45,8 @@ object Booking {
     status: BookingStatus = BookingStatus.Pending,
     attendantId: Option[AttendantId] = None,
     deliveryAddress: Option[Address] = None,
-    createdBy: BookingCreator = BookingCreator.Provider
+    createdBy: BookingCreator = BookingCreator.Provider,
+    bookingCode: BookingCode = BookingCode.generate
   ): Either[ValidationError, Booking] = {
     if (items.isEmpty) {
       Left(InvalidBooking("Booking must contain at least one item"))
@@ -56,7 +58,7 @@ object Booking {
     }) {
       Left(InvalidBooking("All item quantities must be positive"))
     } else {
-      Right(Booking(id, providerId, customerId, items, startDate, endDate, totalAmount, status, attendantId, deliveryAddress, createdBy))
+      Right(Booking(id, providerId, customerId, items, startDate, endDate, totalAmount, status, attendantId, deliveryAddress, createdBy, bookingCode))
     }
   }
 

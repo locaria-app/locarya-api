@@ -34,7 +34,8 @@ final case class CreateBookingRequest(
 final case class BookingCreated(
   bookingId:   BookingId,
   status:      BookingStatus,
-  totalAmount: Money
+  totalAmount: Money,
+  bookingCode: BookingCode
 )
 
 /** A customer view for the dashboard: includes denormalized customer details. */
@@ -47,7 +48,8 @@ final case class DashboardBookingView(
   deliveryAddress:  Option[Address],
   status:           BookingStatus,
   totalAmount:      Money,
-  createdBy:        BookingCreator
+  createdBy:        BookingCreator,
+  bookingCode:      BookingCode
 )
 
 final case class DashboardCustomerView(

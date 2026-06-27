@@ -66,7 +66,8 @@ object DashboardBookingRoutes:
     deliveryAddress: Option[AddressResponse],
     status:          String,
     totalAmount:     BigDecimal,
-    createdBy:       String
+    createdBy:       String,
+    bookingCode:     String
   )
 
   private case class BookingCreateResponse(bookingId: String, status: String)
@@ -123,7 +124,8 @@ object DashboardBookingRoutes:
       },
       status          = toKebab(view.status.toString),
       totalAmount     = view.totalAmount.amount,
-      createdBy       = view.createdBy.toString.toLowerCase
+      createdBy       = view.createdBy.toString.toLowerCase,
+      bookingCode     = view.bookingCode.value
     )
 
   private val listE = securedBase.get

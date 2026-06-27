@@ -29,7 +29,8 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
     deliveryCity:         Option[String],
     deliveryState:        Option[String],
     deliveryCep:          Option[String],
-    deliveryComplement:   Option[String]
+    deliveryComplement:   Option[String],
+    bookingCode:          String
   ) derives Read
 
   private case class BookingItemRow(
@@ -44,7 +45,7 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
   private val selectBase = fr"""
     SELECT id, provider_id, customer_id, start_date, end_date, total_amount, status, created_by,
            delivery_street, delivery_number, delivery_neighborhood, delivery_city, delivery_state,
-           delivery_cep, delivery_complement
+           delivery_cep, delivery_complement, booking_code
     FROM bookings
   """
 
@@ -114,8 +115,9 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
       aidOpt       <- attendantUuid.traverse(aid => AttendantId.fromString(aid.toString))
       deliverAddr  <- parseDeliveryAddress(row)
       creator      <- parseCreator(row.createdBy)
+      code         <- BookingCode.fromString(row.bookingCode)
       booking      <- Booking.create(id, pid, cid, bookingItems, row.startDate, row.endDate,
-                        totalAmt, status, aidOpt, deliverAddr, creator)
+                        totalAmt, status, aidOpt, deliverAddr, creator, code)
     yield booking).fold(
       err => Async[F].raiseError(new RuntimeException(s"DB→domain mapping failed: $err")),
       _.pure[F]
@@ -160,7 +162,7 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
       _ <- sql"""INSERT INTO bookings
                    (id, provider_id, customer_id, start_date, end_date, total_amount, status, created_by,
                     delivery_street, delivery_number, delivery_neighborhood, delivery_city,
-                    delivery_state, delivery_cep, delivery_complement)
+                    delivery_state, delivery_cep, delivery_complement, booking_code)
                  VALUES
                    ($bookingUuid,
                     ${UUID.fromString(booking.providerId.value)},
@@ -175,7 +177,8 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
                     ${booking.deliveryAddress.map(_.city)},
                     ${booking.deliveryAddress.map(_.state)},
                     ${booking.deliveryAddress.map(_.cep)},
-                    ${booking.deliveryAddress.flatMap(_.complement)})"""
+                    ${booking.deliveryAddress.flatMap(_.complement)},
+                    ${booking.bookingCode.value})"""
               .update.run
       _ <- insertItemRows(bookingUuid, booking.items)
       _ <- booking.attendantId.traverse_ { aid =>
@@ -259,6 +262,9 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
             WHERE item_type = 'COMBO' AND combo_id = ${UUID.fromString(comboId.value)}
           )"""
       .query[Boolean].unique.transact(xa)
+
+  override def findByCode(code: BookingCode): F[Option[Booking]] =
+    findBookingsWhere(fr"WHERE booking_code = ${code.value}").map(_.headOption)
 
 object BookingRepositoryLive:
   def make[F[_]: Async](xa: Transactor[F]): BookingRepository[F] =

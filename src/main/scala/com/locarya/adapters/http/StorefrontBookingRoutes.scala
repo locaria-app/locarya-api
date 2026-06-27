@@ -58,7 +58,8 @@ object StorefrontBookingRoutes:
     bookingId:           String,
     status:              String,
     totalAmount:         BigDecimal,
-    confirmationMessage: String
+    confirmationMessage: String,
+    bookingCode:         String
   )
   private given Codec[BookingResponse]   = deriveCodec
   private given Schema[BookingResponse]  = Schema.derived
@@ -140,7 +141,8 @@ object StorefrontBookingRoutes:
                 bookingId           = created.bookingId.value,
                 status              = created.status.toString,
                 totalAmount         = created.totalAmount.amount,
-                confirmationMessage = confirmationMessage
+                confirmationMessage = confirmationMessage,
+                bookingCode         = created.bookingCode.value
               ))
             }
             .handleErrorWith {
