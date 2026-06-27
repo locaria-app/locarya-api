@@ -66,6 +66,9 @@ final class InMemoryBookingRepository[F[_]: Async] private (
       }
     }
 
+  def findByCode(code: BookingCode): F[Option[Booking]] =
+    state.get.map(_.values.find(_.bookingCode == code))
+
 object InMemoryBookingRepository:
   def make[F[_]: Async]: F[InMemoryBookingRepository[F]] =
     Ref.of[F, Map[BookingId, Booking]](Map.empty).map(new InMemoryBookingRepository(_))

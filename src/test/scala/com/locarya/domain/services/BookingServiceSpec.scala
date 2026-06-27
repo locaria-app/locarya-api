@@ -107,6 +107,81 @@ class BookingServiceSpec extends CatsEffectSuite:
       customer        = customer
     )
 
+  private val bookingCodePattern = """^LCR-[A-Z0-9]{6}$""".r
+
+  test("createBooking result carries a bookingCode matching LCR-[A-Z0-9]{6}") {
+    for
+      ctx     <- makeCtx()
+      item    <- seedItem(ctx)
+      created <- ctx.svc.createBooking(request(List((item.id, 1))))
+    yield
+      assert(
+        bookingCodePattern.matches(created.bookingCode.value),
+        s"Expected bookingCode matching LCR-[A-Z0-9]{6}, got '${created.bookingCode.value}'"
+      )
+  }
+
+  test("createBooking persists the bookingCode on the stored Booking") {
+    for
+      ctx     <- makeCtx()
+      item    <- seedItem(ctx)
+      created <- ctx.svc.createBooking(request(List((item.id, 1))))
+      stored  <- ctx.bookingRepo.findById(created.bookingId)
+    yield
+      assert(stored.isDefined, "Expected booking to be persisted")
+      assertEquals(stored.get.bookingCode.value, created.bookingCode.value)
+  }
+
+  test("two consecutive createBooking calls produce different bookingCodes") {
+    for
+      ctx     <- makeCtx()
+      item    <- seedItem(ctx, stock = 10)
+      c1      <- ctx.svc.createBooking(request(List((item.id, 1))))
+      c2      <- ctx.svc.createBooking(request(List((item.id, 1))))
+    yield
+      assertNotEquals(c1.bookingCode.value, c2.bookingCode.value,
+        "Expected consecutive bookings to have distinct booking codes")
+  }
+
+  test("createBookingByProvider result carries a bookingCode matching LCR-[A-Z0-9]{6}") {
+    for
+      ctx     <- makeCtx()
+      item    <- seedItem(ctx)
+      req      = CreateBookingByProviderRequest(
+                   items           = List(BookingLineInput(item.id, 1)),
+                   date            = date,
+                   deliveryAddress = deliveryAddress,
+                   customer        = customerInput
+                 )
+      created <- ctx.svc.createBookingByProvider(ctx.provider.id, req)
+    yield
+      assert(
+        bookingCodePattern.matches(created.bookingCode.value),
+        s"Expected bookingCode matching LCR-[A-Z0-9]{6}, got '${created.bookingCode.value}'"
+      )
+  }
+
+  test("listBookings view carries a bookingCode matching LCR-[A-Z0-9]{6}") {
+    for
+      ctx     <- makeCtx()
+      item    <- seedItem(ctx)
+      req      = CreateBookingByProviderRequest(
+                   items           = List(BookingLineInput(item.id, 1)),
+                   date            = date,
+                   deliveryAddress = deliveryAddress,
+                   customer        = customerInput
+                 )
+      created <- ctx.svc.createBookingByProvider(ctx.provider.id, req)
+      list    <- ctx.svc.listBookings(ctx.provider.id, None, None, None)
+    yield
+      assertEquals(list.size, 1)
+      assert(
+        bookingCodePattern.matches(list.head.bookingCode.value),
+        s"Expected bookingCode in list view, got '${list.head.bookingCode.value}'"
+      )
+      assertEquals(list.head.bookingCode.value, created.bookingCode.value)
+  }
+
   test("creates a Pending booking created by the customer when all items are available") {
     for
       ctx     <- makeCtx()

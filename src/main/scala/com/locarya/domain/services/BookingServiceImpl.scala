@@ -28,6 +28,7 @@ class BookingServiceImpl[F[_]: Sync: Logger](
       customer  <- upsertCustomer(request.customer)
       lines     <- request.items.traverse(resolveLine)
       total     <- totalAmount(lines)
+      code       = BookingCode.generate
       booking   <- liftValidation(
                      Booking.create(
                        id              = BookingId.generate,
@@ -39,12 +40,13 @@ class BookingServiceImpl[F[_]: Sync: Logger](
                        totalAmount     = total,
                        status          = BookingStatus.Pending,
                        deliveryAddress = Some(request.deliveryAddress),
-                       createdBy       = BookingCreator.Customer
+                       createdBy       = BookingCreator.Customer,
+                       bookingCode     = code
                      )
                    )
       stored    <- bookingRepo.create(booking)
       _         <- Logger[F].info(bookingCreatedLog(stored, customer))
-    yield BookingCreated(stored.id, stored.status, stored.totalAmount)
+    yield BookingCreated(stored.id, stored.status, stored.totalAmount, stored.bookingCode)
 
   def createBookingByProvider(providerId: ProviderId, request: CreateBookingByProviderRequest): F[BookingCreated] =
     for
@@ -53,6 +55,7 @@ class BookingServiceImpl[F[_]: Sync: Logger](
       customer  <- upsertCustomer(request.customer)
       lines     <- request.items.traverse(resolveLine)
       total     <- totalAmount(lines)
+      code       = BookingCode.generate
       booking   <- liftValidation(
                      Booking.create(
                        id              = BookingId.generate,
@@ -64,12 +67,13 @@ class BookingServiceImpl[F[_]: Sync: Logger](
                        totalAmount     = total,
                        status          = BookingStatus.Confirmed,
                        deliveryAddress = Some(request.deliveryAddress),
-                       createdBy       = BookingCreator.Provider
+                       createdBy       = BookingCreator.Provider,
+                       bookingCode     = code
                      )
                    )
       stored    <- bookingRepo.create(booking)
       _         <- Logger[F].info(bookingCreatedLog(stored, customer))
-    yield BookingCreated(stored.id, stored.status, stored.totalAmount)
+    yield BookingCreated(stored.id, stored.status, stored.totalAmount, stored.bookingCode)
 
   def updateBookingStatus(
     providerId: ProviderId,
@@ -128,7 +132,8 @@ class BookingServiceImpl[F[_]: Sync: Logger](
           deliveryAddress = booking.deliveryAddress,
           status          = booking.status,
           totalAmount     = booking.totalAmount,
-          createdBy       = booking.createdBy
+          createdBy       = booking.createdBy,
+          bookingCode     = booking.bookingCode
         ).pure[F]
       case None =>
         BookingError.InvalidInput(InvalidBooking("Customer not found")).raiseError[F, DashboardBookingView]

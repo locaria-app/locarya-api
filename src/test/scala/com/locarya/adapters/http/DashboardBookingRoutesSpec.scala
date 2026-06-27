@@ -378,6 +378,25 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
     yield assertEquals(resp.status, Status.NotFound)
   }
 
+  test("GET /dashboard/bookings response includes bookingCode matching LCR-[A-Z0-9]{6} per item") {
+    val pattern = """^LCR-[A-Z0-9]{6}$""".r
+    for
+      ctx    <- makeCtx
+      auth   <- signupAndLogin(ctx)
+      itemId <- createItem(ctx, auth.token)
+      _      <- postDashboardBooking(ctx, bookingBody(itemId), auth.token)
+      resp   <- getDashboardBookings(ctx, auth.token)
+      body   <- resp.as[String]
+      json    = parse(body).toOption.get
+    yield
+      assertEquals(resp.status, Status.Ok)
+      val bookings = json.asArray.get
+      assertEquals(bookings.size, 1)
+      val code = bookings.head.hcursor.downField("bookingCode").as[String].toOption
+      assert(code.isDefined, s"Expected 'bookingCode' field on each booking item: $body")
+      assert(pattern.matches(code.get), s"Expected bookingCode matching LCR-[A-Z0-9]{6}, got '${code.get}'")
+  }
+
   test("GET /dashboard/bookings filters by ?dateFrom and ?dateTo") {
     for
       ctx       <- makeCtx

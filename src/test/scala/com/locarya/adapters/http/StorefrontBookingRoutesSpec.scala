@@ -227,6 +227,23 @@ class StorefrontBookingRoutesSpec extends CatsEffectSuite:
     yield assertEquals(response.status, Status.NotFound)
   }
 
+  test("POST /storefront/:slug/bookings response includes bookingCode matching LCR-[A-Z0-9]{6}") {
+    val pattern = """^LCR-[A-Z0-9]{6}$""".r
+    for
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      itemId   <- createItem(ctx, auth.token)
+      slug     <- getSlug(ctx, auth.id)
+      response <- postBooking(ctx, slug, bookingBody(itemId))
+      body     <- response.as[String]
+      json      = parse(body).toOption.get
+    yield
+      assertEquals(response.status, Status.Created)
+      val code = json.hcursor.downField("bookingCode").as[String].toOption
+      assert(code.isDefined, s"Expected 'bookingCode' field in response: $body")
+      assert(pattern.matches(code.get), s"Expected bookingCode matching LCR-[A-Z0-9]{6}, got '${code.get}'")
+  }
+
   test("StorefrontBookingRoutes.allEndpoints is non-empty and path includes api/v1/storefront/bookings") {
     assert(StorefrontBookingRoutes.allEndpoints.nonEmpty)
     val desc = StorefrontBookingRoutes.allEndpoints.map(_.show).mkString
