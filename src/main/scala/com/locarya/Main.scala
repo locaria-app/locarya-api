@@ -90,7 +90,8 @@ object Main extends IOApp.Simple {
                  docsRoute.getOrElse(HttpRoutes.empty[IO])
                )
 
-      httpApp = HttpLogger.httpApp[IO](logHeaders = false, logBody = false)(routes.orNotFound)
+      logBody = sys.env.getOrElse("LOG_HTTP_BODY", "false") == "true"
+      httpApp = HttpLogger.httpApp[IO](logHeaders = false, logBody = logBody)(routes.orNotFound)
 
       server <- EmberServerBuilder
         .default[IO]
