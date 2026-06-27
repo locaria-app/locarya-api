@@ -26,8 +26,9 @@ final case class CreateBookingRequest(
   date:            LocalDate,
   deliveryAddress: Address,
   customer:        CustomerInput,
-  startTime:       Option[String] = None,
-  endTime:         Option[String] = None
+  startTime:       Option[String]      = None,
+  endTime:         Option[String]      = None,
+  partyProfile:    Option[PartyProfile] = None
 )
 
 /** The result of a successful booking creation. */

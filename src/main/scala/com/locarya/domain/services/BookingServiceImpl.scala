@@ -41,7 +41,8 @@ class BookingServiceImpl[F[_]: Sync: Logger](
                        status          = BookingStatus.Pending,
                        deliveryAddress = Some(request.deliveryAddress),
                        createdBy       = BookingCreator.Customer,
-                       bookingCode     = code
+                       bookingCode     = code,
+                       partyProfile    = request.partyProfile
                      )
                    )
       stored    <- bookingRepo.create(booking)

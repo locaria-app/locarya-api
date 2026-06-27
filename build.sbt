@@ -76,7 +76,12 @@ lazy val root = project
     flywayPassword := "locarya_dev_password",
     flywayLocations := Seq("filesystem:src/main/resources/db/migration"),
 
+    // Fork a separate JVM for `sbt run` so IOApp gets the real main thread and
+    // Cats Effect can shut down cleanly (avoids the non-main-thread warning).
+    Compile / run / fork := true,
+
     // Assembly (fat JAR for Docker)
+    Compile / mainClass := Some("com.locarya.Main"),
     assembly / mainClass := Some("com.locarya.Main"),
     assembly / assemblyJarName := "locarya-api.jar",
     assembly / assemblyMergeStrategy := {

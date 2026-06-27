@@ -43,13 +43,22 @@ object StorefrontBookingRoutes:
   private given Codec[ItemLineBody]  = deriveCodec
   private given Schema[ItemLineBody] = Schema.derived
 
+  private case class PartyProfileBody(
+    kidsCount: Option[Int]          = None,
+    ageGroups: Option[List[String]] = None,
+    venueType: Option[String]       = None
+  )
+  private given Codec[PartyProfileBody]  = deriveCodec
+  private given Schema[PartyProfileBody] = Schema.derived
+
   private case class CreateBookingBody(
     items:           List[ItemLineBody],
     date:            String,
     deliveryAddress: AddressBody,
     customer:        CustomerBody,
     startTime:       Option[String],
-    endTime:         Option[String]
+    endTime:         Option[String],
+    partyProfile:    Option[PartyProfileBody] = None
   )
   private given Codec[CreateBookingBody]  = deriveCodec
   private given Schema[CreateBookingBody] = Schema.derived
@@ -111,7 +120,8 @@ object StorefrontBookingRoutes:
       deliveryAddress = address,
       customer        = CustomerInput(body.customer.name, email, body.customer.phone),
       startTime       = body.startTime,
-      endTime         = body.endTime
+      endTime         = body.endTime,
+      partyProfile    = body.partyProfile.map(p => PartyProfile(p.kidsCount, p.ageGroups, p.venueType))
     )
 
   private val bookingE = publicBase.post
