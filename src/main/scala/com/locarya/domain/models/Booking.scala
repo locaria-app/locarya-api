@@ -2,6 +2,12 @@ package com.locarya.domain.models
 
 import java.time.LocalDate
 
+final case class PartyProfile(
+  kidsCount:  Option[Int]          = None,
+  ageGroups:  Option[List[String]] = None,
+  venueType:  Option[String]       = None
+)
+
 sealed trait BookingItem
 
 /** A booked line. `unitPrice` is the price captured at booking-creation time (the
@@ -30,7 +36,8 @@ final case class Booking private (
   attendantId: Option[AttendantId],
   deliveryAddress: Option[Address],
   createdBy: BookingCreator,
-  bookingCode: BookingCode
+  bookingCode: BookingCode,
+  partyProfile: Option[PartyProfile] = None
 )
 
 object Booking {
@@ -46,7 +53,8 @@ object Booking {
     attendantId: Option[AttendantId] = None,
     deliveryAddress: Option[Address] = None,
     createdBy: BookingCreator = BookingCreator.Provider,
-    bookingCode: BookingCode = BookingCode.generate
+    bookingCode: BookingCode = BookingCode.generate,
+    partyProfile: Option[PartyProfile] = None
   ): Either[ValidationError, Booking] = {
     if (items.isEmpty) {
       Left(InvalidBooking("Booking must contain at least one item"))
@@ -58,7 +66,7 @@ object Booking {
     }) {
       Left(InvalidBooking("All item quantities must be positive"))
     } else {
-      Right(Booking(id, providerId, customerId, items, startDate, endDate, totalAmount, status, attendantId, deliveryAddress, createdBy, bookingCode))
+      Right(Booking(id, providerId, customerId, items, startDate, endDate, totalAmount, status, attendantId, deliveryAddress, createdBy, bookingCode, partyProfile))
     }
   }
 

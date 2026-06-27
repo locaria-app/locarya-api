@@ -299,4 +299,56 @@ class BookingSpec extends FunSuite {
       assertEquals(booking.deliveryAddress, None)
     }
   }
+
+  test("create Booking with partyProfile sets the field") {
+    val bookingId    = BookingId.generate
+    val providerId   = ProviderId.generate
+    val customerId   = CustomerId.generate
+    val itemId       = ItemId.generate
+    val totalAmount  = Money.fromAmount(BigDecimal("300.00")).toOption.get
+    val startDate    = LocalDate.of(2026, 6, 1)
+    val endDate      = LocalDate.of(2026, 6, 5)
+    val partyProfile = PartyProfile(Some(10), Some(List("toddler", "kids")), Some("outdoor"))
+
+    val result = Booking.create(
+      id           = bookingId,
+      providerId   = providerId,
+      customerId   = customerId,
+      items        = List(BookedIndividualItem(itemId, 2)),
+      startDate    = startDate,
+      endDate      = endDate,
+      totalAmount  = totalAmount,
+      partyProfile = Some(partyProfile)
+    )
+
+    assert(result.isRight, "Should create Booking with partyProfile")
+    result.foreach { booking =>
+      assertEquals(booking.partyProfile, Some(partyProfile))
+    }
+  }
+
+  test("create Booking without partyProfile defaults to None") {
+    val bookingId   = BookingId.generate
+    val providerId  = ProviderId.generate
+    val customerId  = CustomerId.generate
+    val itemId      = ItemId.generate
+    val totalAmount = Money.fromAmount(BigDecimal("100.00")).toOption.get
+    val startDate   = LocalDate.of(2026, 6, 1)
+    val endDate     = LocalDate.of(2026, 6, 5)
+
+    val result = Booking.create(
+      id          = bookingId,
+      providerId  = providerId,
+      customerId  = customerId,
+      items       = List(BookedIndividualItem(itemId, 1)),
+      startDate   = startDate,
+      endDate     = endDate,
+      totalAmount = totalAmount
+    )
+
+    assert(result.isRight)
+    result.foreach { booking =>
+      assertEquals(booking.partyProfile, None)
+    }
+  }
 }

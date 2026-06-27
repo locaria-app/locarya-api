@@ -3,6 +3,8 @@ package com.locarya.adapters.http
 import cats.effect.IO
 import cats.syntax.semigroupk.*
 import com.locarya.domain.models.*
+import sttp.tapir.docs.openapi.OpenAPIDocsInterpreter
+import sttp.apispec.openapi.circe.yaml.*
 import com.locarya.domain.services.{AuthServiceImpl, AvailabilityServiceImpl, BookingServiceImpl, ItemServiceImpl, ProviderServiceImpl}
 import com.locarya.helpers.{
   InMemoryAttendantRepository,
@@ -251,4 +253,97 @@ class StorefrontBookingRoutesSpec extends CatsEffectSuite:
     assert(desc.contains("v1"),         s"Expected 'v1' prefix in endpoint: $desc")
     assert(desc.contains("storefront"), s"Expected 'storefront' in endpoint: $desc")
     assert(desc.contains("bookings"),   s"Expected 'bookings' in endpoint: $desc")
+  }
+
+  // ── partyProfile (Perfil da festa) ──────────────────────────────────────────
+
+  private def bookingBodyWithPartyProfile(itemId: String): String =
+    s"""{
+      "items": [{"itemId":"$itemId","quantity":1}],
+      "date": "2026-09-01",
+      "deliveryAddress": {
+        "street":"Rua das Festas","number":"100","neighborhood":"Centro",
+        "city":"São Paulo","state":"SP","cep":"01000-000","complement":null
+      },
+      "customer": {"name":"Maria Festa","email":"maria@cliente.com","phone":"11999990000"},
+      "partyProfile": {"kidsCount": 10, "ageGroups": ["toddler", "kids"], "venueType": "outdoor"}
+    }"""
+
+  private def bookingBodyWithNullPartyProfile(itemId: String): String =
+    s"""{
+      "items": [{"itemId":"$itemId","quantity":1}],
+      "date": "2026-09-01",
+      "deliveryAddress": {
+        "street":"Rua das Festas","number":"100","neighborhood":"Centro",
+        "city":"São Paulo","state":"SP","cep":"01000-000","complement":null
+      },
+      "customer": {"name":"Maria Festa","email":"maria@cliente.com","phone":"11999990000"},
+      "partyProfile": null
+    }"""
+
+  test("POST booking with partyProfile returns 201 with bookingId") {
+    for
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      itemId   <- createItem(ctx, auth.token)
+      slug     <- getSlug(ctx, auth.id)
+      response <- postBooking(ctx, slug, bookingBodyWithPartyProfile(itemId))
+      body     <- response.as[String]
+      json      = parse(body).toOption.get
+    yield
+      assertEquals(response.status, Status.Created)
+      assert(json.hcursor.downField("bookingId").focus.isDefined, body)
+  }
+
+  test("POST booking with partyProfile persists partyProfile (round-trip)") {
+    for
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      itemId   <- createItem(ctx, auth.token)
+      slug     <- getSlug(ctx, auth.id)
+      response <- postBooking(ctx, slug, bookingBodyWithPartyProfile(itemId))
+      body     <- response.as[String]
+      bookingId = parse(body).toOption.get.hcursor.downField("bookingId").as[String].toOption.get
+      stored   <- ctx.bookingRepo.findById(BookingId.fromString(bookingId).toOption.get)
+    yield
+      assert(stored.isDefined, "Expected the booking to be persisted")
+      assertEquals(
+        stored.get.partyProfile,
+        Some(PartyProfile(Some(10), Some(List("toddler", "kids")), Some("outdoor")))
+      )
+  }
+
+  test("POST booking without partyProfile returns 201 and partyProfile is None") {
+    for
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      itemId   <- createItem(ctx, auth.token)
+      slug     <- getSlug(ctx, auth.id)
+      response <- postBooking(ctx, slug, bookingBody(itemId))
+      body     <- response.as[String]
+      bookingId = parse(body).toOption.get.hcursor.downField("bookingId").as[String].toOption.get
+      stored   <- ctx.bookingRepo.findById(BookingId.fromString(bookingId).toOption.get)
+    yield
+      assertEquals(response.status, Status.Created)
+      assertEquals(stored.get.partyProfile, None)
+  }
+
+  test("POST booking with partyProfile null returns 201 and partyProfile is None") {
+    for
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      itemId   <- createItem(ctx, auth.token)
+      slug     <- getSlug(ctx, auth.id)
+      response <- postBooking(ctx, slug, bookingBodyWithNullPartyProfile(itemId))
+      body     <- response.as[String]
+      bookingId = parse(body).toOption.get.hcursor.downField("bookingId").as[String].toOption.get
+      stored   <- ctx.bookingRepo.findById(BookingId.fromString(bookingId).toOption.get)
+    yield
+      assertEquals(response.status, Status.Created)
+      assertEquals(stored.get.partyProfile, None)
+  }
+
+  test("StorefrontBookingRoutes.allEndpoints schema includes partyProfile") {
+    val yaml = OpenAPIDocsInterpreter().toOpenAPI(StorefrontBookingRoutes.allEndpoints, "Test", "1.0").toYaml
+    assert(yaml.contains("partyProfile"), s"Expected 'partyProfile' in OpenAPI spec: $yaml")
   }

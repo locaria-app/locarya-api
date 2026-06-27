@@ -8,11 +8,18 @@ import doobie.*
 import doobie.implicits.*
 import doobie.postgres.implicits.*
 import doobie.util.{fragments => Fragments}
+import io.circe.{Decoder, Encoder}
+import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
+import io.circe.parser.decode as circeDecoder
+import io.circe.syntax.*
 import java.time.LocalDate
 import java.util.UUID
 
 final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
     extends BookingRepository[F]:
+
+  private given Decoder[PartyProfile] = deriveDecoder
+  private given Encoder[PartyProfile] = deriveEncoder
 
   private case class BookingRow(
     id:                   UUID,
@@ -30,7 +37,8 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
     deliveryState:        Option[String],
     deliveryCep:          Option[String],
     deliveryComplement:   Option[String],
-    bookingCode:          String
+    bookingCode:          String,
+    partyProfile:         Option[String]
   ) derives Read
 
   private case class BookingItemRow(
@@ -45,7 +53,7 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
   private val selectBase = fr"""
     SELECT id, provider_id, customer_id, start_date, end_date, total_amount, status, created_by,
            delivery_street, delivery_number, delivery_neighborhood, delivery_city, delivery_state,
-           delivery_cep, delivery_complement, booking_code
+           delivery_cep, delivery_complement, booking_code, party_profile::text
     FROM bookings
   """
 
@@ -105,6 +113,7 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
     items:        List[BookingItemRow],
     attendantUuid: Option[UUID]
   ): F[Booking] =
+    val partyProfileOpt = row.partyProfile.flatMap(json => circeDecoder[PartyProfile](json).toOption)
     (for
       id           <- BookingId.fromString(row.id.toString)
       pid          <- ProviderId.fromString(row.providerId.toString)
@@ -117,7 +126,7 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
       creator      <- parseCreator(row.createdBy)
       code         <- BookingCode.fromString(row.bookingCode)
       booking      <- Booking.create(id, pid, cid, bookingItems, row.startDate, row.endDate,
-                        totalAmt, status, aidOpt, deliverAddr, creator, code)
+                        totalAmt, status, aidOpt, deliverAddr, creator, code, partyProfileOpt)
     yield booking).fold(
       err => Async[F].raiseError(new RuntimeException(s"DB→domain mapping failed: $err")),
       _.pure[F]
@@ -157,12 +166,15 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
     }
 
   override def create(booking: Booking): F[Booking] =
-    val bookingUuid = UUID.fromString(booking.id.value)
+    val bookingUuid     = UUID.fromString(booking.id.value)
+    val partyProfileFr  = booking.partyProfile
+      .map(p => fr"${p.asJson.noSpaces}::jsonb")
+      .getOrElse(fr"NULL")
     (for
-      _ <- sql"""INSERT INTO bookings
+      _ <- (fr"""INSERT INTO bookings
                    (id, provider_id, customer_id, start_date, end_date, total_amount, status, created_by,
                     delivery_street, delivery_number, delivery_neighborhood, delivery_city,
-                    delivery_state, delivery_cep, delivery_complement, booking_code)
+                    delivery_state, delivery_cep, delivery_complement, booking_code, party_profile)
                  VALUES
                    ($bookingUuid,
                     ${UUID.fromString(booking.providerId.value)},
@@ -178,7 +190,7 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
                     ${booking.deliveryAddress.map(_.state)},
                     ${booking.deliveryAddress.map(_.cep)},
                     ${booking.deliveryAddress.flatMap(_.complement)},
-                    ${booking.bookingCode.value})"""
+                    ${booking.bookingCode.value},""" ++ partyProfileFr ++ fr")")
               .update.run
       _ <- insertItemRows(bookingUuid, booking.items)
       _ <- booking.attendantId.traverse_ { aid =>
@@ -204,9 +216,12 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
     }
 
   override def update(booking: Booking): F[Booking] =
-    val bookingUuid = UUID.fromString(booking.id.value)
+    val bookingUuid    = UUID.fromString(booking.id.value)
+    val partyProfileFr = booking.partyProfile
+      .map(p => fr"${p.asJson.noSpaces}::jsonb")
+      .getOrElse(fr"NULL")
     (for
-      _ <- sql"""UPDATE bookings SET
+      _ <- (fr"""UPDATE bookings SET
                    status                = ${statusStr(booking.status)},
                    start_date            = ${booking.startDate},
                    end_date              = ${booking.endDate},
@@ -219,8 +234,9 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
                    delivery_state        = ${booking.deliveryAddress.map(_.state)},
                    delivery_cep          = ${booking.deliveryAddress.map(_.cep)},
                    delivery_complement   = ${booking.deliveryAddress.flatMap(_.complement)},
+                   party_profile         = """ ++ partyProfileFr ++ fr""",
                    updated_at            = NOW()
-                 WHERE id = $bookingUuid""".update.run
+                 WHERE id = $bookingUuid""").update.run
       _ <- sql"DELETE FROM booking_items WHERE booking_id = $bookingUuid".update.run
       _ <- insertItemRows(bookingUuid, booking.items)
       _ <- sql"DELETE FROM booking_attendants WHERE booking_id = $bookingUuid".update.run
