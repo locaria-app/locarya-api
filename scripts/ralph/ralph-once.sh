@@ -223,6 +223,7 @@ When running tests mid-cycle (after each RED→GREEN step), scope the run to the
 working on (e.g. \`sbt "testOnly *PaymentServiceSpec"\`) rather than the full suite — this \
 avoids recompiling/rerunning hundreds of unrelated tests on every small cycle. Only run the \
 full suite (\`sbt test\`) once, as a final check before committing and opening the PR. \
+If you open the PR yourself, the PR body must start with 'Closes #$N' on the first line. \
 Only if a choice is a business \
 rule with no basis in the docs and is unsafe to guess, STOP before writing any code and \
 reply with exactly: <needs-human>one-line question</needs-human>" \
@@ -256,7 +257,8 @@ else
   run_claude "$PR_RAW" --session-id "$PR_SID" --permission-mode acceptEdits \
     -p "Use the pr-runner subagent for issue #$N. \
 The code is already committed on branch '$BRANCH' — do not create a new branch or re-commit. \
-Open the PR targeting main and stop — do not merge."
+Open the PR targeting main and stop — do not merge. \
+The PR body must start with 'Closes #$N' on the first line."
   record_telemetry "pr-runner" "$PR_RAW" "$(( $(date +%s) - STEP_START ))"
   cleanup "$PR_RAW"
 fi
