@@ -156,14 +156,17 @@ class DashboardAsaasRoutesSpec extends CatsEffectSuite:
       assertEquals(json.hcursor.downField("onlinePaymentEnabled").as[Boolean].toOption, Some(false))
   }
 
-  test("GET /storefront/:slug returns onlinePaymentEnabled=true after onboarding") {
+  test("GET /storefront/:slug returns onlinePaymentEnabled=true after onboarding for Premium provider") {
     for
-      ctx    <- makeCtx
-      auth   <- signupAndLogin(ctx)
-      _      <- postOnboarding(ctx, auth.token)
-      resp   <- getStorefront(ctx, auth.slug)
-      body   <- resp.as[String]
-      json    = parse(body).toOption.get
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      pid       = ProviderId.fromString(auth.id).toOption.get
+      provider <- ctx.providerRepo.findById(pid).map(_.get)
+      _        <- ctx.providerRepo.update(provider.withPlanTier(PlanTier.Premium))
+      _        <- postOnboarding(ctx, auth.token)
+      resp     <- getStorefront(ctx, auth.slug)
+      body     <- resp.as[String]
+      json      = parse(body).toOption.get
     yield
       assertEquals(resp.status, Status.Ok)
       assertEquals(json.hcursor.downField("onlinePaymentEnabled").as[Boolean].toOption, Some(true))

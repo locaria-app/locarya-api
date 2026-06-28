@@ -300,6 +300,58 @@ class StorefrontRoutesSpec extends CatsEffectSuite:
       assert(config.downField("tagline").focus.isDefined,        s"Missing config.tagline: $body")
   }
 
+  // ── onlinePaymentEnabled ────────────────────────────────────────────────────
+
+  test("GET /storefront/:slug returns onlinePaymentEnabled=true for Premium provider with walletId") {
+    for
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      slug     <- getSlug(ctx, auth.id)
+      pid       = ProviderId.fromString(auth.id).toOption.get
+      provider <- ctx.providerRepo.findById(pid).map(_.get)
+      _        <- ctx.providerRepo.update(provider.withPlanTier(PlanTier.Premium).withWalletId("wallet-abc"))
+      request   = Request[IO](Method.GET, Uri.unsafeFromString(s"/api/v1/storefront/$slug"))
+      response <- ctx.allRoutes.orNotFound(request)
+      body     <- response.as[String]
+      json      = parse(body).toOption.get
+    yield
+      assertEquals(response.status, Status.Ok)
+      assertEquals(json.hcursor.downField("onlinePaymentEnabled").as[Boolean].toOption, Some(true), s"body: $body")
+  }
+
+  test("GET /storefront/:slug returns onlinePaymentEnabled=false for Freemium provider even with walletId") {
+    for
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      slug     <- getSlug(ctx, auth.id)
+      pid       = ProviderId.fromString(auth.id).toOption.get
+      _        <- ctx.providerRepo.updateWalletId(pid, "wallet-abc")
+      request   = Request[IO](Method.GET, Uri.unsafeFromString(s"/api/v1/storefront/$slug"))
+      response <- ctx.allRoutes.orNotFound(request)
+      body     <- response.as[String]
+      json      = parse(body).toOption.get
+    yield
+      assertEquals(response.status, Status.Ok)
+      assertEquals(json.hcursor.downField("onlinePaymentEnabled").as[Boolean].toOption, Some(false), s"body: $body")
+  }
+
+  test("GET /storefront/:slug returns onlinePaymentEnabled=false for Premium provider without walletId") {
+    for
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      slug     <- getSlug(ctx, auth.id)
+      pid       = ProviderId.fromString(auth.id).toOption.get
+      provider <- ctx.providerRepo.findById(pid).map(_.get)
+      _        <- ctx.providerRepo.update(provider.withPlanTier(PlanTier.Premium))
+      request   = Request[IO](Method.GET, Uri.unsafeFromString(s"/api/v1/storefront/$slug"))
+      response <- ctx.allRoutes.orNotFound(request)
+      body     <- response.as[String]
+      json      = parse(body).toOption.get
+    yield
+      assertEquals(response.status, Status.Ok)
+      assertEquals(json.hcursor.downField("onlinePaymentEnabled").as[Boolean].toOption, Some(false), s"body: $body")
+  }
+
   test("GET /storefront/:slug with no storeConfig set returns default primaryColor and null optional fields") {
     for
       ctx      <- makeCtx
