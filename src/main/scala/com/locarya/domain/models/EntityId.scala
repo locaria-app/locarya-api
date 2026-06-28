@@ -171,3 +171,20 @@ object SubscriptionId {
     }
   }
 }
+
+// BookingChargeId
+final case class BookingChargeId private (value: String)
+
+object BookingChargeId {
+  def generate: BookingChargeId = BookingChargeId(UUID.randomUUID().toString)
+
+  def fromString(id: String): Either[ValidationError, BookingChargeId] = {
+    try {
+      UUID.fromString(id)
+      Right(BookingChargeId(id))
+    } catch {
+      case _: IllegalArgumentException =>
+        Left(InvalidEntityId(s"Invalid BookingChargeId format: $id"))
+    }
+  }
+}
