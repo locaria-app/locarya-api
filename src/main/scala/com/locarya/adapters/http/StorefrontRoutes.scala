@@ -60,12 +60,13 @@ object StorefrontRoutes:
   private given Schema[ComboResponse]        = Schema.derived
 
   private case class StorefrontResponse(
-    name:   String,
-    city:   String,
-    state:  String,
-    items:  List[ItemResponse],
-    combos: List[ComboResponse],
-    config: StoreConfigResponse
+    name:                 String,
+    city:                 String,
+    state:                String,
+    items:                List[ItemResponse],
+    combos:               List[ComboResponse],
+    config:               StoreConfigResponse,
+    onlinePaymentEnabled: Boolean
   )
   private given Codec[StorefrontResponse]    = deriveCodec
   private given Schema[StorefrontResponse]   = Schema.derived
@@ -114,19 +115,20 @@ object StorefrontRoutes:
                          }
             sc         = catalog.provider.storeConfig
             response   = StorefrontResponse(
-                           name   = catalog.provider.tradeName,
-                           city   = catalog.provider.city,
-                           state  = catalog.provider.state,
-                           items  = itemResps,
-                           combos = comboResps,
-                           config = StoreConfigResponse(
+                           name                 = catalog.provider.tradeName,
+                           city                 = catalog.provider.city,
+                           state                = catalog.provider.state,
+                           items                = itemResps,
+                           combos               = comboResps,
+                           config               = StoreConfigResponse(
                              primaryColor   = sc.primaryColor,
                              logoUrl        = sc.logoUrl,
                              whatsappNumber = sc.whatsappNumber,
                              phoneNumber    = sc.phoneNumber,
                              businessHours  = sc.businessHours,
                              tagline        = sc.tagline
-                           )
+                           ),
+                           onlinePaymentEnabled = catalog.provider.walletId.isDefined
                          )
           yield Right(response))
             .handleErrorWith {

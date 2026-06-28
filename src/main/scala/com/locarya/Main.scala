@@ -4,11 +4,12 @@ import cats.effect._
 import cats.syntax.all._
 import com.comcast.ip4s._
 import org.flywaydb.core.Flyway
-import com.locarya.adapters.http.{AttendantRoutes, AuthRoutes, AvailabilityRoutes, ComboRoutes, DashboardBookingRoutes, DashboardProviderRoutes, HealthEndpoints, ItemRoutes, PaymentRoutes, StorefrontBookingRoutes, StorefrontRoutes, SwaggerRoutes}
+import com.locarya.adapters.http.{AttendantRoutes, AuthRoutes, AvailabilityRoutes, ComboRoutes, DashboardAsaasRoutes, DashboardBookingRoutes, DashboardProviderRoutes, HealthEndpoints, ItemRoutes, PaymentRoutes, StorefrontBookingRoutes, StorefrontRoutes, SwaggerRoutes}
 import com.locarya.adapters.http.middleware.CorrelationIdMiddleware
+import com.locarya.adapters.external.AsaasGatewayStub
 import com.locarya.adapters.persistence.{AttendantRepositoryLive, BookingRepositoryLive, ComboRepositoryLive, CustomerRepositoryLive, Database, ItemImageRepositoryLive, ItemRepositoryLive, PaymentRepositoryLive, ProviderRepositoryLive}
 import com.locarya.config.AppConfig
-import com.locarya.domain.services.{AttendantServiceImpl, AuthServiceImpl, AvailabilityServiceImpl, BookingServiceImpl, ComboServiceImpl, ItemServiceImpl, PaymentServiceImpl, ProviderServiceImpl, StorefrontServiceImpl}
+import com.locarya.domain.services.{AsaasOnboardingServiceImpl, AttendantServiceImpl, AuthServiceImpl, AvailabilityServiceImpl, BookingServiceImpl, ComboServiceImpl, ItemServiceImpl, PaymentServiceImpl, ProviderServiceImpl, StorefrontServiceImpl}
 import org.http4s.{HttpRoutes, Request, Response}
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.server.Server
@@ -50,8 +51,10 @@ object Main extends IOApp.Simple {
       customerRepo        = CustomerRepositoryLive.make[IO](xa)
       bookingRepo         = BookingRepositoryLive.make[IO](xa)
       paymentRepo         = PaymentRepositoryLive.make[IO](xa)
+      asaasGateway        = AsaasGatewayStub.make[IO]
       providerService     = ProviderServiceImpl[IO](providerRepo)
       authService         = AuthServiceImpl[IO](providerRepo, config.jwt.secret)
+      asaasOnboarding     = AsaasOnboardingServiceImpl[IO](providerRepo, asaasGateway)
       availabilityService = AvailabilityServiceImpl[IO](itemRepo, comboRepo, bookingRepo)
       bookingService      = BookingServiceImpl[IO](providerRepo, customerRepo, bookingRepo, itemRepo, comboRepo, availabilityService, attendantRepo)
       itemService         = ItemServiceImpl[IO](itemRepo, itemImageRepo, bookingRepo)
@@ -69,6 +72,7 @@ object Main extends IOApp.Simple {
                          StorefrontBookingRoutes.allEndpoints ++
                          DashboardBookingRoutes.allEndpoints ++
                          DashboardProviderRoutes.allEndpoints ++
+                         DashboardAsaasRoutes.allEndpoints ++
                          ComboRoutes.allEndpoints ++
                          AttendantRoutes.allEndpoints ++
                          PaymentRoutes.allEndpoints,
@@ -83,6 +87,7 @@ object Main extends IOApp.Simple {
                  StorefrontBookingRoutes.routes[IO](bookingService) <+>
                  DashboardBookingRoutes.routes[IO](bookingService, config.jwt.secret) <+>
                  DashboardProviderRoutes.routes[IO](providerService, config.jwt.secret) <+>
+                 DashboardAsaasRoutes.routes[IO](asaasOnboarding, config.jwt.secret) <+>
                  ItemRoutes.routes[IO](itemService, config.jwt.secret) <+>
                  ComboRoutes.routes[IO](comboService, config.jwt.secret) <+>
                  AttendantRoutes.routes[IO](attendantService, config.jwt.secret) <+>

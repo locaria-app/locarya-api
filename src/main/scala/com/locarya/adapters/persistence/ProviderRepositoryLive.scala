@@ -32,7 +32,8 @@ class ProviderRepositoryLive[F[_]: Async] private (xa: Transactor[F])
     plan:           String,
     storefrontSlug: String,
     isActive:       Boolean,
-    storeConfig:    Option[String]
+    storeConfig:    Option[String],
+    walletId:       Option[String]
   ) derives Read
 
   private def rowToProvider(row: ProviderRow): F[Provider] =
@@ -60,7 +61,8 @@ class ProviderRepositoryLive[F[_]: Async] private (xa: Transactor[F])
                    planTier       = planTier,
                    storefrontSlug = slug,
                    isActive       = row.isActive,
-                   storeConfig    = storeConfig
+                   storeConfig    = storeConfig,
+                   walletId       = row.walletId
                  )
     yield p
     result.fold(
@@ -71,7 +73,7 @@ class ProviderRepositoryLive[F[_]: Async] private (xa: Transactor[F])
   private val selectBase = fr"""
     SELECT id, email, cpf, cnpj, business_name, trade_name,
            city, state, password_hash, plan, storefront_slug, is_active,
-           store_config
+           store_config, wallet_id
     FROM providers
   """
 
@@ -122,6 +124,7 @@ class ProviderRepositoryLive[F[_]: Async] private (xa: Transactor[F])
         plan           = ${planStr(provider.planTier)},
         storefront_slug = ${provider.storefrontSlug.value},
         is_active      = ${provider.isActive},
+        wallet_id      = ${provider.walletId},
         updated_at     = NOW()
       WHERE id = $uuid
     """.update.run.transact(xa) >> provider.pure[F]
@@ -139,6 +142,16 @@ class ProviderRepositoryLive[F[_]: Async] private (xa: Transactor[F])
       .option
       .transact(xa)
       .flatMap(_.traverse(rowToProvider))
+
+  def updateWalletId(id: ProviderId, walletId: String): F[Provider] =
+    val uuid = UUID.fromString(id.value)
+    sql"""
+      UPDATE providers SET wallet_id = $walletId, updated_at = NOW()
+      WHERE id = $uuid
+    """.update.run.transact(xa) >> findById(id).flatMap {
+      case Some(p) => p.pure[F]
+      case None    => Async[F].raiseError(new RuntimeException(s"Provider ${id.value} not found after update"))
+    }
 
   def updateStoreConfig(id: ProviderId, config: StoreConfig): F[Provider] =
     val uuid    = UUID.fromString(id.value)
