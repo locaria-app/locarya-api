@@ -17,7 +17,8 @@ class OpenApiSpecSpec extends FunSuite:
       ComboRoutes.allEndpoints ++
       AttendantRoutes.allEndpoints ++
       PaymentRoutes.allEndpoints ++
-      DashboardProviderRoutes.allEndpoints
+      DashboardProviderRoutes.allEndpoints ++
+      DashboardAsaasRoutes.allEndpoints
 
   test("generated OpenAPI YAML is non-empty and starts with 'openapi:'") {
     val yaml = OpenAPIDocsInterpreter().toOpenAPI(allEndpoints, "Locarya API", "1.0").toYaml

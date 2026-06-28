@@ -14,7 +14,8 @@ final case class Provider private (
   planTier:       PlanTier,
   storefrontSlug: StorefrontSlug,
   isActive:       Boolean,
-  storeConfig:    StoreConfig    = StoreConfig()
+  storeConfig:    StoreConfig    = StoreConfig(),
+  walletId:       Option[String] = None
 )
 
 object Provider:
@@ -30,7 +31,8 @@ object Provider:
     planTier:       PlanTier       = PlanTier.Freemium,
     storefrontSlug: StorefrontSlug = StorefrontSlug.fromString("placeholder-000000").toOption.get,
     isActive:       Boolean        = true,
-    storeConfig:    StoreConfig    = StoreConfig()
+    storeConfig:    StoreConfig    = StoreConfig(),
+    walletId:       Option[String] = None
   ): Either[ValidationError, Provider] =
     if businessName.trim.isEmpty then
       Left(InvalidProvider("Business name cannot be empty"))
@@ -47,7 +49,7 @@ object Provider:
           businessName.trim, tradeName.trim,
           city.trim, state.trim,
           passwordHash, planTier, storefrontSlug,
-          isActive, storeConfig
+          isActive, storeConfig, walletId
         )
       )
 
@@ -55,6 +57,7 @@ object Provider:
     subscription.isActiveOn(date)
 
   extension (p: Provider) {
-    def deactivate: Provider                          = p.copy(isActive = false)
+    def deactivate: Provider                           = p.copy(isActive = false)
     def withStoreConfig(config: StoreConfig): Provider = p.copy(storeConfig = config)
+    def withWalletId(id: String): Provider             = p.copy(walletId = Some(id))
   }
