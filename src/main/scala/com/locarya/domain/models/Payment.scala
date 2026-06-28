@@ -3,14 +3,16 @@ package com.locarya.domain.models
 import java.time.Instant
 
 enum PaymentMethod:
-  case PixManual
+  case PixManual, PixAsaas
 
 object PaymentMethod:
   def encode(m: PaymentMethod): String = m match
     case PixManual => "pix_manual"
+    case PixAsaas  => "pix_asaas"
 
   def decode(s: String): Either[InvalidPayment, PaymentMethod] = s match
     case "pix_manual" => Right(PixManual)
+    case "pix_asaas"  => Right(PixAsaas)
     case other        => Left(InvalidPayment(s"Unknown payment method: $other"))
 
 enum PaymentStatus:
