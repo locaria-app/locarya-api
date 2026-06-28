@@ -34,19 +34,21 @@
 #   5  /tdd escalated a genuine blocker (now labeled "needs-design")
 #   1  precondition failed (dirty tree, etc.) — stop and inspect
 #
-# Usage: REPO=owner/repo ./scripts/ralph/ralph-once.sh [--verbose|-v] [--clean] [--model=<model>]
+# Usage: REPO=owner/repo ./scripts/ralph/ralph-once.sh [--verbose|-v] [--clean] [--model=<model>] [--no-gatherer]
 
 set -uo pipefail   # intentionally NO -e: a single failed step shouldn't be fatal
 
 # --- Verbose flag + cleanup mode + model -----------------------------------
 VERBOSE=0
-CLEAN=0   # --clean: remove brief/log files after run (default: keep them)
+CLEAN=0      # --clean: remove brief/log files after run (default: keep them)
+GATHERER=1   # --no-gatherer: skip step 1 and pass the GitHub issue body directly to /tdd
 MODEL="${RALPH_MODEL:-claude-sonnet-4-6}"
 for arg in "$@"; do
   case "$arg" in
-    --verbose|-v) VERBOSE=1 ;;
-    --clean)      CLEAN=1 ;;
-    --model=*)    MODEL="${arg#--model=}" ;;
+    --verbose|-v)   VERBOSE=1 ;;
+    --clean)        CLEAN=1 ;;
+    --no-gatherer)  GATHERER=0 ;;
+    --model=*)      MODEL="${arg#--model=}" ;;
   esac
 done
 vlog() { [ "$VERBOSE" -eq 1 ] && echo "[$(date '+%H:%M:%S')] $*" >&2 || true; }
@@ -164,39 +166,55 @@ fi
 BRIEF_FILE="$RALPH_TMP/issue-$N-brief.md"   # inside project tree, sandbox-writable, gitignored
 CTX_RAW="$RALPH_TMP/issue-$N-ctx.raw.jsonl"  # raw stream-json events (sentinel + telemetry)
 
-# 1. Context (+ migration guard when relevant). The guard only REVIEWS; we act on
-#    its verdict here by labeling the issue "blocked" and halting this iteration.
-GUARD=""
-if [ "$MIG" = "true" ]; then
-  GUARD="Then use the migration-guard subagent on issue #$N. If its verdict is \
+if [ "$GATHERER" -eq 1 ]; then
+  # -------------------------------------------------------------------------
+  # Step 1A (default): context-gatherer produces a rich brief from the codebase.
+  # -------------------------------------------------------------------------
+  GUARD=""
+  if [ "$MIG" = "true" ]; then
+    GUARD="Then use the migration-guard subagent on issue #$N. If its verdict is \
 \"NEEDS HUMAN DECISION\" or it reports any Blocking finding, run \
 \`gh issue edit $N --add-label blocked\` and then reply with exactly <halt/> and nothing else."
-fi
+  fi
 
-vlog "step 1/3: context-gatherer$([ "$MIG" = true ] && echo ' + migration-guard' || true)..."
-STEP_START=$(date +%s)
-run_claude "$CTX_RAW" --session-id "$CTX_SID" --permission-mode acceptEdits \
-  -p "Use the context-gatherer subagent on issue #$N to produce the implementation brief. \
+  vlog "step 1/3: context-gatherer$([ "$MIG" = true ] && echo ' + migration-guard' || true)..."
+  STEP_START=$(date +%s)
+  run_claude "$CTX_RAW" --session-id "$CTX_SID" --permission-mode acceptEdits \
+    -p "Use the context-gatherer subagent on issue #$N to produce the implementation brief. \
 Write the complete brief as a markdown file to $BRIEF_FILE (use the Bash tool: \
 \`cat > '$BRIEF_FILE' << 'BRIEF_EOF'\n<brief content>\nBRIEF_EOF\`). \
 After writing the file, print exactly: <brief-written/>. $GUARD"
-record_telemetry "context-gatherer" "$CTX_RAW" "$(( $(date +%s) - STEP_START ))"
-vlog "step 1/3 done ($(elapsed $STEP_START))"
+  record_telemetry "context-gatherer" "$CTX_RAW" "$(( $(date +%s) - STEP_START ))"
+  vlog "step 1/3 done ($(elapsed $STEP_START))"
 
-if halt_in "$CTX_RAW" '<halt/>'; then
-  echo ">> migration-guard halted #$N; labeled 'blocked'. Skipping."
-  cleanup "$CTX_RAW" "$BRIEF_FILE"
-  exit 4
-fi
+  if halt_in "$CTX_RAW" '<halt/>'; then
+    echo ">> migration-guard halted #$N; labeled 'blocked'. Skipping."
+    cleanup "$CTX_RAW" "$BRIEF_FILE"
+    exit 4
+  fi
 
-# Verify the brief was actually written before discarding the ctx session
-if [ ! -s "$BRIEF_FILE" ]; then
-  echo ">> context-gatherer did not write the brief to $BRIEF_FILE — aborting." >&2
-  cleanup "$CTX_RAW" "$BRIEF_FILE"
-  exit 1
+  if [ ! -s "$BRIEF_FILE" ]; then
+    echo ">> context-gatherer did not write the brief to $BRIEF_FILE — aborting." >&2
+    cleanup "$CTX_RAW" "$BRIEF_FILE"
+    exit 1
+  fi
+  vlog "brief written: $(wc -c < "$BRIEF_FILE") bytes → $BRIEF_FILE"
+  cleanup "$CTX_RAW"
+
+else
+  # -------------------------------------------------------------------------
+  # Step 1B (--no-gatherer): fetch the issue body from GitHub and write it as
+  # the brief directly — no agent, no codebase exploration, ~$0 cost.
+  # /tdd will explore what it needs on its own.
+  # -------------------------------------------------------------------------
+  vlog "step 1/3: --no-gatherer — fetching issue #$N body from GitHub..."
+  STEP_START=$(date +%s)
+  ISSUE_BODY="$(gh issue view "$N" --json title,body,labels -q \
+    '"# " + .title + "\n\n" + .body + "\n\nLabels: " + (.labels | map(.name) | join(", "))')"
+  printf '%s\n' "$ISSUE_BODY" > "$BRIEF_FILE"
+  record_telemetry "context-gatherer(skipped)" "/dev/null" "$(( $(date +%s) - STEP_START ))"
+  vlog "step 1/3 done ($(elapsed $STEP_START)) — issue body written: $(wc -c < "$BRIEF_FILE") bytes → $BRIEF_FILE"
 fi
-vlog "brief written: $(wc -c < "$BRIEF_FILE") bytes → $BRIEF_FILE"
-cleanup "$CTX_RAW"  # raw events no longer needed after telemetry recorded
 
 # 2. TDD — fresh session reading only the compact brief from disk.
 #    No context from step 1 is inherited — this is the main token saving.
