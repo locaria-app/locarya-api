@@ -128,7 +128,7 @@ object StorefrontRoutes:
                              businessHours  = sc.businessHours,
                              tagline        = sc.tagline
                            ),
-                           onlinePaymentEnabled = catalog.provider.walletId.isDefined
+                           onlinePaymentEnabled = catalog.provider.planTier == PlanTier.Premium && catalog.provider.walletId.isDefined
                          )
           yield Right(response))
             .handleErrorWith {

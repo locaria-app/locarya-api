@@ -60,4 +60,5 @@ object Provider:
     def deactivate: Provider                           = p.copy(isActive = false)
     def withStoreConfig(config: StoreConfig): Provider = p.copy(storeConfig = config)
     def withWalletId(id: String): Provider             = p.copy(walletId = Some(id))
+    def withPlanTier(tier: PlanTier): Provider         = p.copy(planTier = tier)
   }
