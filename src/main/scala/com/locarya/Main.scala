@@ -4,12 +4,12 @@ import cats.effect._
 import cats.syntax.all._
 import com.comcast.ip4s._
 import org.flywaydb.core.Flyway
-import com.locarya.adapters.http.{AttendantRoutes, AuthRoutes, AvailabilityRoutes, ComboRoutes, DashboardAsaasRoutes, DashboardBookingRoutes, DashboardProviderRoutes, HealthEndpoints, ItemRoutes, PaymentRoutes, StorefrontBookingRoutes, StorefrontRoutes, SwaggerRoutes}
+import com.locarya.adapters.http.{AttendantRoutes, AuthRoutes, AvailabilityRoutes, ComboRoutes, DashboardAsaasRoutes, DashboardBookingRoutes, DashboardProviderRoutes, HealthEndpoints, ItemRoutes, PaymentRoutes, StorefrontBookingRoutes, StorefrontChargeRoutes, StorefrontRoutes, SwaggerRoutes}
 import com.locarya.adapters.http.middleware.CorrelationIdMiddleware
-import com.locarya.adapters.external.AsaasGatewayStub
-import com.locarya.adapters.persistence.{AttendantRepositoryLive, BookingRepositoryLive, ComboRepositoryLive, CustomerRepositoryLive, Database, ItemImageRepositoryLive, ItemRepositoryLive, PaymentRepositoryLive, ProviderRepositoryLive}
+import com.locarya.adapters.external.{AsaasClientLive, AsaasGatewayStub}
+import com.locarya.adapters.persistence.{AttendantRepositoryLive, BookingChargeRepositoryLive, BookingRepositoryLive, ComboRepositoryLive, CustomerRepositoryLive, Database, ItemImageRepositoryLive, ItemRepositoryLive, PaymentRepositoryLive, ProviderRepositoryLive}
 import com.locarya.config.AppConfig
-import com.locarya.domain.services.{AsaasOnboardingServiceImpl, AttendantServiceImpl, AuthServiceImpl, AvailabilityServiceImpl, BookingServiceImpl, ComboServiceImpl, ItemServiceImpl, PaymentServiceImpl, ProviderServiceImpl, StorefrontServiceImpl}
+import com.locarya.domain.services.{AsaasOnboardingServiceImpl, AttendantServiceImpl, AuthServiceImpl, AvailabilityServiceImpl, BookingChargeServiceImpl, BookingServiceImpl, ComboServiceImpl, ItemServiceImpl, PaymentServiceImpl, ProviderServiceImpl, StorefrontServiceImpl}
 import org.http4s.{HttpRoutes, Request, Response}
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.server.Server
@@ -51,7 +51,9 @@ object Main extends IOApp.Simple {
       customerRepo        = CustomerRepositoryLive.make[IO](xa)
       bookingRepo         = BookingRepositoryLive.make[IO](xa)
       paymentRepo         = PaymentRepositoryLive.make[IO](xa)
+      chargeRepo          = BookingChargeRepositoryLive.make[IO](xa)
       asaasGateway        = AsaasGatewayStub.make[IO]
+      paymentGateway      = AsaasClientLive.make[IO]
       providerService     = ProviderServiceImpl[IO](providerRepo)
       authService         = AuthServiceImpl[IO](providerRepo, config.jwt.secret)
       asaasOnboarding     = AsaasOnboardingServiceImpl[IO](providerRepo, asaasGateway)
@@ -61,6 +63,7 @@ object Main extends IOApp.Simple {
       comboService        = ComboServiceImpl[IO](comboRepo, itemRepo, bookingRepo)
       attendantService    = AttendantServiceImpl[IO](attendantRepo, bookingRepo)
       paymentService      = PaymentServiceImpl[IO](bookingRepo, paymentRepo)
+      chargeService       = BookingChargeServiceImpl[IO](providerRepo, bookingRepo, customerRepo, chargeRepo, paymentGateway)
       storefrontService   = StorefrontServiceImpl[IO](providerRepo, itemRepo, itemImageRepo, comboRepo)
 
       swaggerEnabled = sys.env.getOrElse("SWAGGER_ENABLED", "false") == "true"
@@ -70,6 +73,7 @@ object Main extends IOApp.Simple {
                          StorefrontRoutes.allEndpoints ++
                          AvailabilityRoutes.allEndpoints ++
                          StorefrontBookingRoutes.allEndpoints ++
+                         StorefrontChargeRoutes.allEndpoints ++
                          DashboardBookingRoutes.allEndpoints ++
                          DashboardProviderRoutes.allEndpoints ++
                          DashboardAsaasRoutes.allEndpoints ++
@@ -85,6 +89,7 @@ object Main extends IOApp.Simple {
                  StorefrontRoutes.routes[IO](storefrontService) <+>
                  AvailabilityRoutes.routes[IO](availabilityService, storefrontService) <+>
                  StorefrontBookingRoutes.routes[IO](bookingService) <+>
+                 StorefrontChargeRoutes.routes[IO](chargeService) <+>
                  DashboardBookingRoutes.routes[IO](bookingService, config.jwt.secret) <+>
                  DashboardProviderRoutes.routes[IO](providerService, config.jwt.secret) <+>
                  DashboardAsaasRoutes.routes[IO](asaasOnboarding, config.jwt.secret) <+>

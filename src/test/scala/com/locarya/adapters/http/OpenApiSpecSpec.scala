@@ -13,6 +13,7 @@ class OpenApiSpecSpec extends FunSuite:
       StorefrontRoutes.allEndpoints ++
       AvailabilityRoutes.allEndpoints ++
       StorefrontBookingRoutes.allEndpoints ++
+      StorefrontChargeRoutes.allEndpoints ++
       DashboardBookingRoutes.allEndpoints ++
       ComboRoutes.allEndpoints ++
       AttendantRoutes.allEndpoints ++
