@@ -4,12 +4,12 @@ import cats.effect._
 import cats.syntax.all._
 import com.comcast.ip4s._
 import org.flywaydb.core.Flyway
-import com.locarya.adapters.http.{AttendantRoutes, AuthRoutes, AvailabilityRoutes, ComboRoutes, DashboardAsaasRoutes, DashboardBookingRoutes, DashboardProviderRoutes, HealthEndpoints, ItemRoutes, PaymentRoutes, StorefrontBookingRoutes, StorefrontChargeRoutes, StorefrontRoutes, SwaggerRoutes}
+import com.locarya.adapters.http.{AsaasWebhookRoutes, AttendantRoutes, AuthRoutes, AvailabilityRoutes, ComboRoutes, DashboardAsaasRoutes, DashboardBookingRoutes, DashboardProviderRoutes, HealthEndpoints, ItemRoutes, PaymentRoutes, StorefrontBookingRoutes, StorefrontChargeRoutes, StorefrontRoutes, SwaggerRoutes}
 import com.locarya.adapters.http.middleware.CorrelationIdMiddleware
 import com.locarya.adapters.external.{AsaasClientLive, AsaasGatewayStub}
-import com.locarya.adapters.persistence.{AttendantRepositoryLive, BookingChargeRepositoryLive, BookingRepositoryLive, ComboRepositoryLive, CustomerRepositoryLive, Database, ItemImageRepositoryLive, ItemRepositoryLive, PaymentRepositoryLive, ProviderRepositoryLive}
+import com.locarya.adapters.persistence.{AttendantRepositoryLive, BookingChargeRepositoryLive, BookingRepositoryLive, ComboRepositoryLive, CustomerRepositoryLive, Database, ItemImageRepositoryLive, ItemRepositoryLive, NotificationEventRepositoryLive, PaymentRepositoryLive, ProviderRepositoryLive}
 import com.locarya.config.AppConfig
-import com.locarya.domain.services.{AsaasOnboardingServiceImpl, AttendantServiceImpl, AuthServiceImpl, AvailabilityServiceImpl, BookingChargeServiceImpl, BookingServiceImpl, ComboServiceImpl, ItemServiceImpl, PaymentServiceImpl, ProviderServiceImpl, StorefrontServiceImpl}
+import com.locarya.domain.services.{AsaasOnboardingServiceImpl, AsaasWebhookServiceImpl, AttendantServiceImpl, AuthServiceImpl, AvailabilityServiceImpl, BookingChargeServiceImpl, BookingServiceImpl, ComboServiceImpl, ItemServiceImpl, PaymentServiceImpl, ProviderServiceImpl, StorefrontServiceImpl}
 import org.http4s.{HttpRoutes, Request, Response}
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.server.Server
@@ -52,6 +52,7 @@ object Main extends IOApp.Simple {
       bookingRepo         = BookingRepositoryLive.make[IO](xa)
       paymentRepo         = PaymentRepositoryLive.make[IO](xa)
       chargeRepo          = BookingChargeRepositoryLive.make[IO](xa)
+      notifRepo           = NotificationEventRepositoryLive.make[IO](xa)
       asaasGateway        = AsaasGatewayStub.make[IO]
       paymentGateway      = AsaasClientLive.make[IO]
       providerService     = ProviderServiceImpl[IO](providerRepo)
@@ -64,6 +65,7 @@ object Main extends IOApp.Simple {
       attendantService    = AttendantServiceImpl[IO](attendantRepo, bookingRepo)
       paymentService      = PaymentServiceImpl[IO](bookingRepo, paymentRepo)
       chargeService       = BookingChargeServiceImpl[IO](providerRepo, bookingRepo, customerRepo, chargeRepo, paymentGateway)
+      webhookService      = AsaasWebhookServiceImpl[IO](chargeRepo, paymentRepo, notifRepo)
       storefrontService   = StorefrontServiceImpl[IO](providerRepo, itemRepo, itemImageRepo, comboRepo)
 
       swaggerEnabled = sys.env.getOrElse("SWAGGER_ENABLED", "false") == "true"
@@ -79,7 +81,8 @@ object Main extends IOApp.Simple {
                          DashboardAsaasRoutes.allEndpoints ++
                          ComboRoutes.allEndpoints ++
                          AttendantRoutes.allEndpoints ++
-                         PaymentRoutes.allEndpoints,
+                         PaymentRoutes.allEndpoints ++
+                         AsaasWebhookRoutes.allEndpoints,
                          swaggerEnabled
                        )
 
@@ -97,6 +100,7 @@ object Main extends IOApp.Simple {
                  ComboRoutes.routes[IO](comboService, config.jwt.secret) <+>
                  AttendantRoutes.routes[IO](attendantService, config.jwt.secret) <+>
                  PaymentRoutes.routes[IO](paymentService, config.jwt.secret) <+>
+                 AsaasWebhookRoutes.routes[IO](webhookService, config.asaas.webhookToken) <+>
                  docsRoute.getOrElse(HttpRoutes.empty[IO])
                )
 

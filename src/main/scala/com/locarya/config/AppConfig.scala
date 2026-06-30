@@ -19,10 +19,13 @@ case class HttpConfig(
 
 case class JwtConfig(secret: String)
 
+case class AsaasConfig(webhookToken: String)
+
 case class AppConfig(
   database: DatabaseConfig,
   http:     HttpConfig,
-  jwt:      JwtConfig
+  jwt:      JwtConfig,
+  asaas:    AsaasConfig
 )
 
 object AppConfig {
@@ -44,6 +47,9 @@ object AppConfig {
         ),
         jwt = JwtConfig(
           secret = config.getString("locarya.jwt.secret")
+        ),
+        asaas = AsaasConfig(
+          webhookToken = sys.env.getOrElse("ASAAS_WEBHOOK_TOKEN", "")
         )
       )
     })
