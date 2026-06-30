@@ -75,6 +75,11 @@ final class BookingChargeRepositoryLive[F[_]: Async] private (xa: Transactor[F])
       .query[ChargeRow].option.transact(xa)
       .flatMap(_.traverse(rowToCharge))
 
+  override def findByAsaasChargeId(chargeId: String): F[Option[BookingCharge]] =
+    (selectBase ++ fr"WHERE asaas_charge_id = $chargeId LIMIT 1")
+      .query[ChargeRow].option.transact(xa)
+      .flatMap(_.traverse(rowToCharge))
+
 object BookingChargeRepositoryLive:
   def make[F[_]: Async](xa: Transactor[F]): BookingChargeRepository[F] =
     new BookingChargeRepositoryLive[F](xa)
