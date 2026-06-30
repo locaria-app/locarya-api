@@ -188,3 +188,20 @@ object BookingChargeId {
     }
   }
 }
+
+// NotificationEventId
+final case class NotificationEventId private (value: String)
+
+object NotificationEventId {
+  def generate: NotificationEventId = NotificationEventId(UUID.randomUUID().toString)
+
+  def fromString(id: String): Either[ValidationError, NotificationEventId] = {
+    try {
+      UUID.fromString(id)
+      Right(NotificationEventId(id))
+    } catch {
+      case _: IllegalArgumentException =>
+        Left(InvalidEntityId(s"Invalid NotificationEventId format: $id"))
+    }
+  }
+}

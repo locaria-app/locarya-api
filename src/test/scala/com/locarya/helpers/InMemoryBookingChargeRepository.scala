@@ -29,6 +29,9 @@ final class InMemoryBookingChargeRepository[F[_]: Async] private (
       _.values.find(c => c.bookingId == bookingId && c.status == BookingChargeStatus.Pending)
     )
 
+  def findByAsaasChargeId(chargeId: String): F[Option[BookingCharge]] =
+    state.get.map(_.values.find(_.chargeId == chargeId))
+
 object InMemoryBookingChargeRepository:
   def make[F[_]: Async]: F[InMemoryBookingChargeRepository[F]] =
     Ref.of[F, Map[BookingChargeId, BookingCharge]](Map.empty).map(new InMemoryBookingChargeRepository(_))
