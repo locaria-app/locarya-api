@@ -9,7 +9,7 @@ import com.locarya.helpers.{
   InMemoryPaymentRepository
 }
 import munit.CatsEffectSuite
-import java.time.LocalDate
+import java.time.{Instant, LocalDate}
 
 class AsaasWebhookServiceSpec extends CatsEffectSuite:
 
@@ -22,7 +22,8 @@ class AsaasWebhookServiceSpec extends CatsEffectSuite:
     bookingId  = bookingId,
     chargeId   = asaasChargeId,
     paymentUrl = "https://asaas.com/pay/abc123",
-    status     = BookingChargeStatus.Pending
+    status     = BookingChargeStatus.Pending,
+    createdAt  = Instant.now()
   )
 
   private val paidCharge = BookingCharge.fromDb(
@@ -30,7 +31,8 @@ class AsaasWebhookServiceSpec extends CatsEffectSuite:
     bookingId  = BookingId.generate,
     chargeId   = "pay_already_paid",
     paymentUrl = "https://asaas.com/pay/paid",
-    status     = BookingChargeStatus.Paid
+    status     = BookingChargeStatus.Paid,
+    createdAt  = Instant.now()
   )
 
   private case class Ctx(

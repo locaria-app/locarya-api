@@ -24,7 +24,8 @@ final class AsaasWebhookServiceImpl[F[_]: MonadThrow](
                        .fold(e => MonadThrow[F].raiseError(new RuntimeException(e.toString)), _.pure[F])
           _        <- paymentRepo.create(payment)
           paidCharge = BookingCharge.fromDb(
-                         charge.id, charge.bookingId, charge.chargeId, charge.paymentUrl, BookingChargeStatus.Paid
+                         charge.id, charge.bookingId, charge.chargeId, charge.paymentUrl, BookingChargeStatus.Paid,
+                         charge.createdAt
                        )
           _        <- chargeRepo.update(paidCharge)
           payload   = s"""{"asaasChargeId":"$asaasChargeId","bookingId":"${charge.bookingId.value}","paymentId":"${payment.id.value}"}"""

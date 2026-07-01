@@ -9,7 +9,7 @@ import com.locarya.adapters.http.middleware.CorrelationIdMiddleware
 import com.locarya.adapters.external.{AsaasClientLive, AsaasGatewayStub, EmailNotificationAdapter}
 import com.locarya.adapters.persistence.{AttendantRepositoryLive, BookingChargeRepositoryLive, BookingRepositoryLive, ComboRepositoryLive, CustomerRepositoryLive, Database, ItemImageRepositoryLive, ItemRepositoryLive, NotificationEventRepositoryLive, PaymentRepositoryLive, ProviderRepositoryLive}
 import com.locarya.config.AppConfig
-import com.locarya.domain.services.{AsaasOnboardingServiceImpl, AsaasWebhookServiceImpl, AttendantServiceImpl, AuthServiceImpl, AvailabilityServiceImpl, BookingChargeServiceImpl, BookingServiceImpl, ComboServiceImpl, ItemServiceImpl, NotificationOutboxWorker, PaymentServiceImpl, ProviderServiceImpl, StorefrontServiceImpl}
+import com.locarya.domain.services.{AsaasOnboardingServiceImpl, AsaasWebhookServiceImpl, AttendantServiceImpl, AuthServiceImpl, AvailabilityServiceImpl, BookingChargeServiceImpl, BookingServiceImpl, ComboServiceImpl, ItemServiceImpl, NotificationOutboxWorker, PaymentServiceImpl, PixChargeExpirySweeper, ProviderServiceImpl, StorefrontServiceImpl}
 import scala.concurrent.duration.*
 import org.http4s.{HttpRoutes, Request, Response}
 import org.http4s.ember.server.EmberServerBuilder
@@ -70,6 +70,8 @@ object Main extends IOApp.Simple {
       webhookService      = AsaasWebhookServiceImpl[IO](chargeRepo, paymentRepo, notifRepo)
       outboxWorker        = NotificationOutboxWorker[IO](notifRepo, bookingRepo, customerRepo, providerRepo, paymentRepo, emailAdapter)
       _                  <- Resource.make(outboxWorker.stream(30.seconds).start)(_.cancel)
+      expirySweeper       = PixChargeExpirySweeper[IO](chargeRepo, paymentGateway)
+      _                  <- Resource.make(expirySweeper.stream(1.hour).start)(_.cancel)
       storefrontService   = StorefrontServiceImpl[IO](providerRepo, itemRepo, itemImageRepo, comboRepo)
 
       swaggerEnabled = sys.env.getOrElse("SWAGGER_ENABLED", "false") == "true"
