@@ -11,6 +11,7 @@ import com.locarya.helpers.{
   InMemoryCustomerRepository,
   InMemoryItemImageRepository,
   InMemoryItemRepository,
+  InMemoryNotificationEventRepository,
   InMemoryProviderRepository
 }
 import io.circe.parser.parse
@@ -39,7 +40,8 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
     providerRepo:  InMemoryProviderRepository[IO],
     itemRepo:      InMemoryItemRepository[IO],
     bookingRepo:   InMemoryBookingRepository[IO],
-    customerRepo:  InMemoryCustomerRepository[IO]
+    customerRepo:  InMemoryCustomerRepository[IO],
+    notifRepo:     InMemoryNotificationEventRepository[IO]
   ):
     def allRoutes: HttpRoutes[IO] = authRoutes <+> bookingRoutes <+> itemRoutes
 
@@ -52,15 +54,16 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
       bookingRepo   <- InMemoryBookingRepository.make[IO]
       customerRepo  <- InMemoryCustomerRepository.make[IO]
       attendantRepo <- InMemoryAttendantRepository.make[IO]
+      notifRepo     <- InMemoryNotificationEventRepository.make[IO]
       providerSvc    = ProviderServiceImpl[IO](providerRepo)
       authSvc        = AuthServiceImpl[IO](providerRepo, testJwtSecret)
       itemSvc        = ItemServiceImpl[IO](itemRepo, imageRepo, bookingRepo)
       availSvc       = AvailabilityServiceImpl[IO](itemRepo, comboRepo, bookingRepo)
-      bookingSvc     = BookingServiceImpl[IO](providerRepo, customerRepo, bookingRepo, itemRepo, comboRepo, availSvc, attendantRepo)
+      bookingSvc     = BookingServiceImpl[IO](providerRepo, customerRepo, bookingRepo, itemRepo, comboRepo, availSvc, attendantRepo, notifRepo)
       auth           = AuthRoutes.routes[IO](providerSvc, authSvc)
       items          = ItemRoutes.routes[IO](itemSvc, testJwtSecret)
       bookings       = DashboardBookingRoutes.routes[IO](bookingSvc, testJwtSecret)
-    yield Ctx(auth, items, bookings, providerRepo, itemRepo, bookingRepo, customerRepo)
+    yield Ctx(auth, items, bookings, providerRepo, itemRepo, bookingRepo, customerRepo, notifRepo)
 
   private val signupBody =
     """{
@@ -410,4 +413,59 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
     yield
       assertEquals(parse(inBody).toOption.get.asArray.map(_.size), Some(1))
       assertEquals(parse(outBody).toOption.get.asArray.map(_.size), Some(0))
+  }
+
+  // ── Notification events after status change ───────────────────────────────
+
+  test("PUT /dashboard/bookings/:id/status to cancelled enqueues a BookingStatusChanged notification event") {
+    for
+      ctx       <- makeCtx
+      auth      <- signupAndLogin(ctx)
+      bookingId <- createAndGetBookingId(ctx, auth)
+      _         <- putBookingStatus(ctx, bookingId, """{"newStatus":"cancelled"}""", auth.token)
+      events    <- ctx.notifRepo.all
+    yield
+      assertEquals(events.size, 1, "Expected one notification event after cancellation")
+      assertEquals(events.head.eventType, "BookingStatusChanged")
+      assert(events.head.payload.contains("\"newStatus\":\"cancelled\""), events.head.payload)
+  }
+
+  test("PUT /dashboard/bookings/:id/status to confirmed enqueues a BookingStatusChanged notification event") {
+    for
+      ctx       <- makeCtx
+      auth      <- signupAndLogin(ctx)
+      // Seed a Pending booking directly through the repo (customer-created booking)
+      itemId    <- createItem(ctx, auth.token)
+      item      <- ctx.itemRepo.findById(ItemId.fromString(itemId).toOption.get).map(_.get)
+      customer   = Customer.create(CustomerId.generate, Email.fromString("c@test.com").toOption.get, name = "Cliente").toOption.get
+      _         <- ctx.customerRepo.create(customer)
+      pending    = Booking.create(
+                     id          = BookingId.generate,
+                     providerId  = item.providerId,
+                     customerId  = customer.id,
+                     items       = List(BookedIndividualItem(item.id, 1)),
+                     startDate   = date,
+                     endDate     = date,
+                     totalAmount = item.dailyRate,
+                     status      = BookingStatus.Pending
+                   ).toOption.get
+      _         <- ctx.bookingRepo.create(pending)
+      bookingId  = pending.id.value
+      _         <- putBookingStatus(ctx, bookingId, """{"newStatus":"confirmed"}""", auth.token)
+      events    <- ctx.notifRepo.all
+    yield
+      assertEquals(events.size, 1, "Expected one notification event after confirmation")
+      assertEquals(events.head.eventType, "BookingStatusChanged")
+      assert(events.head.payload.contains("\"newStatus\":\"confirmed\""), events.head.payload)
+  }
+
+  test("PUT /dashboard/bookings/:id/status to in-progress does NOT enqueue a notification event") {
+    for
+      ctx       <- makeCtx
+      auth      <- signupAndLogin(ctx)
+      bookingId <- createAndGetBookingId(ctx, auth)
+      _         <- putBookingStatus(ctx, bookingId, """{"newStatus":"in-progress"}""", auth.token)
+      events    <- ctx.notifRepo.all
+    yield
+      assertEquals(events.size, 0, "Expected no notification events for in-progress transition")
   }

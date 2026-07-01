@@ -13,6 +13,7 @@ import com.locarya.helpers.{
   InMemoryCustomerRepository,
   InMemoryItemImageRepository,
   InMemoryItemRepository,
+  InMemoryNotificationEventRepository,
   InMemoryProviderRepository
 }
 import io.circe.parser.parse
@@ -57,11 +58,12 @@ class StorefrontBookingRoutesSpec extends CatsEffectSuite:
       bookingRepo   <- InMemoryBookingRepository.make[IO]
       customerRepo  <- InMemoryCustomerRepository.make[IO]
       attendantRepo <- InMemoryAttendantRepository.make[IO]
+      notifRepo     <- InMemoryNotificationEventRepository.make[IO]
       providerSvc    = ProviderServiceImpl[IO](providerRepo)
       authSvc        = AuthServiceImpl[IO](providerRepo, testJwtSecret)
       itemSvc        = ItemServiceImpl[IO](itemRepo, imageRepo, bookingRepo)
       availSvc       = AvailabilityServiceImpl[IO](itemRepo, comboRepo, bookingRepo)
-      bookingSvc     = BookingServiceImpl[IO](providerRepo, customerRepo, bookingRepo, itemRepo, comboRepo, availSvc, attendantRepo)
+      bookingSvc     = BookingServiceImpl[IO](providerRepo, customerRepo, bookingRepo, itemRepo, comboRepo, availSvc, attendantRepo, notifRepo)
       auth           = AuthRoutes.routes[IO](providerSvc, authSvc)
       items          = ItemRoutes.routes[IO](itemSvc, testJwtSecret)
       bookings       = StorefrontBookingRoutes.routes[IO](bookingSvc)

@@ -16,3 +16,11 @@ object NotificationPayload:
     provider: Provider,
     amount:   Money
   ) extends NotificationPayload
+
+  final case class BookingStatusChanged(
+    booking:        Booking,
+    customer:       Customer,
+    provider:       Provider,
+    previousStatus: BookingStatus,
+    newStatus:      BookingStatus
+  ) extends NotificationPayload
