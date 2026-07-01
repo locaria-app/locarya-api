@@ -6,10 +6,11 @@ import com.comcast.ip4s._
 import org.flywaydb.core.Flyway
 import com.locarya.adapters.http.{AsaasWebhookRoutes, AttendantRoutes, AuthRoutes, AvailabilityRoutes, ComboRoutes, DashboardAsaasRoutes, DashboardBookingRoutes, DashboardProviderRoutes, HealthEndpoints, ItemRoutes, PaymentRoutes, StorefrontBookingRoutes, StorefrontChargeRoutes, StorefrontRoutes, SwaggerRoutes}
 import com.locarya.adapters.http.middleware.CorrelationIdMiddleware
-import com.locarya.adapters.external.{AsaasClientLive, AsaasGatewayStub}
+import com.locarya.adapters.external.{AsaasClientLive, AsaasGatewayStub, EmailNotificationAdapter}
 import com.locarya.adapters.persistence.{AttendantRepositoryLive, BookingChargeRepositoryLive, BookingRepositoryLive, ComboRepositoryLive, CustomerRepositoryLive, Database, ItemImageRepositoryLive, ItemRepositoryLive, NotificationEventRepositoryLive, PaymentRepositoryLive, ProviderRepositoryLive}
 import com.locarya.config.AppConfig
-import com.locarya.domain.services.{AsaasOnboardingServiceImpl, AsaasWebhookServiceImpl, AttendantServiceImpl, AuthServiceImpl, AvailabilityServiceImpl, BookingChargeServiceImpl, BookingServiceImpl, ComboServiceImpl, ItemServiceImpl, PaymentServiceImpl, ProviderServiceImpl, StorefrontServiceImpl}
+import com.locarya.domain.services.{AsaasOnboardingServiceImpl, AsaasWebhookServiceImpl, AttendantServiceImpl, AuthServiceImpl, AvailabilityServiceImpl, BookingChargeServiceImpl, BookingServiceImpl, ComboServiceImpl, ItemServiceImpl, NotificationOutboxWorker, PaymentServiceImpl, ProviderServiceImpl, StorefrontServiceImpl}
+import scala.concurrent.duration.*
 import org.http4s.{HttpRoutes, Request, Response}
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.server.Server
@@ -64,8 +65,11 @@ object Main extends IOApp.Simple {
       comboService        = ComboServiceImpl[IO](comboRepo, itemRepo, bookingRepo)
       attendantService    = AttendantServiceImpl[IO](attendantRepo, bookingRepo)
       paymentService      = PaymentServiceImpl[IO](bookingRepo, paymentRepo)
-      chargeService       = BookingChargeServiceImpl[IO](providerRepo, bookingRepo, customerRepo, chargeRepo, paymentGateway)
+      emailAdapter        = EmailNotificationAdapter.make[IO]
+      chargeService       = BookingChargeServiceImpl[IO](providerRepo, bookingRepo, customerRepo, chargeRepo, paymentGateway, notifRepo)
       webhookService      = AsaasWebhookServiceImpl[IO](chargeRepo, paymentRepo, notifRepo)
+      outboxWorker        = NotificationOutboxWorker[IO](notifRepo, bookingRepo, customerRepo, providerRepo, paymentRepo, emailAdapter)
+      _                  <- Resource.make(outboxWorker.stream(30.seconds).start)(_.cancel)
       storefrontService   = StorefrontServiceImpl[IO](providerRepo, itemRepo, itemImageRepo, comboRepo)
 
       swaggerEnabled = sys.env.getOrElse("SWAGGER_ENABLED", "false") == "true"

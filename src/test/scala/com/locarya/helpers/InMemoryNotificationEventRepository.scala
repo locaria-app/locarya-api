@@ -24,6 +24,15 @@ final class InMemoryNotificationEventRepository[F[_]: Async] private (
   def update(event: NotificationEvent): F[NotificationEvent] =
     state.modify(store => (store + (event.id -> event)) -> event)
 
+  def findPending(limit: Int): F[List[NotificationEvent]] =
+    state.get.map(
+      _.values
+        .filter(_.status == NotificationEventStatus.Pending)
+        .toList
+        .sortBy(_.createdAt)
+        .take(limit)
+    )
+
   def all: F[List[NotificationEvent]] =
     state.get.map(_.values.toList)
 
