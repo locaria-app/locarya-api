@@ -10,6 +10,7 @@ import com.locarya.helpers.{
   InMemoryComboRepository,
   InMemoryCustomerRepository,
   InMemoryItemRepository,
+  InMemoryNotificationEventRepository,
   InMemoryProviderRepository
 }
 import com.locarya.domain.services.AvailabilityServiceImpl
@@ -49,6 +50,7 @@ class BookingServiceSpec extends CatsEffectSuite:
     bookingRepo:   InMemoryBookingRepository[IO],
     itemRepo:      InMemoryItemRepository[IO],
     attendantRepo: InMemoryAttendantRepository[IO],
+    notifRepo:     InMemoryNotificationEventRepository[IO],
     provider:      Provider
   )
 
@@ -64,6 +66,7 @@ class BookingServiceSpec extends CatsEffectSuite:
       itemRepo      <- InMemoryItemRepository.make[IO]
       comboRepo     <- InMemoryComboRepository.make[IO]
       attendantRepo <- InMemoryAttendantRepository.make[IO]
+      notifRepo     <- InMemoryNotificationEventRepository.make[IO]
       provider       = Provider.create(
                          id             = ProviderId.generate,
                          email          = Email.fromString("locador@example.com").toOption.get,
@@ -76,8 +79,8 @@ class BookingServiceSpec extends CatsEffectSuite:
                        ).toOption.get
       _             <- providerRepo.create(provider)
       availability   = StubAvailabilityService(unavailableIds)
-      svc            = BookingServiceImpl[IO](providerRepo, customerRepo, bookingRepo, itemRepo, comboRepo, availability, attendantRepo)
-    yield Ctx(svc, providerRepo, customerRepo, bookingRepo, itemRepo, attendantRepo, provider)
+      svc            = BookingServiceImpl[IO](providerRepo, customerRepo, bookingRepo, itemRepo, comboRepo, availability, attendantRepo, notifRepo)
+    yield Ctx(svc, providerRepo, customerRepo, bookingRepo, itemRepo, attendantRepo, notifRepo, provider)
 
   private def buildItem(ctx: Ctx, id: ItemId, stock: Int, itemPrice: Money): Item =
     Item.create(
@@ -442,7 +445,8 @@ class BookingServiceSpec extends CatsEffectSuite:
       itemRepo      <- InMemoryItemRepository.make[IO]
       comboRepo     <- InMemoryComboRepository.make[IO]
       attendantRepo <- InMemoryAttendantRepository.make[IO]
-      svc            = BookingServiceImpl[IO](providerRepo, customerRepo, bookingRepo, itemRepo, comboRepo, StubAvailabilityService(Set.empty), attendantRepo)
+      notifRepo     <- InMemoryNotificationEventRepository.make[IO]
+      svc            = BookingServiceImpl[IO](providerRepo, customerRepo, bookingRepo, itemRepo, comboRepo, StubAvailabilityService(Set.empty), attendantRepo, notifRepo)
       prov1         = Provider.create(
                         id             = ProviderId.generate,
                         email          = Email.fromString("p1@test.com").toOption.get,
@@ -528,6 +532,7 @@ class BookingServiceSpec extends CatsEffectSuite:
       itemRepo      <- InMemoryItemRepository.make[IO]
       comboRepo     <- InMemoryComboRepository.make[IO]
       attendantRepo <- InMemoryAttendantRepository.make[IO]
+      notifRepo     <- InMemoryNotificationEventRepository.make[IO]
       provider       = Provider.create(
                          id             = ProviderId.generate,
                          email          = Email.fromString("locador@example.com").toOption.get,
@@ -540,8 +545,8 @@ class BookingServiceSpec extends CatsEffectSuite:
                        ).toOption.get
       _             <- providerRepo.create(provider)
       availability   = AvailabilityServiceImpl[IO](itemRepo, comboRepo, bookingRepo)
-      svc            = BookingServiceImpl[IO](providerRepo, customerRepo, bookingRepo, itemRepo, comboRepo, availability, attendantRepo)
-    yield Ctx(svc, providerRepo, customerRepo, bookingRepo, itemRepo, attendantRepo, provider)
+      svc            = BookingServiceImpl[IO](providerRepo, customerRepo, bookingRepo, itemRepo, comboRepo, availability, attendantRepo, notifRepo)
+    yield Ctx(svc, providerRepo, customerRepo, bookingRepo, itemRepo, attendantRepo, notifRepo, provider)
 
   private def createConfirmedBooking(ctx: Ctx, item: Item): IO[BookingId] =
     val req = CreateBookingByProviderRequest(
@@ -758,4 +763,59 @@ class BookingServiceSpec extends CatsEffectSuite:
     yield
       assert(failed.isLeft, "Expected confirmation to fail without attendant")
       assertEquals(updated.status, BookingStatus.Confirmed)
+  }
+
+  // ── BookingStatusChanged notification events ──────────────────────────────
+
+  test("updateBookingStatus — Pending→Confirmed enqueues a BookingStatusChanged notification event") {
+    for
+      ctx       <- makeCtx()
+      item      <- seedItem(ctx)
+      created   <- ctx.svc.createBooking(request(List((item.id, 1))))
+      bid        = created.bookingId
+      _         <- ctx.svc.updateBookingStatus(ctx.provider.id, bid, BookingStatus.Confirmed, None)
+      events    <- ctx.notifRepo.all
+    yield
+      assertEquals(events.size, 1, "Expected exactly one notification event")
+      assertEquals(events.head.eventType, "BookingStatusChanged")
+      assert(events.head.payload.contains(bid.value), s"Payload should contain bookingId: ${events.head.payload}")
+      assert(events.head.payload.contains("\"previousStatus\":\"pending\""), events.head.payload)
+      assert(events.head.payload.contains("\"newStatus\":\"confirmed\""), events.head.payload)
+  }
+
+  test("updateBookingStatus — Confirmed→Cancelled enqueues a BookingStatusChanged notification event") {
+    for
+      ctx       <- makeCtx()
+      item      <- seedItem(ctx)
+      bookingId <- createConfirmedBooking(ctx, item)
+      _         <- ctx.svc.updateBookingStatus(ctx.provider.id, bookingId, BookingStatus.Cancelled, None)
+      events    <- ctx.notifRepo.all
+    yield
+      assertEquals(events.size, 1, "Expected exactly one notification event")
+      assertEquals(events.head.eventType, "BookingStatusChanged")
+      assert(events.head.payload.contains("\"previousStatus\":\"confirmed\""), events.head.payload)
+      assert(events.head.payload.contains("\"newStatus\":\"cancelled\""), events.head.payload)
+  }
+
+  test("updateBookingStatus — Confirmed→InProgress does NOT enqueue a notification event") {
+    for
+      ctx       <- makeCtx()
+      item      <- seedItem(ctx)
+      bookingId <- createConfirmedBooking(ctx, item)
+      _         <- ctx.svc.updateBookingStatus(ctx.provider.id, bookingId, BookingStatus.InProgress, None)
+      events    <- ctx.notifRepo.all
+    yield
+      assertEquals(events.size, 0, "Expected no notification events for InProgress transition")
+  }
+
+  test("updateBookingStatus — InProgress→Completed does NOT enqueue a notification event") {
+    for
+      ctx       <- makeCtx()
+      item      <- seedItem(ctx)
+      bookingId <- createConfirmedBooking(ctx, item)
+      _         <- ctx.svc.updateBookingStatus(ctx.provider.id, bookingId, BookingStatus.InProgress, None)
+      _         <- ctx.svc.updateBookingStatus(ctx.provider.id, bookingId, BookingStatus.Completed, None)
+      events    <- ctx.notifRepo.all
+    yield
+      assertEquals(events.size, 0, "Expected no notification events for Completed transition")
   }

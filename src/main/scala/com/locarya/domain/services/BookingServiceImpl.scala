@@ -4,7 +4,7 @@ import cats.effect.Sync
 import cats.syntax.all.*
 import com.locarya.domain.models.*
 import com.locarya.domain.ports.*
-import java.time.LocalDate
+import java.time.{Instant, LocalDate}
 import org.typelevel.log4cats.Logger
 
 class BookingServiceImpl[F[_]: Sync: Logger](
@@ -14,7 +14,8 @@ class BookingServiceImpl[F[_]: Sync: Logger](
   itemRepo:      ItemRepository[F],
   comboRepo:     ComboRepository[F],
   availability:  AvailabilityService[F],
-  attendantRepo: AttendantRepository[F]
+  attendantRepo: AttendantRepository[F],
+  notifRepo:     NotificationEventRepository[F]
 ) extends BookingService[F]:
 
   /** A requested line resolved to its booked representation and the price snapshot
@@ -91,7 +92,17 @@ class BookingServiceImpl[F[_]: Sync: Logger](
       _       <- requireAttendantsWhenConfirming(booking, newStatus)
       stored  <- bookingRepo.update(updated)
       _       <- Logger[F].info(bookingStatusChangedLog(stored, booking.status, reason))
+      _       <- enqueueStatusChangedIfNeeded(booking.status, stored)
     yield stored
+
+  private def enqueueStatusChangedIfNeeded(previousStatus: BookingStatus, stored: Booking): F[Unit] =
+    if stored.status == BookingStatus.Confirmed || stored.status == BookingStatus.Cancelled then
+      Sync[F].delay(Instant.now()).flatMap { now =>
+        val payload = s"""{"bookingId":"${stored.id.value}","previousStatus":"${toKebab(previousStatus.toString)}","newStatus":"${toKebab(stored.status.toString)}"}"""
+        val event   = NotificationEvent.create(NotificationEventId.generate, "BookingStatusChanged", payload, now)
+        notifRepo.create(event).void
+      }
+    else ().pure[F]
 
   private def requireAttendantsWhenConfirming(booking: Booking, newStatus: BookingStatus): F[Unit] =
     if newStatus != BookingStatus.Confirmed then ().pure[F]

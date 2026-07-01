@@ -55,12 +55,33 @@ final class NotificationOutboxWorker[F[_]: Async](
             provider   <- requireById(booking.providerId, "Provider")(providerRepo.findById(booking.providerId))
           yield NotificationPayload.BookingCreatedWithPaymentLink(booking, customer, provider, paymentUrl)
 
+        case "BookingStatusChanged" =>
+          for
+            bookingId     <- fieldOrFail(json, "bookingId")
+                               .flatMap(s => parseId(BookingId.fromString(s)))
+            prevStatusStr <- fieldOrFail(json, "previousStatus")
+            newStatusStr  <- fieldOrFail(json, "newStatus")
+            prevStatus    <- parseBookingStatus(prevStatusStr)
+            newStatus     <- parseBookingStatus(newStatusStr)
+            booking       <- requireById(bookingId, "Booking")(bookingRepo.findById(bookingId))
+            customer      <- requireById(booking.customerId, "Customer")(customerRepo.findById(booking.customerId))
+            provider      <- requireById(booking.providerId, "Provider")(providerRepo.findById(booking.providerId))
+          yield NotificationPayload.BookingStatusChanged(booking, customer, provider, prevStatus, newStatus)
+
         case other =>
           Async[F].raiseError(new RuntimeException(s"Unknown notification event type: $other"))
     )
 
   private def parseId[A](result: Either[ValidationError, A]): F[A] =
     result.fold(e => Async[F].raiseError(new RuntimeException(e.toString)), _.pure[F])
+
+  private def parseBookingStatus(s: String): F[BookingStatus] = s match
+    case "pending"     => BookingStatus.Pending.pure[F]
+    case "confirmed"   => BookingStatus.Confirmed.pure[F]
+    case "in-progress" => BookingStatus.InProgress.pure[F]
+    case "completed"   => BookingStatus.Completed.pure[F]
+    case "cancelled"   => BookingStatus.Cancelled.pure[F]
+    case other         => Async[F].raiseError(new RuntimeException(s"Unknown booking status: $other"))
 
   private def fieldOrFail(json: io.circe.Json, field: String): F[String] =
     json.hcursor.downField(field).as[String].fold(

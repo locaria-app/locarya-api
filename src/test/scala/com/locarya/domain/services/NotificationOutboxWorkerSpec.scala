@@ -65,6 +65,12 @@ class NotificationOutboxWorkerSpec extends CatsEffectSuite:
   private val bookingLinkPayload =
     s"""{"bookingId":"${bookingId.value}","paymentUrl":"https://asaas.com/pay/abc"}"""
 
+  private val bookingStatusChangedConfirmedPayload =
+    s"""{"bookingId":"${bookingId.value}","previousStatus":"pending","newStatus":"confirmed"}"""
+
+  private val bookingStatusChangedCancelledPayload =
+    s"""{"bookingId":"${bookingId.value}","previousStatus":"confirmed","newStatus":"cancelled"}"""
+
   private case class Ctx(
     notifRepo:   InMemoryNotificationEventRepository[IO],
     bookingRepo: InMemoryBookingRepository[IO],
@@ -207,6 +213,53 @@ class NotificationOutboxWorkerSpec extends CatsEffectSuite:
       calls <- ctx.notifSvc.captured
     yield
       assertEquals(calls.size, 0, "notify should not be called for a Failed event")
+  }
+
+  // ── BookingStatusChanged: happy paths ────────────────────────────────────
+
+  test("processOnce calls notify with BookingStatusChanged payload for Confirmed transition") {
+    for
+      ctx   <- makeCtx
+      event  = pendingEvent("BookingStatusChanged", bookingStatusChangedConfirmedPayload)
+      _     <- ctx.notifRepo.create(event)
+      _     <- ctx.worker().processOnce
+      calls <- ctx.notifSvc.captured
+    yield
+      assertEquals(calls.size, 1)
+      assert(calls.head.isInstanceOf[NotificationPayload.BookingStatusChanged], s"Expected BookingStatusChanged, got ${calls.head}")
+      val bsc = calls.head.asInstanceOf[NotificationPayload.BookingStatusChanged]
+      assertEquals(bsc.booking.id, bookingId)
+      assertEquals(bsc.customer.id, customerId)
+      assertEquals(bsc.provider.id, providerId)
+      assertEquals(bsc.previousStatus, BookingStatus.Pending)
+      assertEquals(bsc.newStatus, BookingStatus.Confirmed)
+  }
+
+  test("processOnce calls notify with BookingStatusChanged payload for Cancelled transition") {
+    for
+      ctx   <- makeCtx
+      event  = pendingEvent("BookingStatusChanged", bookingStatusChangedCancelledPayload)
+      _     <- ctx.notifRepo.create(event)
+      _     <- ctx.worker().processOnce
+      calls <- ctx.notifSvc.captured
+    yield
+      assertEquals(calls.size, 1)
+      assert(calls.head.isInstanceOf[NotificationPayload.BookingStatusChanged])
+      val bsc = calls.head.asInstanceOf[NotificationPayload.BookingStatusChanged]
+      assertEquals(bsc.previousStatus, BookingStatus.Confirmed)
+      assertEquals(bsc.newStatus, BookingStatus.Cancelled)
+  }
+
+  test("processOnce marks BookingStatusChanged event as Processed on success") {
+    for
+      ctx   <- makeCtx
+      event  = pendingEvent("BookingStatusChanged", bookingStatusChangedConfirmedPayload)
+      _     <- ctx.notifRepo.create(event)
+      _     <- ctx.worker().processOnce
+      found <- ctx.notifRepo.findById(event.id)
+    yield
+      assert(found.isDefined)
+      assertEquals(found.get.status, NotificationEventStatus.Processed)
   }
 
   private def alwaysFail: NotificationService[IO] = new NotificationService[IO]:

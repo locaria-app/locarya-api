@@ -60,7 +60,7 @@ object Main extends IOApp.Simple {
       authService         = AuthServiceImpl[IO](providerRepo, config.jwt.secret)
       asaasOnboarding     = AsaasOnboardingServiceImpl[IO](providerRepo, asaasGateway)
       availabilityService = AvailabilityServiceImpl[IO](itemRepo, comboRepo, bookingRepo)
-      bookingService      = BookingServiceImpl[IO](providerRepo, customerRepo, bookingRepo, itemRepo, comboRepo, availabilityService, attendantRepo)
+      bookingService      = BookingServiceImpl[IO](providerRepo, customerRepo, bookingRepo, itemRepo, comboRepo, availabilityService, attendantRepo, notifRepo)
       itemService         = ItemServiceImpl[IO](itemRepo, itemImageRepo, bookingRepo)
       comboService        = ComboServiceImpl[IO](comboRepo, itemRepo, bookingRepo)
       attendantService    = AttendantServiceImpl[IO](attendantRepo, bookingRepo)
