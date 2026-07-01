@@ -5,6 +5,7 @@ import cats.effect.Ref
 import cats.syntax.all.*
 import com.locarya.domain.models.*
 import com.locarya.domain.ports.BookingChargeRepository
+import java.time.Instant
 
 final class InMemoryBookingChargeRepository[F[_]: Async] private (
   state: Ref[F, Map[BookingChargeId, BookingCharge]]
@@ -31,6 +32,13 @@ final class InMemoryBookingChargeRepository[F[_]: Async] private (
 
   def findByAsaasChargeId(chargeId: String): F[Option[BookingCharge]] =
     state.get.map(_.values.find(_.chargeId == chargeId))
+
+  def findPendingOlderThan(cutoff: Instant): F[List[BookingCharge]] =
+    state.get.map(
+      _.values
+        .filter(c => c.status == BookingChargeStatus.Pending && c.createdAt.isBefore(cutoff))
+        .toList
+    )
 
 object InMemoryBookingChargeRepository:
   def make[F[_]: Async]: F[InMemoryBookingChargeRepository[F]] =

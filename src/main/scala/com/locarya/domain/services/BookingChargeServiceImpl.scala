@@ -71,7 +71,8 @@ class BookingChargeServiceImpl[F[_]: Sync: Logger](
                          id         = BookingChargeId.generate,
                          bookingId  = booking.id,
                          chargeId   = asaasCharge.chargeId,
-                         paymentUrl = asaasCharge.paymentUrl
+                         paymentUrl = asaasCharge.paymentUrl,
+                         createdAt  = Instant.now()
                        )
                      )
       _           <- chargeRepo.create(charge)

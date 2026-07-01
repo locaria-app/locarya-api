@@ -8,7 +8,8 @@ import com.locarya.domain.ports.PaymentGateway
 
 final class PaymentGatewayStub[F[_]: Sync] private (
   createCounter: Ref[F, Int],
-  cancelCounter: Ref[F, Int]
+  cancelLog:     Ref[F, List[String]],
+  failingIds:    Ref[F, Set[String]]
 ) extends PaymentGateway[F]:
 
   def createCharge(bookingId: BookingId, walletId: String, amount: BigDecimal, customerEmail: String): F[AsaasCharge] =
@@ -18,14 +19,21 @@ final class PaymentGatewayStub[F[_]: Sync] private (
         .fold(e => Sync[F].raiseError(new RuntimeException(e.message)), _.pure[F])
 
   def cancelCharge(chargeId: String): F[Unit] =
-    cancelCounter.update(_ + 1)
+    failingIds.get.flatMap { failing =>
+      if failing.contains(chargeId)
+      then Sync[F].raiseError(new RuntimeException(s"Simulated cancelCharge failure for $chargeId"))
+      else cancelLog.update(_ :+ chargeId)
+    }
 
-  def createChargeCallCount: F[Int] = createCounter.get
-  def cancelChargeCallCount: F[Int] = cancelCounter.get
+  def createChargeCallCount: F[Int]   = createCounter.get
+  def cancelChargeCallCount: F[Int]   = cancelLog.get.map(_.size)
+  def cancelledChargeIds: F[List[String]] = cancelLog.get
+  def failFor(chargeId: String): F[Unit]  = failingIds.update(_ + chargeId)
 
 object PaymentGatewayStub:
   def make[F[_]: Sync]: F[PaymentGatewayStub[F]] =
     for
-      cc <- Ref.of[F, Int](0)
-      xc <- Ref.of[F, Int](0)
-    yield new PaymentGatewayStub[F](cc, xc)
+      cc   <- Ref.of[F, Int](0)
+      cLog <- Ref.of[F, List[String]](List.empty)
+      fail <- Ref.of[F, Set[String]](Set.empty)
+    yield new PaymentGatewayStub[F](cc, cLog, fail)
