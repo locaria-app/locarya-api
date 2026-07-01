@@ -12,6 +12,7 @@ import com.locarya.helpers.{
   InMemoryItemImageRepository,
   InMemoryComboRepository,
   InMemoryAttendantRepository,
+  InMemoryNotificationEventRepository,
   InMemoryProviderRepository,
   PaymentGatewayStub
 }
@@ -56,12 +57,13 @@ class StorefrontChargeRoutesSpec extends CatsEffectSuite:
       customerRepo  <- InMemoryCustomerRepository.make[IO]
       attendantRepo <- InMemoryAttendantRepository.make[IO]
       chargeRepo    <- InMemoryBookingChargeRepository.make[IO]
+      notifRepo     <- InMemoryNotificationEventRepository.make[IO]
       gateway       <- PaymentGatewayStub.make[IO]
       providerSvc    = ProviderServiceImpl[IO](providerRepo)
       authSvc        = AuthServiceImpl[IO](providerRepo, testJwtSecret)
       availSvc       = AvailabilityServiceImpl[IO](itemRepo, comboRepo, bookingRepo)
       bookingSvc     = BookingServiceImpl[IO](providerRepo, customerRepo, bookingRepo, itemRepo, comboRepo, availSvc, attendantRepo)
-      chargeSvc      = BookingChargeServiceImpl[IO](providerRepo, bookingRepo, customerRepo, chargeRepo, gateway)
+      chargeSvc      = BookingChargeServiceImpl[IO](providerRepo, bookingRepo, customerRepo, chargeRepo, gateway, notifRepo)
       auth           = AuthRoutes.routes[IO](providerSvc, authSvc)
       bookingRoutes  = StorefrontBookingRoutes.routes[IO](bookingSvc)
       chargeRoutes   = StorefrontChargeRoutes.routes[IO](chargeSvc)

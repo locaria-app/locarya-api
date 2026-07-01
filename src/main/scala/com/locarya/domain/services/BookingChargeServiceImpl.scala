@@ -4,6 +4,7 @@ import cats.effect.Sync
 import cats.syntax.all.*
 import com.locarya.domain.models.*
 import com.locarya.domain.ports.*
+import java.time.Instant
 import org.typelevel.log4cats.Logger
 
 class BookingChargeServiceImpl[F[_]: Sync: Logger](
@@ -11,7 +12,8 @@ class BookingChargeServiceImpl[F[_]: Sync: Logger](
   bookingRepo:  BookingRepository[F],
   customerRepo: CustomerRepository[F],
   chargeRepo:   BookingChargeRepository[F],
-  gateway:      PaymentGateway[F]
+  gateway:      PaymentGateway[F],
+  notifRepo:    NotificationEventRepository[F]
 ) extends BookingChargeService[F]:
 
   def chargeBooking(slug: StorefrontSlug, bookingId: BookingId): F[ChargeOutcome] =
@@ -74,6 +76,9 @@ class BookingChargeServiceImpl[F[_]: Sync: Logger](
                      )
       _           <- chargeRepo.create(charge)
       _           <- Logger[F].info(chargeCreatedLog(charge, provider))
+      notifPayload = s"""{"bookingId":"${booking.id.value}","paymentUrl":"${asaasCharge.paymentUrl}"}"""
+      notifEvent   = NotificationEvent.create(NotificationEventId.generate, "BookingCreatedWithPaymentLink", notifPayload, Instant.now())
+      _           <- notifRepo.create(notifEvent)
     yield ChargeOutcome.Created(charge.paymentUrl)
 
   private def liftValidation[A](e: Either[ValidationError, A]): F[A] =

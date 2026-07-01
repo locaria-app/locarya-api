@@ -63,6 +63,12 @@ final class NotificationEventRepositoryLive[F[_]: Async] private (xa: Transactor
     case NotificationEventStatus.Processed => "processed"
     case NotificationEventStatus.Failed    => "failed"
 
+  override def findPending(limit: Int): F[List[NotificationEvent]] =
+    (selectBase ++
+      fr"WHERE status = 'pending' ORDER BY created_at ASC LIMIT $limit")
+      .query[EventRow].to[List].transact(xa)
+      .flatMap(_.traverse(rowToEvent))
+
   override def create(event: NotificationEvent): F[NotificationEvent] =
     val createdAtLdt = event.createdAt.atZone(ZoneOffset.UTC).toLocalDateTime
     sql"""INSERT INTO notification_events

@@ -7,6 +7,7 @@ import com.locarya.helpers.{
   InMemoryBookingChargeRepository,
   InMemoryBookingRepository,
   InMemoryCustomerRepository,
+  InMemoryNotificationEventRepository,
   InMemoryProviderRepository,
   PaymentGatewayStub
 }
@@ -64,6 +65,7 @@ class BookingChargeServiceSpec extends CatsEffectSuite:
       bookingRepo  <- InMemoryBookingRepository.make[IO]
       customerRepo <- InMemoryCustomerRepository.make[IO]
       chargeRepo   <- InMemoryBookingChargeRepository.make[IO]
+      notifRepo    <- InMemoryNotificationEventRepository.make[IO]
       gateway      <- PaymentGatewayStub.make[IO]
       _            <- providerRepo.create(provider)
       customer      = Customer.create(
@@ -84,7 +86,7 @@ class BookingChargeServiceSpec extends CatsEffectSuite:
                         status      = BookingStatus.Pending
                       ).toOption.get
       _            <- bookingRepo.create(booking)
-      svc           = BookingChargeServiceImpl[IO](providerRepo, bookingRepo, customerRepo, chargeRepo, gateway)
+      svc           = BookingChargeServiceImpl[IO](providerRepo, bookingRepo, customerRepo, chargeRepo, gateway, notifRepo)
     yield Ctx(svc, chargeRepo, bookingRepo, gateway, booking, provider)
 
   // ── chargeBooking: happy path ─────────────────────────────────────────────
@@ -235,10 +237,11 @@ class BookingChargeServiceSpec extends CatsEffectSuite:
       bookingRepo <- InMemoryBookingRepository.make[IO]
       customerRepo <- InMemoryCustomerRepository.make[IO]
       chargeRepo  <- InMemoryBookingChargeRepository.make[IO]
+      notifRepo   <- InMemoryNotificationEventRepository.make[IO]
       gateway     <- PaymentGatewayStub.make[IO]
       // booking was created under premiumProvider, not otherProvider
       _           <- bookingRepo.create(ctx.booking)
-      svc          = BookingChargeServiceImpl[IO](providerRepo, bookingRepo, customerRepo, chargeRepo, gateway)
+      svc          = BookingChargeServiceImpl[IO](providerRepo, bookingRepo, customerRepo, chargeRepo, gateway, notifRepo)
       result      <- svc.chargeBooking(otherSlug, ctx.booking.id).attempt
     yield
       assert(result.isLeft)
