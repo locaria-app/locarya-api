@@ -41,6 +41,7 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
     itemRepo:      InMemoryItemRepository[IO],
     bookingRepo:   InMemoryBookingRepository[IO],
     customerRepo:  InMemoryCustomerRepository[IO],
+    attendantRepo: InMemoryAttendantRepository[IO],
     notifRepo:     InMemoryNotificationEventRepository[IO]
   ):
     def allRoutes: HttpRoutes[IO] = authRoutes <+> bookingRoutes <+> itemRoutes
@@ -63,7 +64,7 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
       auth           = AuthRoutes.routes[IO](providerSvc, authSvc)
       items          = ItemRoutes.routes[IO](itemSvc, testJwtSecret)
       bookings       = DashboardBookingRoutes.routes[IO](bookingSvc, testJwtSecret)
-    yield Ctx(auth, items, bookings, providerRepo, itemRepo, bookingRepo, customerRepo, notifRepo)
+    yield Ctx(auth, items, bookings, providerRepo, itemRepo, bookingRepo, customerRepo, attendantRepo, notifRepo)
 
   private val signupBody =
     """{
@@ -468,4 +469,97 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
       events    <- ctx.notifRepo.all
     yield
       assertEquals(events.size, 0, "Expected no notification events for in-progress transition")
+  }
+
+  // ── GET /dashboard/bookings/:id ───────────────────────────────────────────
+
+  private def getDashboardBooking(ctx: Ctx, bookingId: String, token: String): IO[Response[IO]] =
+    val uri = Uri.unsafeFromString(s"/api/v1/dashboard/bookings/$bookingId")
+    ctx.allRoutes.orNotFound(
+      Request[IO](Method.GET, uri)
+        .withHeaders(authHeader(token))
+    )
+
+  test("GET /dashboard/bookings/:id returns 401 without Authorization header") {
+    for
+      ctx  <- makeCtx
+      resp <- ctx.allRoutes.orNotFound(
+                Request[IO](Method.GET, uri"/api/v1/dashboard/bookings/some-id")
+              )
+    yield assertEquals(resp.status, Status.Unauthorized)
+  }
+
+  test("GET /dashboard/bookings/:id returns 200 with all fields and empty assignedAttendants") {
+    for
+      ctx       <- makeCtx
+      auth      <- signupAndLogin(ctx)
+      bookingId <- createAndGetBookingId(ctx, auth)
+      resp      <- getDashboardBooking(ctx, bookingId, auth.token)
+      body      <- resp.as[String]
+      json       = parse(body).toOption.get
+    yield
+      assertEquals(resp.status, Status.Ok)
+      assert(json.hcursor.downField("id").focus.isDefined, body)
+      assert(json.hcursor.downField("customer").focus.isDefined, body)
+      assert(json.hcursor.downField("items").focus.isDefined, body)
+      assert(json.hcursor.downField("date").focus.isDefined, body)
+      assert(json.hcursor.downField("status").focus.isDefined, body)
+      assert(json.hcursor.downField("totalAmount").focus.isDefined, body)
+      assert(json.hcursor.downField("createdBy").focus.isDefined, body)
+      assert(json.hcursor.downField("bookingCode").focus.isDefined, body)
+      assertEquals(json.hcursor.downField("assignedAttendants").as[List[io.circe.Json]].toOption, Some(Nil))
+  }
+
+  test("GET /dashboard/bookings/:id returns assignedAttendants when one is assigned") {
+    for
+      ctx       <- makeCtx
+      auth      <- signupAndLogin(ctx)
+      bookingId <- createAndGetBookingId(ctx, auth)
+      bid        = BookingId.fromString(bookingId).toOption.get
+      attendant  = Attendant.create(AttendantId.generate, ProviderId.fromString(auth.id).toOption.get, "Monitor Maria", "11988880000").toOption.get
+      _         <- ctx.attendantRepo.create(attendant)
+      _         <- ctx.attendantRepo.assignToBooking(bid, attendant.id)
+      resp      <- getDashboardBooking(ctx, bookingId, auth.token)
+      body      <- resp.as[String]
+      json       = parse(body).toOption.get
+    yield
+      assertEquals(resp.status, Status.Ok)
+      val attendants = json.hcursor.downField("assignedAttendants").as[List[io.circe.Json]].toOption.get
+      assertEquals(attendants.size, 1)
+      assertEquals(attendants.head.hcursor.downField("id").as[String].toOption, Some(attendant.id.value))
+      assertEquals(attendants.head.hcursor.downField("name").as[String].toOption, Some("Monitor Maria"))
+      assertEquals(attendants.head.hcursor.downField("phone").as[String].toOption, Some("11988880000"))
+  }
+
+  test("GET /dashboard/bookings/:id returns 404 for unknown bookingId") {
+    for
+      ctx    <- makeCtx
+      auth   <- signupAndLogin(ctx)
+      bogus   = BookingId.generate.value
+      resp   <- getDashboardBooking(ctx, bogus, auth.token)
+    yield assertEquals(resp.status, Status.NotFound)
+  }
+
+  test("GET /dashboard/bookings/:id returns 404 when booking belongs to different provider") {
+    for
+      ctx       <- makeCtx
+      auth1     <- signupAndLogin(ctx)
+      bookingId <- createAndGetBookingId(ctx, auth1)
+      _         <- ctx.allRoutes.orNotFound(
+                     Request[IO](Method.POST, uri"/api/v1/auth/signup")
+                       .withEntity("""{
+                         "email":"other2@dashboard.com","password":"otherpass123",
+                         "name":"Other Locador2","city":"Rio","state":"RJ","cnpj":"11.222.333/0001-81"
+                       }""")
+                       .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
+                   )
+      loginResp <- ctx.allRoutes.orNotFound(
+                     Request[IO](Method.POST, uri"/api/v1/auth/login")
+                       .withEntity("""{"email":"other2@dashboard.com","password":"otherpass123"}""")
+                       .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
+                   )
+      body2     <- loginResp.as[String]
+      token2     = parse(body2).toOption.get.hcursor.downField("token").as[String].toOption.get
+      resp      <- getDashboardBooking(ctx, bookingId, token2)
+    yield assertEquals(resp.status, Status.NotFound)
   }

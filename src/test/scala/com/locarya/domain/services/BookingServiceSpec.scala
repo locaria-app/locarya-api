@@ -819,3 +819,62 @@ class BookingServiceSpec extends CatsEffectSuite:
     yield
       assertEquals(events.size, 0, "Expected no notification events for Completed transition")
   }
+
+  // ── getBookingDetail ──────────────────────────────────────────────────────
+
+  test("getBookingDetail — returns DashboardBookingDetailView with no attendants") {
+    for
+      ctx       <- makeCtx()
+      item      <- seedItem(ctx)
+      bookingId <- createConfirmedBooking(ctx, item)
+      detail    <- ctx.svc.getBookingDetail(ctx.provider.id, bookingId)
+    yield
+      assertEquals(detail.id, bookingId)
+      assertEquals(detail.customer.name, customerInput.name)
+      assertEquals(detail.customer.email, customerInput.email.value)
+      assertEquals(detail.status, BookingStatus.Confirmed)
+      assertEquals(detail.assignedAttendants, Nil)
+  }
+
+  test("getBookingDetail — returns assignedAttendants when one is pre-assigned") {
+    for
+      ctx       <- makeCtx()
+      item      <- seedItem(ctx)
+      bookingId <- createConfirmedBooking(ctx, item)
+      attendant  = Attendant.create(AttendantId.generate, ctx.provider.id, "Monitor João", "11900000001").toOption.get
+      _         <- ctx.attendantRepo.create(attendant)
+      _         <- ctx.attendantRepo.assignToBooking(bookingId, attendant.id)
+      detail    <- ctx.svc.getBookingDetail(ctx.provider.id, bookingId)
+    yield
+      assertEquals(detail.assignedAttendants.map(_.id), List(attendant.id))
+      assertEquals(detail.assignedAttendants.map(_.name), List("Monitor João"))
+      assertEquals(detail.assignedAttendants.map(_.phone), List("11900000001"))
+  }
+
+  test("getBookingDetail — raises BookingNotFound for unknown bookingId") {
+    for
+      ctx    <- makeCtx()
+      bogus   = BookingId.generate
+      result <- ctx.svc.getBookingDetail(ctx.provider.id, bogus).attempt
+    yield
+      assert(result.isLeft)
+      result.left.foreach {
+        case _: BookingError.BookingNotFound => ()
+        case other                           => fail(s"Expected BookingNotFound, got $other")
+      }
+  }
+
+  test("getBookingDetail — raises BookingNotFound when booking belongs to different provider") {
+    for
+      ctx       <- makeCtx()
+      item      <- seedItem(ctx)
+      bookingId <- createConfirmedBooking(ctx, item)
+      otherPid   = ProviderId.generate
+      result    <- ctx.svc.getBookingDetail(otherPid, bookingId).attempt
+    yield
+      assert(result.isLeft)
+      result.left.foreach {
+        case _: BookingError.BookingNotFound => ()
+        case other                           => fail(s"Expected BookingNotFound for cross-provider access, got $other")
+      }
+  }
