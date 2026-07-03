@@ -69,6 +69,9 @@ class ComboServiceImpl[F[_]: Sync: Logger](
       _        <- comboRepo.update(updated)
     yield ()
 
+  def listActiveCombos(providerId: ProviderId): F[List[Combo]] =
+    comboRepo.findActiveByProviderId(providerId)
+
   def softDeleteCombo(comboId: ComboId, providerId: ProviderId): F[Unit] =
     for
       combo <- requireComboExists(comboId)

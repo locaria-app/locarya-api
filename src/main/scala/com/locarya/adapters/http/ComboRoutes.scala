@@ -73,7 +73,11 @@ object ComboRoutes:
   private val deleteComboE = securedBase.delete
     .in("dashboard" / "combos" / path[String]("comboId"))
 
-  val allEndpoints: List[AnyEndpoint] = List(createComboE, getComboE, updateComboE, deleteComboE)
+  private val listCombosE = securedBase.get
+    .in("dashboard" / "combos")
+    .out(jsonBody[List[ComboResponseBody]])
+
+  val allEndpoints: List[AnyEndpoint] = List(createComboE, getComboE, updateComboE, deleteComboE, listCombosE)
 
   def routes[F[_]: Async](
     comboService: ComboService[F],
@@ -176,4 +180,11 @@ object ComboRoutes:
           }
       }
 
-    Http4sServerInterpreter[F]().toRoutes(List(createServer, getServer, updateServer, deleteServer))
+    val listServer = listCombosE.serverSecurityLogic[ProviderId, F](security)
+      .serverLogic { providerId => _ =>
+        comboService.listActiveCombos(providerId)
+          .map(combos => Right(combos.map(toResponseBody)))
+          .handleError(e => Left(badRequest(e.getMessage)))
+      }
+
+    Http4sServerInterpreter[F]().toRoutes(List(createServer, getServer, updateServer, deleteServer, listServer))
