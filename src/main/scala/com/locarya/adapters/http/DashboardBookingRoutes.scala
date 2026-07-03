@@ -5,7 +5,7 @@ import cats.syntax.all.*
 import com.locarya.adapters.http.TapirSupport.{ErrorBody, securedBase, validateBearer}
 import com.locarya.domain.models.ValidationError
 import com.locarya.domain.models.*
-import com.locarya.domain.ports.{BookingLineInput, BookingService, CreateBookingByProviderRequest, CustomerInput, DashboardBookingView}
+import com.locarya.domain.ports.{BookingLineInput, BookingService, CreateBookingByProviderRequest, CustomerInput, DashboardBookingDetailView, DashboardBookingView}
 import io.circe.generic.auto.*
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
@@ -76,6 +76,21 @@ object DashboardBookingRoutes:
 
   private case class BookingStatusResponse(id: String, status: String)
 
+  private case class AttendantResponse(id: String, name: String, phone: String)
+
+  private case class BookingDetailResponse(
+    id:                 String,
+    customer:           CustomerResponse,
+    items:              List[BookingItemResponse],
+    date:               String,
+    deliveryAddress:    Option[AddressResponse],
+    status:             String,
+    totalAmount:        BigDecimal,
+    createdBy:          String,
+    bookingCode:        String,
+    assignedAttendants: List[AttendantResponse]
+  )
+
   private def toKebab(s: String): String =
     s.replaceAll("([a-z])([A-Z])", "$1-$2").toLowerCase
 
@@ -109,6 +124,32 @@ object DashboardBookingRoutes:
                    ItemId.fromString(line.itemId).map(BookingLineInput(_, line.quantity))
                  }
     yield (lines, date, address, CustomerInput(body.customer.name, email, body.customer.phone))
+
+  private def toBookingDetailResponse(view: DashboardBookingDetailView): BookingDetailResponse =
+    val base = toBookingListResponse(DashboardBookingView(
+      id              = view.id,
+      providerId      = view.providerId,
+      customer        = view.customer,
+      items           = view.items,
+      date            = view.date,
+      deliveryAddress = view.deliveryAddress,
+      status          = view.status,
+      totalAmount     = view.totalAmount,
+      createdBy       = view.createdBy,
+      bookingCode     = view.bookingCode
+    ))
+    BookingDetailResponse(
+      id                 = base.id,
+      customer           = base.customer,
+      items              = base.items,
+      date               = base.date,
+      deliveryAddress    = base.deliveryAddress,
+      status             = base.status,
+      totalAmount        = base.totalAmount,
+      createdBy          = base.createdBy,
+      bookingCode        = base.bookingCode,
+      assignedAttendants = view.assignedAttendants.map(a => AttendantResponse(a.id.value, a.name, a.phone))
+    )
 
   private def toBookingListResponse(view: DashboardBookingView): BookingListResponse =
     BookingListResponse(
@@ -145,7 +186,11 @@ object DashboardBookingRoutes:
     .in(jsonBody[UpdateBookingStatusBody])
     .out(jsonBody[BookingStatusResponse])
 
-  val allEndpoints: List[AnyEndpoint] = List(listE, createE, updateStatusE)
+  private val getDetailE = securedBase.get
+    .in("dashboard" / "bookings" / path[String]("bookingId"))
+    .out(jsonBody[BookingDetailResponse])
+
+  val allEndpoints: List[AnyEndpoint] = List(listE, createE, updateStatusE, getDetailE)
 
   def routes[F[_]: Async](
     bookingService: BookingService[F],
@@ -232,4 +277,17 @@ object DashboardBookingRoutes:
           }
       }
 
-    Http4sServerInterpreter[F]().toRoutes(List(listServer, createServer, updateStatusServer))
+    val getDetailServer = getDetailE.serverSecurityLogic[ProviderId, F](security)
+      .serverLogic { providerId => bookingIdStr =>
+        (for
+          bookingId <- BookingId.fromString(bookingIdStr)
+                         .fold(err => BookingError.InvalidInput(err).raiseError[F, BookingId], _.pure[F])
+          detail    <- bookingService.getBookingDetail(providerId, bookingId)
+        yield Right(toBookingDetailResponse(detail)))
+          .handleErrorWith {
+            case _: BookingError.BookingNotFound => Left(notFound("Booking not found")).pure[F]
+            case e: BookingError.InvalidInput    => Left(badRequest(e.getMessage)).pure[F]
+          }
+      }
+
+    Http4sServerInterpreter[F]().toRoutes(List(listServer, createServer, updateStatusServer, getDetailServer))
