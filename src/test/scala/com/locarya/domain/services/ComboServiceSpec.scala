@@ -410,3 +410,49 @@ class ComboServiceSpec extends CatsEffectSuite:
       case Left(_: ComboError.NotFound) => ()
       case other => fail(s"Expected NotFound but got: $other")
   }
+
+  // ── listActiveCombos ─────────────────────────────────────────────────────────
+
+  test("listActiveCombos returns empty list when no combos exist for the provider") {
+    for
+      ctx    <- makeCtx
+      result <- ctx.svc.listActiveCombos(providerId)
+    yield assertEquals(result, List.empty)
+  }
+
+  test("listActiveCombos returns only the provider's own active combos") {
+    for
+      ctx     <- makeCtx
+      req     <- validRequest(ctx)
+      _       <- ctx.svc.createCombo(req)
+      _       <- ctx.svc.createCombo(req)
+      result  <- ctx.svc.listActiveCombos(providerId)
+    yield assertEquals(result.size, 2)
+  }
+
+  test("listActiveCombos does not return inactive (soft-deleted) combos") {
+    for
+      ctx     <- makeCtx
+      req     <- validRequest(ctx)
+      comboId <- ctx.svc.createCombo(req)
+      _       <- ctx.svc.softDeleteCombo(comboId, providerId)
+      result  <- ctx.svc.listActiveCombos(providerId)
+    yield assertEquals(result, List.empty)
+  }
+
+  test("listActiveCombos does not return combos belonging to a different provider") {
+    val otherProvider = ProviderId.generate
+    for
+      ctx    <- makeCtx
+      item   <- makeItem(ctx, otherProvider)
+      req     = CreateComboRequest(
+                  providerId       = otherProvider,
+                  name             = "Kit Outro",
+                  description      = "Desc",
+                  dailyRate        = price,
+                  itemCompositions = List(ComboItemDefinition(item.id, 1))
+                )
+      _      <- ctx.svc.createCombo(req)
+      result <- ctx.svc.listActiveCombos(providerId)
+    yield assertEquals(result, List.empty)
+  }

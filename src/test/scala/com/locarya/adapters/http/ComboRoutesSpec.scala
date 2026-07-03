@@ -370,6 +370,105 @@ class ComboRoutesSpec extends CatsEffectSuite:
     yield assertEquals(response.status, Status.NotFound)
   }
 
+  // ── GET /dashboard/combos ────────────────────────────────────────────────────
+
+  test("GET /dashboard/combos without token returns 401") {
+    for
+      ctx      <- makeCtx
+      request   = Request[IO](Method.GET, uri"/api/v1/dashboard/combos")
+      response <- ctx.allRoutes.orNotFound(request)
+    yield assertEquals(response.status, Status.Unauthorized)
+  }
+
+  test("GET /dashboard/combos returns 200 with empty list when provider has no combos") {
+    for
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      request   = Request[IO](Method.GET, uri"/api/v1/dashboard/combos")
+                    .withHeaders(authHeader(auth.token))
+      response <- ctx.allRoutes.orNotFound(request)
+      body     <- response.as[String]
+      json      = io.circe.parser.parse(body).toOption.get
+    yield
+      assertEquals(response.status, Status.Ok)
+      assertEquals(json.asArray.map(_.size), Some(0))
+  }
+
+  test("GET /dashboard/combos returns 200 with list of two active combos") {
+    for
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      itemId   <- createItem(ctx, auth.token)
+      _        <- createCombo(ctx, auth.token, itemId)
+      _        <- createCombo(ctx, auth.token, itemId)
+      request   = Request[IO](Method.GET, uri"/api/v1/dashboard/combos")
+                    .withHeaders(authHeader(auth.token))
+      response <- ctx.allRoutes.orNotFound(request)
+      body     <- response.as[String]
+      json      = io.circe.parser.parse(body).toOption.get
+    yield
+      assertEquals(response.status, Status.Ok)
+      assertEquals(json.asArray.map(_.size), Some(2))
+  }
+
+  test("GET /dashboard/combos does not return combos of another provider") {
+    for
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      itemId   <- createItem(ctx, auth.token)
+      _        <- createCombo(ctx, auth.token, itemId)
+      // Second independent provider in a fresh auth context
+      providerRepo2  <- InMemoryProviderRepository.make[IO]
+      providerSvc2    = ProviderServiceImpl[IO](providerRepo2)
+      authSvc2        = AuthServiceImpl[IO](providerRepo2, testJwtSecret)
+      auth2Routes     = AuthRoutes.routes[IO](providerSvc2, authSvc2)
+      signup2Body     = """{
+                            "email":"other@combos.com","password":"securepassword123",
+                            "name":"Other","city":"SP","state":"SP","cpf":"123.456.789-09"
+                          }"""
+      login2Body      = """{"email":"other@combos.com","password":"securepassword123"}"""
+      _              <- (auth2Routes <+> ctx.comboRoutes).orNotFound(
+                          Request[IO](Method.POST, uri"/api/v1/auth/signup")
+                            .withEntity(signup2Body)
+                            .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
+                        )
+      loginResp2     <- (auth2Routes <+> ctx.comboRoutes).orNotFound(
+                          Request[IO](Method.POST, uri"/api/v1/auth/login")
+                            .withEntity(login2Body)
+                            .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
+                        )
+      loginBody2     <- loginResp2.as[String]
+      token2          = io.circe.parser.parse(loginBody2).toOption.get.hcursor.downField("token").as[String].toOption.get
+      request         = Request[IO](Method.GET, uri"/api/v1/dashboard/combos")
+                          .withHeaders(authHeader(token2))
+      response       <- (auth2Routes <+> ctx.comboRoutes).orNotFound(request)
+      body           <- response.as[String]
+      json            = io.circe.parser.parse(body).toOption.get
+    yield
+      assertEquals(response.status, Status.Ok)
+      assertEquals(json.asArray.map(_.size), Some(0))
+  }
+
+  test("GET /dashboard/combos does not return soft-deleted combos") {
+    for
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      itemId   <- createItem(ctx, auth.token)
+      comboId  <- createCombo(ctx, auth.token, itemId)
+      _        <- ctx.allRoutes.orNotFound(
+                    Request[IO](Method.DELETE, Uri.unsafeFromString(s"/api/v1/dashboard/combos/$comboId"))
+                      .withHeaders(authHeader(auth.token))
+                  )
+      request   = Request[IO](Method.GET, uri"/api/v1/dashboard/combos")
+                    .withHeaders(authHeader(auth.token))
+      response <- ctx.allRoutes.orNotFound(request)
+      body     <- response.as[String]
+      json      = io.circe.parser.parse(body).toOption.get
+    yield
+      assertEquals(response.status, Status.Ok)
+      assertEquals(json.asArray.map(_.size), Some(0))
+  }
+
   test("DELETE /dashboard/combos/:id by another provider returns 403") {
     for
       ctx         <- makeCtx
