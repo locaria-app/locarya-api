@@ -17,7 +17,7 @@ class AuthServiceSpec extends CatsEffectSuite:
 
   private val signupRequest = SignupRequest(
     email    = "provider@example.com",
-    password = "securepassword123",
+    password = "Securepass123",
     name     = "Test Provider",
     city     = "São Paulo",
     state    = "SP",
@@ -48,7 +48,7 @@ class AuthServiceSpec extends CatsEffectSuite:
       svcs   <- makeServices
       (providerSvc, authSvc) = svcs
       _      <- providerSvc.signup(signupRequest)
-      result <- authSvc.login(LoginRequest("provider@example.com", "securepassword123"))
+      result <- authSvc.login(LoginRequest("provider@example.com", "Securepass123"))
     yield
       assert(result.token.nonEmpty, "token must not be empty")
       assertEquals(result.email, "provider@example.com")
@@ -60,7 +60,7 @@ class AuthServiceSpec extends CatsEffectSuite:
       svcs   <- makeServices
       (providerSvc, authSvc) = svcs
       _      <- providerSvc.signup(signupRequest)
-      result <- authSvc.login(LoginRequest("provider@example.com", "securepassword123"))
+      result <- authSvc.login(LoginRequest("provider@example.com", "Securepass123"))
     yield
       assertEquals(result.name, "Test Provider")
       assertEquals(result.plan, "FREEMIUM")
@@ -101,7 +101,7 @@ class AuthServiceSpec extends CatsEffectSuite:
       svcs   <- makeServices
       (providerSvc, authSvc) = svcs
       _      <- providerSvc.signup(signupRequest)
-      result <- authSvc.login(LoginRequest("provider@example.com", "securepassword123"))
+      result <- authSvc.login(LoginRequest("provider@example.com", "Securepass123"))
     yield
       val decoded = JwtCirce.decodeJson(result.token, testSecret, Seq(JwtAlgorithm.HS256))
       val json    = decoded.toOption.getOrElse(fail("JWT decode failed"))
@@ -121,7 +121,7 @@ class AuthServiceSpec extends CatsEffectSuite:
       svcs   <- makeServices
       (providerSvc, authSvc) = svcs
       _      <- providerSvc.signup(signupRequest)
-      result <- authSvc.login(LoginRequest("provider@example.com", "securepassword123"))
+      result <- authSvc.login(LoginRequest("provider@example.com", "Securepass123"))
     yield
       val decoded = JwtCirce.decodeJson(result.token, testSecret, Seq(JwtAlgorithm.HS256))
       val json    = decoded.toOption.getOrElse(fail("JWT decode failed"))
@@ -137,7 +137,7 @@ class AuthServiceSpec extends CatsEffectSuite:
       svcs   <- makeServices
       (providerSvc, authSvc) = svcs
       _      <- providerSvc.signup(signupRequest)
-      result <- authSvc.login(LoginRequest("provider@example.com", "securepassword123"))
+      result <- authSvc.login(LoginRequest("provider@example.com", "Securepass123"))
     yield
       val decoded = JwtCirce.decodeJson(result.token, "wrong-secret", Seq(JwtAlgorithm.HS256))
       assert(decoded.isFailure, "token signed with different secret must fail validation")
@@ -151,7 +151,7 @@ class AuthServiceSpec extends CatsEffectSuite:
       svcs                   <- makeServicesWithLogger(capLogger)
       (providerSvc, authSvc)  = svcs
       _                      <- providerSvc.signup(signupRequest)
-      result                 <- authSvc.login(LoginRequest("provider@example.com", "securepassword123"))
+      result                 <- authSvc.login(LoginRequest("provider@example.com", "Securepass123"))
       logs                   <- getLogs
     yield
       assert(

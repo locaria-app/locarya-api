@@ -44,7 +44,7 @@ class AttendantRoutesSpec extends CatsEffectSuite:
   private val signupBody =
     """{
       "email":    "locador@attendant.com",
-      "password": "securepassword123",
+      "password": "Securepass123",
       "name":     "Locador Attendant",
       "city":     "Sao Paulo",
       "state":    "SP",
@@ -52,7 +52,7 @@ class AttendantRoutesSpec extends CatsEffectSuite:
     }"""
 
   private val loginBody =
-    """{"email":"locador@attendant.com","password":"securepassword123"}"""
+    """{"email":"locador@attendant.com","password":"Securepass123"}"""
 
   private case class Auth(token: String, id: String)
 

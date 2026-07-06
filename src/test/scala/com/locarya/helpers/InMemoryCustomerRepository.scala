@@ -15,7 +15,11 @@ final class InMemoryCustomerRepository[F[_]: Async] private (
       if store.contains(customer.id) then
         (store, new RuntimeException(s"Customer ${customer.id.value} already exists").raiseError[F, Customer])
       else
-        (store + (customer.id -> customer), customer.pure[F])
+        customer.cpf match
+          case Some(cpf) if store.values.exists(_.cpf.contains(cpf)) =>
+            (store, CustomerError.DuplicateCpf(cpf.value).raiseError[F, Customer])
+          case _ =>
+            (store + (customer.id -> customer), customer.pure[F])
     }.flatten
 
   def findById(id: CustomerId): F[Option[Customer]] =

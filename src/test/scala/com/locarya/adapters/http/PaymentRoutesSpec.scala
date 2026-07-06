@@ -51,7 +51,7 @@ class PaymentRoutesSpec extends CatsEffectSuite:
   private val signupBody =
     """{
       "email":    "locador@payment.com",
-      "password": "securepassword123",
+      "password": "Securepass123",
       "name":     "Locador Payment",
       "city":     "Sao Paulo",
       "state":    "SP",
@@ -59,7 +59,7 @@ class PaymentRoutesSpec extends CatsEffectSuite:
     }"""
 
   private val loginBody =
-    """{"email":"locador@payment.com","password":"securepassword123"}"""
+    """{"email":"locador@payment.com","password":"Securepass123"}"""
 
   private case class Auth(token: String, id: String)
 
@@ -201,14 +201,14 @@ class PaymentRoutesSpec extends CatsEffectSuite:
       _         <- ctx.allRoutes.orNotFound(
                      Request[IO](Method.POST, uri"/api/v1/auth/signup")
                        .withEntity("""{
-                         "email":"other@payment.com","password":"otherpass123",
-                         "name":"Other Locador","city":"Rio","state":"RJ","cnpj":"11.222.333/0001-81"
+                         "email":"other@payment.com","password":"Otherpass123",
+                         "name":"Other Locador","city":"Rio","state":"RJ","cpf":"529.982.247-25"
                        }""")
                        .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
                    )
       loginResp <- ctx.allRoutes.orNotFound(
                      Request[IO](Method.POST, uri"/api/v1/auth/login")
-                       .withEntity("""{"email":"other@payment.com","password":"otherpass123"}""")
+                       .withEntity("""{"email":"other@payment.com","password":"Otherpass123"}""")
                        .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
                    )
       body2     <- loginResp.as[String]
@@ -287,14 +287,14 @@ class PaymentRoutesSpec extends CatsEffectSuite:
       _         <- ctx.allRoutes.orNotFound(
                      Request[IO](Method.POST, uri"/api/v1/auth/signup")
                        .withEntity("""{
-                         "email":"other2@payment.com","password":"otherpass123",
-                         "name":"Other2 Locador","city":"Rio","state":"RJ","cnpj":"11.222.333/0001-81"
+                         "email":"other2@payment.com","password":"Otherpass123",
+                         "name":"Other2 Locador","city":"Rio","state":"RJ","cpf":"529.982.247-25"
                        }""")
                        .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
                    )
       loginResp <- ctx.allRoutes.orNotFound(
                      Request[IO](Method.POST, uri"/api/v1/auth/login")
-                       .withEntity("""{"email":"other2@payment.com","password":"otherpass123"}""")
+                       .withEntity("""{"email":"other2@payment.com","password":"Otherpass123"}""")
                        .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
                    )
       body2     <- loginResp.as[String]

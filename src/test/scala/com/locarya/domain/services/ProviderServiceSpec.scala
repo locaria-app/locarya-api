@@ -17,7 +17,7 @@ class ProviderServiceSpec extends CatsEffectSuite:
 
   private val validRequest = SignupRequest(
     email    = "joao@example.com",
-    password = "securepassword123",
+    password = "Securepass123",
     name     = "João Brinquedos",
     city     = "São Paulo",
     state    = "SP",

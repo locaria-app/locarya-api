@@ -72,7 +72,7 @@ class StorefrontBookingRoutesSpec extends CatsEffectSuite:
   private val signupBody =
     """{
       "email":    "locador@booking.com",
-      "password": "securepassword123",
+      "password": "Securepass123",
       "name":     "Locador Booking",
       "city":     "São Paulo",
       "state":    "SP",
@@ -80,7 +80,7 @@ class StorefrontBookingRoutesSpec extends CatsEffectSuite:
     }"""
 
   private val loginBody =
-    """{"email":"locador@booking.com","password":"securepassword123"}"""
+    """{"email":"locador@booking.com","password":"Securepass123"}"""
 
   private case class Auth(token: String, id: String)
 

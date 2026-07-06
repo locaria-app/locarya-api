@@ -12,12 +12,13 @@ class ProviderRepositorySpec extends CatsEffectSuite:
 
   private def makeProvider(
     email: String = "provider@example.com",
-    storefrontSlug: StorefrontSlug = StorefrontSlug.fromString("test-slug-000000").toOption.get
+    storefrontSlug: StorefrontSlug = StorefrontSlug.fromString("test-slug-000000").toOption.get,
+    taxId: TaxId = TaxId.fromCNPJ(CNPJ.fromString("11.222.333/0001-81").toOption.get)
   ): Provider =
     Provider.create(
       id             = ProviderId.generate,
       email          = Email.fromString(email).toOption.get,
-      taxId          = TaxId.fromCNPJ(CNPJ.fromString("11.222.333/0001-81").toOption.get),
+      taxId          = taxId,
       businessName   = "Test Locações",
       tradeName      = "Test",
       city           = "São Paulo",
@@ -100,12 +101,13 @@ class ProviderRepositorySpec extends CatsEffectSuite:
   }
 
   test("findBySlug distinguishes between different slugs") {
-    val slug1 = StorefrontSlug.fromString("slug-one-aaa111").toOption.get
-    val slug2 = StorefrontSlug.fromString("slug-two-bbb222").toOption.get
+    val slug1  = StorefrontSlug.fromString("slug-one-aaa111").toOption.get
+    val slug2  = StorefrontSlug.fromString("slug-two-bbb222").toOption.get
+    val taxId2 = TaxId.fromCPF(CPF.fromString("529.982.247-25").toOption.get)
     for
       repo  <- makeRepo
       p1     = makeProvider("p1@example.com", storefrontSlug = slug1)
-      p2     = makeProvider("p2@example.com", storefrontSlug = slug2)
+      p2     = makeProvider("p2@example.com", storefrontSlug = slug2, taxId = taxId2)
       _     <- repo.create(p1)
       _     <- repo.create(p2)
       found <- repo.findBySlug(slug1)

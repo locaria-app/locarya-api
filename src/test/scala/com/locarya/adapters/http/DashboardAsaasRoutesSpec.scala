@@ -48,7 +48,7 @@ class DashboardAsaasRoutesSpec extends CatsEffectSuite:
   private val signupBody =
     """{
       "email":    "locador@asaas-routes.com",
-      "password": "securepassword123",
+      "password": "Securepass123",
       "name":     "Asaas Provider",
       "city":     "São Paulo",
       "state":    "SP",
@@ -56,7 +56,7 @@ class DashboardAsaasRoutesSpec extends CatsEffectSuite:
     }"""
 
   private val loginBody =
-    """{"email":"locador@asaas-routes.com","password":"securepassword123"}"""
+    """{"email":"locador@asaas-routes.com","password":"Securepass123"}"""
 
   private case class Auth(token: String, id: String, slug: String)
 

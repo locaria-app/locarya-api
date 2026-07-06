@@ -98,7 +98,13 @@ class ProviderRepositoryLive[F[_]: Async] private (xa: Transactor[F])
          ${provider.city}, ${provider.state},
          ${provider.passwordHash}, ${planStr(provider.planTier)},
          ${provider.storefrontSlug.value}, ${provider.isActive})
-    """.update.run.transact(xa) >> provider.pure[F]
+    """.update.run.transact(xa).adaptError {
+      case ex: org.postgresql.util.PSQLException if ex.getSQLState == "23505" =>
+        val doc = provider.taxId match
+          case TaxId.CPFTaxId(c)  => c.value
+          case TaxId.CNPJTaxId(c) => c.value
+        SignupError.DuplicateDocument(doc)
+    } >> provider.pure[F]
 
   def findById(id: ProviderId): F[Option[Provider]] =
     val uuid = UUID.fromString(id.value)
