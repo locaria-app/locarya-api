@@ -14,6 +14,11 @@ final class InMemoryProviderRepository[F[_]: Async] private (
     state.modify { store =>
       if store.contains(provider.id) then
         (store, new RuntimeException(s"Provider ${provider.id.value} already exists").raiseError[F, Provider])
+      else if store.values.exists(_.taxId == provider.taxId) then
+        val doc = provider.taxId match
+          case TaxId.CPFTaxId(c)  => c.value
+          case TaxId.CNPJTaxId(c) => c.value
+        (store, SignupError.DuplicateDocument(doc).raiseError[F, Provider])
       else
         (store + (provider.id -> provider), provider.pure[F])
     }.flatten

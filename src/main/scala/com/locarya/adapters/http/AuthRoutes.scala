@@ -81,6 +81,8 @@ object AuthRoutes:
         .handleErrorWith {
           case SignupError.DuplicateEmail(email) =>
             Left((StatusCode.Conflict, ErrorBody(s"Email already registered: $email"))).pure[F]
+          case SignupError.DuplicateDocument(_) =>
+            Left((StatusCode.Conflict, ErrorBody("Provider with this document already exists"))).pure[F]
           case SignupError.InvalidInput(err) =>
             Left((StatusCode.BadRequest, ErrorBody(err.toString))).pure[F]
           case ex =>

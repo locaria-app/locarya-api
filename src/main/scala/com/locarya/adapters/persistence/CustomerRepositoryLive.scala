@@ -40,7 +40,12 @@ final class CustomerRepositoryLive[F[_]: Async] private (xa: Transactor[F])
                   ${customer.cpf.map(_.value)},
                   ${customer.name},
                   ${customer.phone})"""
-      .update.run.transact(xa) >> customer.pure[F]
+      .update.run.transact(xa).adaptError {
+        case ex: org.postgresql.util.PSQLException if ex.getSQLState == "23505" =>
+          val constraint = Option(ex.getServerErrorMessage).flatMap(m => Option(m.getConstraint)).getOrElse("")
+          if constraint == "customers_email_key" then CustomerError.DuplicateEmail(customer.email.value)
+          else customer.cpf.fold[CustomerError](CustomerError.DuplicateEmail(customer.email.value))(c => CustomerError.DuplicateCpf(c.value))
+      } >> customer.pure[F]
 
   override def findById(id: CustomerId): F[Option[Customer]] =
     val uuid = UUID.fromString(id.value)

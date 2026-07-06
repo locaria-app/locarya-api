@@ -460,7 +460,7 @@ class BookingServiceSpec extends CatsEffectSuite:
       prov2         = Provider.create(
                         id             = ProviderId.generate,
                         email          = Email.fromString("p2@test.com").toOption.get,
-                        taxId          = TaxId.fromCNPJ(CNPJ.fromString("11.222.333/0001-81").toOption.get),
+                        taxId          = TaxId.fromCPF(CPF.fromString("529.982.247-25").toOption.get),
                         businessName   = "Prov Two LTDA",
                         tradeName      = "Prov Two",
                         city           = "Rio de Janeiro",

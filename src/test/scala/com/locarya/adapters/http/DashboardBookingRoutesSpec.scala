@@ -364,7 +364,7 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
                      Request[IO](Method.POST, uri"/api/v1/auth/signup")
                        .withEntity("""{
                          "email":"other@dashboard.com","password":"otherpass123",
-                         "name":"Other Locador","city":"Rio","state":"RJ","cnpj":"11.222.333/0001-81"
+                         "name":"Other Locador","city":"Rio","state":"RJ","cpf":"529.982.247-25"
                        }""")
                        .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
                    )
@@ -549,7 +549,7 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
                      Request[IO](Method.POST, uri"/api/v1/auth/signup")
                        .withEntity("""{
                          "email":"other2@dashboard.com","password":"otherpass123",
-                         "name":"Other Locador2","city":"Rio","state":"RJ","cnpj":"11.222.333/0001-81"
+                         "name":"Other Locador2","city":"Rio","state":"RJ","cpf":"529.982.247-25"
                        }""")
                        .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
                    )
