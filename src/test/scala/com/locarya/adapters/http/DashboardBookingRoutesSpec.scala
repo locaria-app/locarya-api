@@ -69,7 +69,7 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
   private val signupBody =
     """{
       "email":    "locador@dashboard.com",
-      "password": "securepassword123",
+      "password": "Securepass123",
       "name":     "Locador Dashboard",
       "city":     "São Paulo",
       "state":    "SP",
@@ -77,7 +77,7 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
     }"""
 
   private val loginBody =
-    """{"email":"locador@dashboard.com","password":"securepassword123"}"""
+    """{"email":"locador@dashboard.com","password":"Securepass123"}"""
 
   private case class Auth(token: String, id: String)
 
@@ -363,14 +363,14 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
       _         <- ctx.allRoutes.orNotFound(
                      Request[IO](Method.POST, uri"/api/v1/auth/signup")
                        .withEntity("""{
-                         "email":"other@dashboard.com","password":"otherpass123",
+                         "email":"other@dashboard.com","password":"Otherpass123",
                          "name":"Other Locador","city":"Rio","state":"RJ","cpf":"529.982.247-25"
                        }""")
                        .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
                    )
       loginResp <- ctx.allRoutes.orNotFound(
                      Request[IO](Method.POST, uri"/api/v1/auth/login")
-                       .withEntity("""{"email":"other@dashboard.com","password":"otherpass123"}""")
+                       .withEntity("""{"email":"other@dashboard.com","password":"Otherpass123"}""")
                        .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
                    )
       body2     <- loginResp.as[String]
@@ -548,14 +548,14 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
       _         <- ctx.allRoutes.orNotFound(
                      Request[IO](Method.POST, uri"/api/v1/auth/signup")
                        .withEntity("""{
-                         "email":"other2@dashboard.com","password":"otherpass123",
+                         "email":"other2@dashboard.com","password":"Otherpass123",
                          "name":"Other Locador2","city":"Rio","state":"RJ","cpf":"529.982.247-25"
                        }""")
                        .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
                    )
       loginResp <- ctx.allRoutes.orNotFound(
                      Request[IO](Method.POST, uri"/api/v1/auth/login")
-                       .withEntity("""{"email":"other2@dashboard.com","password":"otherpass123"}""")
+                       .withEntity("""{"email":"other2@dashboard.com","password":"Otherpass123"}""")
                        .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
                    )
       body2     <- loginResp.as[String]

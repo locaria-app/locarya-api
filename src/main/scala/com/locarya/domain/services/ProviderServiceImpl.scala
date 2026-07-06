@@ -11,18 +11,16 @@ class ProviderServiceImpl[F[_]: Sync: Logger](
   repo: ProviderRepository[F]
 ) extends ProviderService[F]:
 
-  private val MinPasswordLength = 8
-
   def signup(request: SignupRequest): F[SignupResult] =
     for
       validEmail <- lift(Email.fromString(request.email))
-      _          <- requireMinLength(request.password, MinPasswordLength, "Password")
+      validPwd   <- lift(Password.fromString(request.password))
       _          <- requireNonEmpty(request.name, "Name")
       _          <- requireNonEmpty(request.city, "City")
       _          <- requireNonEmpty(request.state, "State")
       validTaxId <- lift(buildTaxId(request.cpf, request.cnpj))
       _          <- checkEmailAvailable(validEmail)
-      hash       <- Sync[F].blocking(BCrypt.hashpw(request.password, BCrypt.gensalt()))
+      hash       <- Sync[F].blocking(BCrypt.hashpw(validPwd.value, BCrypt.gensalt()))
       slug       <- uniqueSlug(request.name.trim)
       provider   <- lift(
                       Provider.create(
@@ -50,11 +48,6 @@ class ProviderServiceImpl[F[_]: Sync: Logger](
   private def requireNonEmpty(value: String, field: String): F[Unit] =
     if value.trim.isEmpty then
       SignupError.InvalidInput(InvalidProvider(s"$field cannot be empty")).raiseError
-    else ().pure[F]
-
-  private def requireMinLength(value: String, min: Int, field: String): F[Unit] =
-    if value.length < min then
-      SignupError.InvalidInput(InvalidPassword(s"$field must be at least $min characters")).raiseError
     else ().pure[F]
 
   private def buildTaxId(

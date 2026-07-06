@@ -47,7 +47,7 @@ class ItemRoutesSpec extends CatsEffectSuite:
   private val signupBody =
     """{
       "email":    "locador@example.com",
-      "password": "securepassword123",
+      "password": "Securepass123",
       "name":     "Locador Teste",
       "city":     "São Paulo",
       "state":    "SP",
@@ -55,7 +55,7 @@ class ItemRoutesSpec extends CatsEffectSuite:
     }"""
 
   private val loginBody =
-    """{"email":"locador@example.com","password":"securepassword123"}"""
+    """{"email":"locador@example.com","password":"Securepass123"}"""
 
   private case class Auth(token: String, id: String)
 
@@ -218,10 +218,10 @@ class ItemRoutesSpec extends CatsEffectSuite:
       authSvc2       = AuthServiceImpl[IO](providerRepo2, testJwtSecret)
       auth2Routes    = AuthRoutes.routes[IO](providerSvc2, authSvc2)
       signup2Body    = """{
-                           "email":"outro@example.com","password":"securepassword123",
+                           "email":"outro@example.com","password":"Securepass123",
                            "name":"Outro","city":"SP","state":"SP","cpf":"123.456.789-09"
                          }"""
-      login2Body     = """{"email":"outro@example.com","password":"securepassword123"}"""
+      login2Body     = """{"email":"outro@example.com","password":"Securepass123"}"""
       _             <- (auth2Routes <+> ctx.itemRoutes).orNotFound(
                          Request[IO](Method.POST, uri"/api/v1/auth/signup")
                            .withEntity(signup2Body)

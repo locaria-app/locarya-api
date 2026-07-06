@@ -57,7 +57,7 @@ class ComboRoutesSpec extends CatsEffectSuite:
   private val signupBody =
     """{
       "email":    "locador@combos.com",
-      "password": "securepassword123",
+      "password": "Securepass123",
       "name":     "Locador Combo",
       "city":     "São Paulo",
       "state":    "SP",
@@ -65,7 +65,7 @@ class ComboRoutesSpec extends CatsEffectSuite:
     }"""
 
   private val loginBody =
-    """{"email":"locador@combos.com","password":"securepassword123"}"""
+    """{"email":"locador@combos.com","password":"Securepass123"}"""
 
   private case class Auth(token: String, id: String)
 
@@ -309,10 +309,10 @@ class ComboRoutesSpec extends CatsEffectSuite:
       authSvc2       = AuthServiceImpl[IO](providerRepo2, testJwtSecret)
       auth2Routes    = AuthRoutes.routes[IO](providerSvc2, authSvc2)
       signup2Body    = """{
-                           "email":"outro@combos.com","password":"securepassword123",
+                           "email":"outro@combos.com","password":"Securepass123",
                            "name":"Outro","city":"SP","state":"SP","cpf":"123.456.789-09"
                          }"""
-      login2Body     = """{"email":"outro@combos.com","password":"securepassword123"}"""
+      login2Body     = """{"email":"outro@combos.com","password":"Securepass123"}"""
       _             <- (auth2Routes <+> ctx.comboRoutes).orNotFound(
                          Request[IO](Method.POST, uri"/api/v1/auth/signup")
                            .withEntity(signup2Body)
@@ -423,10 +423,10 @@ class ComboRoutesSpec extends CatsEffectSuite:
       authSvc2        = AuthServiceImpl[IO](providerRepo2, testJwtSecret)
       auth2Routes     = AuthRoutes.routes[IO](providerSvc2, authSvc2)
       signup2Body     = """{
-                            "email":"other@combos.com","password":"securepassword123",
+                            "email":"other@combos.com","password":"Securepass123",
                             "name":"Other","city":"SP","state":"SP","cpf":"123.456.789-09"
                           }"""
-      login2Body      = """{"email":"other@combos.com","password":"securepassword123"}"""
+      login2Body      = """{"email":"other@combos.com","password":"Securepass123"}"""
       _              <- (auth2Routes <+> ctx.comboRoutes).orNotFound(
                           Request[IO](Method.POST, uri"/api/v1/auth/signup")
                             .withEntity(signup2Body)
@@ -480,10 +480,10 @@ class ComboRoutesSpec extends CatsEffectSuite:
       authSvc2       = AuthServiceImpl[IO](providerRepo2, testJwtSecret)
       auth2Routes    = AuthRoutes.routes[IO](providerSvc2, authSvc2)
       signup2Body    = """{
-                           "email":"outro2@combos.com","password":"securepassword123",
+                           "email":"outro2@combos.com","password":"Securepass123",
                            "name":"Outro2","city":"SP","state":"SP","cpf":"987.654.321-00"
                          }"""
-      login2Body     = """{"email":"outro2@combos.com","password":"securepassword123"}"""
+      login2Body     = """{"email":"outro2@combos.com","password":"Securepass123"}"""
       _             <- (auth2Routes <+> ctx.comboRoutes).orNotFound(
                          Request[IO](Method.POST, uri"/api/v1/auth/signup")
                            .withEntity(signup2Body)

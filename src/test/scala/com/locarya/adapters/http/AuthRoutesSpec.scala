@@ -33,7 +33,7 @@ class AuthRoutesSpec extends CatsEffectSuite:
   private val validSignupBody: String =
     """{
       "email":    "joao@example.com",
-      "password": "securepassword123",
+      "password": "Securepass123",
       "name":     "João Brinquedos",
       "city":     "São Paulo",
       "state":    "SP",
@@ -41,7 +41,7 @@ class AuthRoutesSpec extends CatsEffectSuite:
     }"""
 
   private val validLoginBody: String =
-    """{"email":"joao@example.com","password":"securepassword123"}"""
+    """{"email":"joao@example.com","password":"Securepass123"}"""
 
   private val dashboardRoute: HttpRoutes[IO] = HttpRoutes.of[IO]:
     case GET -> Root / "dashboard" / "home" => Ok("protected")
@@ -106,7 +106,7 @@ class AuthRoutesSpec extends CatsEffectSuite:
     val cpfBody1 =
       """{
         "email":    "cpf-provider1@example.com",
-        "password": "securepassword123",
+        "password": "Securepass123",
         "name":     "Provider CPF One",
         "city":     "São Paulo",
         "state":    "SP",
@@ -115,7 +115,7 @@ class AuthRoutesSpec extends CatsEffectSuite:
     val cpfBody2 =
       """{
         "email":    "cpf-provider2@example.com",
-        "password": "securepassword456",
+        "password": "Securepass456",
         "name":     "Provider CPF Two",
         "city":     "Rio de Janeiro",
         "state":    "RJ",
@@ -171,7 +171,40 @@ class AuthRoutesSpec extends CatsEffectSuite:
   }
 
   test("POST /auth/signup with password shorter than 8 chars returns 400") {
-    val badBody = validSignupBody.replace("securepassword123", "short")
+    val badBody = validSignupBody.replace("Securepass123", "short")
+    for
+      routes  <- makeRoutes
+      request  = Request[IO](Method.POST, uri"/api/v1/auth/signup")
+                   .withEntity(badBody)
+                   .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
+      response <- routes.orNotFound(request)
+    yield assertEquals(response.status, Status.BadRequest)
+  }
+
+  test("POST /auth/signup with password without uppercase returns 400") {
+    val badBody = validSignupBody.replace("Securepass123", "securepass123")
+    for
+      routes  <- makeRoutes
+      request  = Request[IO](Method.POST, uri"/api/v1/auth/signup")
+                   .withEntity(badBody)
+                   .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
+      response <- routes.orNotFound(request)
+    yield assertEquals(response.status, Status.BadRequest)
+  }
+
+  test("POST /auth/signup with password without lowercase returns 400") {
+    val badBody = validSignupBody.replace("Securepass123", "SECUREPASS123")
+    for
+      routes  <- makeRoutes
+      request  = Request[IO](Method.POST, uri"/api/v1/auth/signup")
+                   .withEntity(badBody)
+                   .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
+      response <- routes.orNotFound(request)
+    yield assertEquals(response.status, Status.BadRequest)
+  }
+
+  test("POST /auth/signup with password without digit returns 400") {
+    val badBody = validSignupBody.replace("Securepass123", "SecurepassX!")
     for
       routes  <- makeRoutes
       request  = Request[IO](Method.POST, uri"/api/v1/auth/signup")
@@ -234,7 +267,7 @@ class AuthRoutesSpec extends CatsEffectSuite:
   }
 
   test("POST /auth/login with unknown email returns 401") {
-    val unknownBody = """{"email":"nobody@example.com","password":"securepassword123"}"""
+    val unknownBody = """{"email":"nobody@example.com","password":"Securepass123"}"""
     for
       routes   <- makeRoutes
       loginReq  = Request[IO](Method.POST, uri"/api/v1/auth/login")
