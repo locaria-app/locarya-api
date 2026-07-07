@@ -22,14 +22,16 @@ object ComboRoutes:
     name:             String,
     description:      String,
     dailyRate:        BigDecimal,
-    itemCompositions: List[ComboItemCompositionBody]
+    itemCompositions: List[ComboItemCompositionBody],
+    imageUrls:        List[String]
   )
 
   private case class UpdateComboBody(
     name:             String,
     description:      String,
     dailyRate:        BigDecimal,
-    itemCompositions: Option[List[ComboItemCompositionBody]]
+    itemCompositions: Option[List[ComboItemCompositionBody]],
+    imageUrls:        List[String]
   )
 
   private case class ComboItemCompositionResponse(itemId: String, quantity: Int)
@@ -41,12 +43,13 @@ object ComboRoutes:
     description:      String,
     dailyRate:        BigDecimal,
     isActive:         Boolean,
-    itemCompositions: List[ComboItemCompositionResponse]
+    itemCompositions: List[ComboItemCompositionResponse],
+    imageUrls:        List[String]
   )
 
   private case class CreateComboResponseBody(comboId: String)
 
-  private def toResponseBody(combo: Combo): ComboResponseBody =
+  private def toResponseBody(combo: Combo, images: List[ComboImage]): ComboResponseBody =
     ComboResponseBody(
       comboId          = combo.id.value,
       providerId       = combo.providerId.value,
@@ -54,7 +57,8 @@ object ComboRoutes:
       description      = combo.description,
       dailyRate        = combo.dailyRate.amount,
       isActive         = combo.isActive,
-      itemCompositions = combo.items.map(c => ComboItemCompositionResponse(c.itemId.value, c.quantity))
+      itemCompositions = combo.items.map(c => ComboItemCompositionResponse(c.itemId.value, c.quantity)),
+      imageUrls        = images.sortBy(_.displayOrder).map(_.imageUrl.value)
     )
 
   private val createComboE = securedBase.post
@@ -109,7 +113,8 @@ object ComboRoutes:
                             name             = body.name,
                             description      = body.description,
                             dailyRate        = dailyRate,
-                            itemCompositions = compositions
+                            itemCompositions = compositions,
+                            imageUrls        = body.imageUrls
                           )
           comboId      <- comboService.createCombo(request)
         yield Right(CreateComboResponseBody(comboId.value)))
@@ -122,10 +127,11 @@ object ComboRoutes:
     val getServer = getComboE.serverSecurityLogic[ProviderId, F](security)
       .serverLogic { providerId => comboIdStr =>
         (for
-          comboId <- ComboId.fromString(comboIdStr)
-                       .fold(err => ComboError.InvalidInput(err).raiseError[F, ComboId], _.pure[F])
-          combo   <- comboService.getCombo(comboId, providerId)
-        yield Right(toResponseBody(combo)))
+          comboId  <- ComboId.fromString(comboIdStr)
+                        .fold(err => ComboError.InvalidInput(err).raiseError[F, ComboId], _.pure[F])
+          result   <- comboService.getCombo(comboId, providerId)
+          (combo, images) = result
+        yield Right(toResponseBody(combo, images)))
           .handleErrorWith {
             case _: ComboError.NotFound  => Left(notFound("Combo not found")).pure[F]
             case _: ComboError.Forbidden => Left(forbidden("Access denied")).pure[F]
@@ -154,7 +160,8 @@ object ComboRoutes:
                             name             = body.name,
                             description      = body.description,
                             dailyRate        = dailyRate,
-                            itemCompositions = compositions
+                            itemCompositions = compositions,
+                            imageUrls        = body.imageUrls
                           )
           _            <- comboService.updateCombo(request)
         yield Right(()))
@@ -183,7 +190,7 @@ object ComboRoutes:
     val listServer = listCombosE.serverSecurityLogic[ProviderId, F](security)
       .serverLogic { providerId => _ =>
         comboService.listActiveCombos(providerId)
-          .map(combos => Right(combos.map(toResponseBody)))
+          .map(pairs => Right(pairs.map { case (combo, images) => toResponseBody(combo, images) }))
           .handleError(e => Left(badRequest(e.getMessage)))
       }
 

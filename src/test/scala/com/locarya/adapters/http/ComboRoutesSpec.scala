@@ -6,6 +6,7 @@ import com.locarya.domain.models.*
 import com.locarya.domain.services.{AuthServiceImpl, ComboServiceImpl, ItemServiceImpl, ProviderServiceImpl}
 import com.locarya.helpers.{
   InMemoryBookingRepository,
+  InMemoryComboImageRepository,
   InMemoryComboRepository,
   InMemoryItemImageRepository,
   InMemoryItemRepository,
@@ -29,30 +30,32 @@ class ComboRoutesSpec extends CatsEffectSuite:
   private val testJwtSecret = "test-jwt-secret-combos"
 
   private case class Ctx(
-    authRoutes:  HttpRoutes[IO],
-    itemRoutes:  HttpRoutes[IO],
-    comboRoutes: HttpRoutes[IO],
-    itemRepo:    InMemoryItemRepository[IO],
-    comboRepo:   InMemoryComboRepository[IO],
-    bookingRepo: InMemoryBookingRepository[IO]
+    authRoutes:     HttpRoutes[IO],
+    itemRoutes:     HttpRoutes[IO],
+    comboRoutes:    HttpRoutes[IO],
+    itemRepo:       InMemoryItemRepository[IO],
+    comboRepo:      InMemoryComboRepository[IO],
+    bookingRepo:    InMemoryBookingRepository[IO],
+    comboImageRepo: InMemoryComboImageRepository[IO]
   ):
     def allRoutes: HttpRoutes[IO] = authRoutes <+> itemRoutes <+> comboRoutes
 
   private def makeCtx: IO[Ctx] =
     for
-      providerRepo <- InMemoryProviderRepository.make[IO]
-      itemRepo     <- InMemoryItemRepository.make[IO]
-      imageRepo    <- InMemoryItemImageRepository.make[IO]
-      comboRepo    <- InMemoryComboRepository.make[IO]
-      bookingRepo  <- InMemoryBookingRepository.make[IO]
-      providerSvc   = ProviderServiceImpl[IO](providerRepo)
-      authSvc       = AuthServiceImpl[IO](providerRepo, testJwtSecret)
-      itemSvc       = ItemServiceImpl[IO](itemRepo, imageRepo, bookingRepo)
-      comboSvc      = ComboServiceImpl[IO](comboRepo, itemRepo, bookingRepo)
-      auth          = AuthRoutes.routes[IO](providerSvc, authSvc)
-      items         = ItemRoutes.routes[IO](itemSvc, testJwtSecret)
-      combos        = ComboRoutes.routes[IO](comboSvc, testJwtSecret)
-    yield Ctx(auth, items, combos, itemRepo, comboRepo, bookingRepo)
+      providerRepo   <- InMemoryProviderRepository.make[IO]
+      itemRepo       <- InMemoryItemRepository.make[IO]
+      imageRepo      <- InMemoryItemImageRepository.make[IO]
+      comboRepo      <- InMemoryComboRepository.make[IO]
+      comboImageRepo <- InMemoryComboImageRepository.make[IO]
+      bookingRepo    <- InMemoryBookingRepository.make[IO]
+      providerSvc     = ProviderServiceImpl[IO](providerRepo)
+      authSvc         = AuthServiceImpl[IO](providerRepo, testJwtSecret)
+      itemSvc         = ItemServiceImpl[IO](itemRepo, imageRepo, bookingRepo)
+      comboSvc        = ComboServiceImpl[IO](comboRepo, itemRepo, bookingRepo, comboImageRepo)
+      auth            = AuthRoutes.routes[IO](providerSvc, authSvc)
+      items           = ItemRoutes.routes[IO](itemSvc, testJwtSecret)
+      combos          = ComboRoutes.routes[IO](comboSvc, testJwtSecret)
+    yield Ctx(auth, items, combos, itemRepo, comboRepo, bookingRepo, comboImageRepo)
 
   private val signupBody =
     """{
@@ -112,7 +115,8 @@ class ComboRoutesSpec extends CatsEffectSuite:
       "name":        "Kit Festa",
       "description": "Pacote completo",
       "dailyRate":   300.00,
-      "itemCompositions": [{"itemId":"$itemId","quantity":2}]
+      "itemCompositions": [{"itemId":"$itemId","quantity":2}],
+      "imageUrls":   ["https://example.com/combo.jpg"]
     }"""
 
   private def createCombo(ctx: Ctx, token: String, itemId: String): IO[String] =
@@ -244,7 +248,7 @@ class ComboRoutesSpec extends CatsEffectSuite:
   }
 
   test("PUT /dashboard/combos/:id updates name and price and returns 200") {
-    val updateBody = """{"name":"Kit Premium","description":"Novo desc","dailyRate":500.00}"""
+    val updateBody = """{"name":"Kit Premium","description":"Novo desc","dailyRate":500.00,"imageUrls":["https://example.com/updated.jpg"]}"""
     for
       ctx        <- makeCtx
       auth       <- signupAndLogin(ctx)
@@ -263,7 +267,7 @@ class ComboRoutesSpec extends CatsEffectSuite:
       auth      <- signupAndLogin(ctx)
       itemId    <- createItem(ctx, auth.token)
       comboId   <- createCombo(ctx, auth.token, itemId)
-      updateBody = s"""{"name":"Kit","description":"D","dailyRate":300.00,"itemCompositions":[{"itemId":"$itemId","quantity":3}]}"""
+      updateBody = s"""{"name":"Kit","description":"D","dailyRate":300.00,"itemCompositions":[{"itemId":"$itemId","quantity":3}],"imageUrls":["https://example.com/combo.jpg"]}"""
       request    = Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/v1/dashboard/combos/$comboId"))
                      .withEntity(updateBody)
                      .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
@@ -289,7 +293,7 @@ class ComboRoutesSpec extends CatsEffectSuite:
                      totalAmount = Money.fromAmount(BigDecimal("300")).toOption.get
                    ).toOption.get
       _         <- ctx.bookingRepo.create(booking)
-      updateBody = s"""{"name":"Kit","description":"D","dailyRate":300.00,"itemCompositions":[{"itemId":"$itemId","quantity":5}]}"""
+      updateBody = s"""{"name":"Kit","description":"D","dailyRate":300.00,"itemCompositions":[{"itemId":"$itemId","quantity":5}],"imageUrls":["https://example.com/combo.jpg"]}"""
       request    = Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/v1/dashboard/combos/$comboId"))
                      .withEntity(updateBody)
                      .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
@@ -325,7 +329,7 @@ class ComboRoutesSpec extends CatsEffectSuite:
                        )
       loginBody2    <- loginResp2.as[String]
       token2         = parse(loginBody2).toOption.get.hcursor.downField("token").as[String].toOption.get
-      updateBody     = """{"name":"Hack","description":"","dailyRate":100.00}"""
+      updateBody     = """{"name":"Hack","description":"","dailyRate":100.00,"imageUrls":["https://example.com/combo.jpg"]}"""
       response      <- (auth2Routes <+> ctx.comboRoutes).orNotFound(
                          Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/v1/dashboard/combos/$comboId"))
                            .withEntity(updateBody)
@@ -501,4 +505,109 @@ class ComboRoutesSpec extends CatsEffectSuite:
                            .withHeaders(authHeader(token2))
                        )
     yield assertEquals(response.status, Status.Forbidden)
+  }
+
+  // ── imageUrls integration ────────────────────────────────────────────────────
+
+  test("POST /dashboard/combos with empty imageUrls returns 400") {
+    for
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      itemId   <- createItem(ctx, auth.token)
+      badBody   = s"""{"name":"Kit","description":"Desc","dailyRate":300.00,"itemCompositions":[{"itemId":"$itemId","quantity":1}],"imageUrls":[]}"""
+      request   = Request[IO](Method.POST, uri"/api/v1/dashboard/combos")
+                    .withEntity(badBody)
+                    .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
+      response <- ctx.allRoutes.orNotFound(request)
+    yield assertEquals(response.status, Status.BadRequest)
+  }
+
+  test("GET /dashboard/combos/:id response includes imageUrls submitted at creation") {
+    val comboImageUrl = "https://example.com/kit.jpg"
+    val bodyWithImage = (itemId: String) =>
+      s"""{"name":"Kit","description":"Desc","dailyRate":300.00,"itemCompositions":[{"itemId":"$itemId","quantity":1}],"imageUrls":["$comboImageUrl"]}"""
+    for
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      itemId   <- createItem(ctx, auth.token)
+      req       = Request[IO](Method.POST, uri"/api/v1/dashboard/combos")
+                    .withEntity(bodyWithImage(itemId))
+                    .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
+      postResp <- ctx.allRoutes.orNotFound(req)
+      postBody <- postResp.as[String]
+      comboId   = io.circe.parser.parse(postBody).toOption.get.hcursor.downField("comboId").as[String].toOption.get
+      getReq    = Request[IO](Method.GET, Uri.unsafeFromString(s"/api/v1/dashboard/combos/$comboId"))
+                    .withHeaders(authHeader(auth.token))
+      getResp  <- ctx.allRoutes.orNotFound(getReq)
+      body     <- getResp.as[String]
+      json      = io.circe.parser.parse(body).toOption.get
+    yield
+      assertEquals(getResp.status, Status.Ok)
+      val urls = json.hcursor.downField("imageUrls").as[List[String]].toOption.getOrElse(Nil)
+      assertEquals(urls, List(comboImageUrl))
+  }
+
+  test("GET /dashboard/combos list includes correct imageUrls for each combo") {
+    val url1 = "https://example.com/combo1.jpg"
+    val url2 = "https://example.com/combo2.jpg"
+    def bodyFor(itemId: String, url: String) =
+      s"""{"name":"Kit","description":"D","dailyRate":300.00,"itemCompositions":[{"itemId":"$itemId","quantity":1}],"imageUrls":["$url"]}"""
+    for
+      ctx        <- makeCtx
+      auth       <- signupAndLogin(ctx)
+      itemId     <- createItem(ctx, auth.token)
+      _          <- ctx.allRoutes.orNotFound(
+                      Request[IO](Method.POST, uri"/api/v1/dashboard/combos")
+                        .withEntity(bodyFor(itemId, url1))
+                        .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
+                    )
+      _          <- ctx.allRoutes.orNotFound(
+                      Request[IO](Method.POST, uri"/api/v1/dashboard/combos")
+                        .withEntity(bodyFor(itemId, url2))
+                        .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
+                    )
+      listReq    = Request[IO](Method.GET, uri"/api/v1/dashboard/combos")
+                     .withHeaders(authHeader(auth.token))
+      listResp   <- ctx.allRoutes.orNotFound(listReq)
+      body       <- listResp.as[String]
+      json        = io.circe.parser.parse(body).toOption.get
+    yield
+      assertEquals(listResp.status, Status.Ok)
+      val combos = json.asArray.getOrElse(Vector.empty)
+      assertEquals(combos.size, 2)
+      val allUrls = combos.flatMap(_.hcursor.downField("imageUrls").as[List[String]].toOption.getOrElse(Nil)).toSet
+      assertEquals(allUrls, Set(url1, url2))
+  }
+
+  test("PUT /dashboard/combos/:id with imageUrls replaces images and returns 200") {
+    val originalUrl = "https://example.com/original.jpg"
+    val replacedUrl = "https://example.com/replaced.jpg"
+    def bodyFor(itemId: String, url: String) =
+      s"""{"name":"Kit","description":"D","dailyRate":300.00,"itemCompositions":[{"itemId":"$itemId","quantity":1}],"imageUrls":["$url"]}"""
+    for
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      itemId   <- createItem(ctx, auth.token)
+      postResp <- ctx.allRoutes.orNotFound(
+                    Request[IO](Method.POST, uri"/api/v1/dashboard/combos")
+                      .withEntity(bodyFor(itemId, originalUrl))
+                      .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
+                  )
+      postBody <- postResp.as[String]
+      comboId   = io.circe.parser.parse(postBody).toOption.get.hcursor.downField("comboId").as[String].toOption.get
+      putResp  <- ctx.allRoutes.orNotFound(
+                    Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/v1/dashboard/combos/$comboId"))
+                      .withEntity(s"""{"name":"Kit","description":"D","dailyRate":300.00,"imageUrls":["$replacedUrl"]}""")
+                      .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
+                  )
+      getResp  <- ctx.allRoutes.orNotFound(
+                    Request[IO](Method.GET, Uri.unsafeFromString(s"/api/v1/dashboard/combos/$comboId"))
+                      .withHeaders(authHeader(auth.token))
+                  )
+      body     <- getResp.as[String]
+      json      = io.circe.parser.parse(body).toOption.get
+    yield
+      assertEquals(putResp.status, Status.Ok)
+      val urls = json.hcursor.downField("imageUrls").as[List[String]].toOption.getOrElse(Nil)
+      assertEquals(urls, List(replacedUrl))
   }

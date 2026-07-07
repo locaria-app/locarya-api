@@ -7,7 +7,7 @@ import org.flywaydb.core.Flyway
 import com.locarya.adapters.http.{AsaasWebhookRoutes, AttendantRoutes, AuthRoutes, AvailabilityRoutes, ComboRoutes, DashboardAsaasRoutes, DashboardBookingRoutes, DashboardProviderRoutes, DashboardUploadRoutes, HealthEndpoints, ItemRoutes, PaymentRoutes, StorefrontBookingRoutes, StorefrontChargeRoutes, StorefrontRoutes, SwaggerRoutes}
 import com.locarya.adapters.http.middleware.CorrelationIdMiddleware
 import com.locarya.adapters.external.{AsaasClientLive, AsaasGatewayStub, EmailNotificationAdapter, S3ImageStorageLive}
-import com.locarya.adapters.persistence.{AttendantRepositoryLive, BookingChargeRepositoryLive, BookingRepositoryLive, ComboRepositoryLive, CustomerRepositoryLive, Database, ItemImageRepositoryLive, ItemRepositoryLive, NotificationEventRepositoryLive, PaymentRepositoryLive, ProviderRepositoryLive}
+import com.locarya.adapters.persistence.{AttendantRepositoryLive, BookingChargeRepositoryLive, BookingRepositoryLive, ComboImageRepositoryLive, ComboRepositoryLive, CustomerRepositoryLive, Database, ItemImageRepositoryLive, ItemRepositoryLive, NotificationEventRepositoryLive, PaymentRepositoryLive, ProviderRepositoryLive}
 import com.locarya.config.AppConfig
 import com.locarya.domain.services.{AsaasOnboardingServiceImpl, AsaasWebhookServiceImpl, AttendantServiceImpl, AuthServiceImpl, AvailabilityServiceImpl, BookingChargeServiceImpl, BookingServiceImpl, ComboServiceImpl, ItemServiceImpl, NotificationOutboxWorker, PaymentServiceImpl, PixChargeExpirySweeper, ProviderServiceImpl, StorefrontServiceImpl}
 import scala.concurrent.duration.*
@@ -48,6 +48,7 @@ object Main extends IOApp.Simple {
       itemRepo            = ItemRepositoryLive.make[IO](xa)
       itemImageRepo       = ItemImageRepositoryLive.make[IO](xa)
       comboRepo           = ComboRepositoryLive.make[IO](xa)
+      comboImageRepo      = ComboImageRepositoryLive.make[IO](xa)
       attendantRepo       = AttendantRepositoryLive.make[IO](xa)
       customerRepo        = CustomerRepositoryLive.make[IO](xa)
       bookingRepo         = BookingRepositoryLive.make[IO](xa)
@@ -63,7 +64,7 @@ object Main extends IOApp.Simple {
       availabilityService = AvailabilityServiceImpl[IO](itemRepo, comboRepo, bookingRepo)
       bookingService      = BookingServiceImpl[IO](providerRepo, customerRepo, bookingRepo, itemRepo, comboRepo, availabilityService, attendantRepo, notifRepo)
       itemService         = ItemServiceImpl[IO](itemRepo, itemImageRepo, bookingRepo)
-      comboService        = ComboServiceImpl[IO](comboRepo, itemRepo, bookingRepo)
+      comboService        = ComboServiceImpl[IO](comboRepo, itemRepo, bookingRepo, comboImageRepo)
       attendantService    = AttendantServiceImpl[IO](attendantRepo, bookingRepo)
       paymentService      = PaymentServiceImpl[IO](bookingRepo, paymentRepo)
       emailAdapter        = EmailNotificationAdapter.make[IO]

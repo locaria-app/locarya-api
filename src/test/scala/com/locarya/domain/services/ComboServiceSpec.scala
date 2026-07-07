@@ -7,6 +7,7 @@ import com.locarya.domain.ports.{ComboService, CreateComboRequest, UpdateComboRe
 import com.locarya.helpers.{
   CapturingLogger,
   InMemoryBookingRepository,
+  InMemoryComboImageRepository,
   InMemoryComboRepository,
   InMemoryItemRepository
 }
@@ -18,23 +19,27 @@ class ComboServiceSpec extends CatsEffectSuite:
 
   given Logger[IO] = NoOpLogger[IO]
 
-  private val providerId = ProviderId.generate
-  private val price      = Money.fromAmount(BigDecimal("200.00")).toOption.get
+  private val providerId  = ProviderId.generate
+  private val price       = Money.fromAmount(BigDecimal("200.00")).toOption.get
+  private val imageUrl1   = "https://example.com/combo1.jpg"
+  private val imageUrl2   = "https://example.com/combo2.jpg"
 
   private case class Ctx(
-    svc:         ComboService[IO],
-    itemRepo:    InMemoryItemRepository[IO],
-    comboRepo:   InMemoryComboRepository[IO],
-    bookingRepo: InMemoryBookingRepository[IO]
+    svc:            ComboService[IO],
+    itemRepo:       InMemoryItemRepository[IO],
+    comboRepo:      InMemoryComboRepository[IO],
+    bookingRepo:    InMemoryBookingRepository[IO],
+    comboImageRepo: InMemoryComboImageRepository[IO]
   )
 
   private def makeCtx: IO[Ctx] =
     for
-      itemRepo    <- InMemoryItemRepository.make[IO]
-      comboRepo   <- InMemoryComboRepository.make[IO]
-      bookingRepo <- InMemoryBookingRepository.make[IO]
-      svc          = ComboServiceImpl[IO](comboRepo, itemRepo, bookingRepo)
-    yield Ctx(svc, itemRepo, comboRepo, bookingRepo)
+      itemRepo       <- InMemoryItemRepository.make[IO]
+      comboRepo      <- InMemoryComboRepository.make[IO]
+      bookingRepo    <- InMemoryBookingRepository.make[IO]
+      comboImageRepo <- InMemoryComboImageRepository.make[IO]
+      svc             = ComboServiceImpl[IO](comboRepo, itemRepo, bookingRepo, comboImageRepo)
+    yield Ctx(svc, itemRepo, comboRepo, bookingRepo, comboImageRepo)
 
   private def makeItem(ctx: Ctx, pid: ProviderId = providerId): IO[Item] =
     val item = Item.create(
@@ -55,7 +60,8 @@ class ComboServiceSpec extends CatsEffectSuite:
         name             = "Kit Festa Completo",
         description      = "Inclui cadeiras e mesas",
         dailyRate        = price,
-        itemCompositions = List(ComboItemDefinition(item.id, 5))
+        itemCompositions = List(ComboItemDefinition(item.id, 5)),
+        imageUrls        = List(imageUrl1)
       )
     }
 
@@ -94,7 +100,8 @@ class ComboServiceSpec extends CatsEffectSuite:
                    name             = "Kit",
                    description      = "Desc",
                    dailyRate        = price,
-                   itemCompositions = List(ComboItemDefinition(item.id, 3))
+                   itemCompositions = List(ComboItemDefinition(item.id, 3)),
+                   imageUrls        = List(imageUrl1)
                  )
       comboId <- ctx.svc.createCombo(req)
       comps   <- ctx.comboRepo.findItemsInCombo(comboId)
@@ -104,20 +111,56 @@ class ComboServiceSpec extends CatsEffectSuite:
       assertEquals(comps.head.quantity, 3)
   }
 
+  test("createCombo with valid imageUrls stores images in comboImageRepo") {
+    for
+      ctx     <- makeCtx
+      item    <- makeItem(ctx)
+      req      = CreateComboRequest(
+                   providerId       = providerId,
+                   name             = "Kit",
+                   description      = "Desc",
+                   dailyRate        = price,
+                   itemCompositions = List(ComboItemDefinition(item.id, 1)),
+                   imageUrls        = List(imageUrl1, imageUrl2)
+                 )
+      comboId <- ctx.svc.createCombo(req)
+      images  <- ctx.comboImageRepo.findByComboId(comboId)
+    yield
+      assertEquals(images.size, 2)
+      assertEquals(images.map(_.imageUrl.value).toSet, Set(imageUrl1, imageUrl2))
+  }
+
+  test("createCombo with empty imageUrls raises error") {
+    for
+      ctx    <- makeCtx
+      item   <- makeItem(ctx)
+      req     = CreateComboRequest(
+                  providerId       = providerId,
+                  name             = "Kit",
+                  description      = "Desc",
+                  dailyRate        = price,
+                  itemCompositions = List(ComboItemDefinition(item.id, 1)),
+                  imageUrls        = List.empty
+                )
+      result <- ctx.svc.createCombo(req).attempt
+    yield assert(result.isLeft, "Expected failure for empty imageUrls")
+  }
+
   test("createCombo emits ComboCreated structured log") {
     for
-      loggerAndGet <- CapturingLogger.make
-      itemRepo     <- InMemoryItemRepository.make[IO]
-      comboRepo    <- InMemoryComboRepository.make[IO]
-      bookingRepo  <- InMemoryBookingRepository.make[IO]
-      svc           = ComboServiceImpl[IO](comboRepo, itemRepo, bookingRepo)(using implicitly, loggerAndGet._1)
-      item         <- {
-                       val i = Item.create(ItemId.generate, providerId, "X", "", Money.fromAmount(BigDecimal("10")).toOption.get, 1, AttendantRequirement.NotAllowed).toOption.get
-                       itemRepo.create(i).map(_ => i)
-                     }
-      req           = CreateComboRequest(providerId, "K", "D", price, List(ComboItemDefinition(item.id, 1)))
-      _            <- svc.createCombo(req)
-      logs         <- loggerAndGet._2
+      loggerAndGet   <- CapturingLogger.make
+      itemRepo       <- InMemoryItemRepository.make[IO]
+      comboRepo      <- InMemoryComboRepository.make[IO]
+      bookingRepo    <- InMemoryBookingRepository.make[IO]
+      comboImageRepo <- InMemoryComboImageRepository.make[IO]
+      svc             = ComboServiceImpl[IO](comboRepo, itemRepo, bookingRepo, comboImageRepo)(using implicitly, loggerAndGet._1)
+      item           <- {
+                         val i = Item.create(ItemId.generate, providerId, "X", "", Money.fromAmount(BigDecimal("10")).toOption.get, 1, AttendantRequirement.NotAllowed).toOption.get
+                         itemRepo.create(i).map(_ => i)
+                       }
+      req             = CreateComboRequest(providerId, "K", "D", price, List(ComboItemDefinition(item.id, 1)), List(imageUrl1))
+      _              <- svc.createCombo(req)
+      logs           <- loggerAndGet._2
     yield
       assert(logs.exists(l => l.contains("ComboCreated") && l.contains(providerId.value)),
         s"Expected ComboCreated log. Got: $logs")
@@ -151,7 +194,8 @@ class ComboServiceSpec extends CatsEffectSuite:
                   name             = "Kit",
                   description      = "Desc",
                   dailyRate        = price,
-                  itemCompositions = List(ComboItemDefinition(item.id, 1))
+                  itemCompositions = List(ComboItemDefinition(item.id, 1)),
+                  imageUrls        = List(imageUrl1)
                 )
       result <- ctx.svc.createCombo(req).attempt
     yield result match
@@ -168,7 +212,8 @@ class ComboServiceSpec extends CatsEffectSuite:
                      name             = "Kit",
                      description      = "Desc",
                      dailyRate        = price,
-                     itemCompositions = List(ComboItemDefinition(unknownId, 1))
+                     itemCompositions = List(ComboItemDefinition(unknownId, 1)),
+                     imageUrls        = List(imageUrl1)
                    )
       result    <- ctx.svc.createCombo(req).attempt
     yield assert(result.isLeft, "Expected failure for unknown itemId")
@@ -178,17 +223,16 @@ class ComboServiceSpec extends CatsEffectSuite:
     for
       ctx     <- makeCtx
       item    <- makeItem(ctx)
-      // Create a combo first
-      req1     = CreateComboRequest(providerId, "Combo1", "Desc", price, List(ComboItemDefinition(item.id, 1)))
+      req1     = CreateComboRequest(providerId, "Combo1", "Desc", price, List(ComboItemDefinition(item.id, 1)), List(imageUrl1))
       comboId <- ctx.svc.createCombo(req1)
-      // Try to create a combo that references the first combo's id as if it were an item
       nestedItemId = ItemId.fromString(comboId.value).toOption.get
       req2     = CreateComboRequest(
                    providerId       = providerId,
                    name             = "NestedCombo",
                    description      = "Should fail",
                    dailyRate        = price,
-                   itemCompositions = List(ComboItemDefinition(nestedItemId, 1))
+                   itemCompositions = List(ComboItemDefinition(nestedItemId, 1)),
+                   imageUrls        = List(imageUrl1)
                  )
       result  <- ctx.svc.createCombo(req2).attempt
     yield result match
@@ -198,15 +242,17 @@ class ComboServiceSpec extends CatsEffectSuite:
 
   // ── getCombo ─────────────────────────────────────────────────────────────────
 
-  test("getCombo returns the combo for its owner") {
+  test("getCombo returns the combo with images for its owner") {
     for
-      ctx     <- makeCtx
-      req     <- validRequest(ctx)
+      ctx    <- makeCtx
+      req    <- validRequest(ctx)
       comboId <- ctx.svc.createCombo(req)
-      combo   <- ctx.svc.getCombo(comboId, providerId)
+      result  <- ctx.svc.getCombo(comboId, providerId)
+      (combo, images) = result
     yield
       assertEquals(combo.id, comboId)
       assertEquals(combo.name, "Kit Festa Completo")
+      assertEquals(images.map(_.imageUrl.value), List(imageUrl1))
   }
 
   test("getCombo for wrong provider raises Forbidden") {
@@ -244,12 +290,33 @@ class ComboServiceSpec extends CatsEffectSuite:
                    name             = "Kit Especial",
                    description      = "Nova descrição",
                    dailyRate        = newPrice,
-                   itemCompositions = None
+                   itemCompositions = None,
+                   imageUrls        = List(imageUrl1)
                  ))
       stored  <- ctx.comboRepo.findById(comboId)
     yield
       assertEquals(stored.map(_.name), Some("Kit Especial"))
       assertEquals(stored.map(_.dailyRate), Some(newPrice))
+  }
+
+  test("updateCombo with imageUrls replaces images") {
+    for
+      ctx             <- makeCtx
+      req             <- validRequest(ctx)
+      comboId         <- ctx.svc.createCombo(req)
+      _               <- ctx.svc.updateCombo(UpdateComboRequest(
+                           comboId          = comboId,
+                           providerId       = providerId,
+                           name             = "Kit",
+                           description      = "Desc",
+                           dailyRate        = price,
+                           itemCompositions = None,
+                           imageUrls        = List(imageUrl2)
+                         ))
+      images          <- ctx.comboImageRepo.findByComboId(comboId)
+    yield
+      assertEquals(images.size, 1)
+      assertEquals(images.head.imageUrl.value, imageUrl2)
   }
 
   test("updateCombo by wrong provider raises Forbidden") {
@@ -264,7 +331,8 @@ class ComboServiceSpec extends CatsEffectSuite:
                    name             = "Hack",
                    description      = "",
                    dailyRate        = price,
-                   itemCompositions = None
+                   itemCompositions = None,
+                   imageUrls        = List(imageUrl1)
                  )).attempt
     yield result match
       case Left(_: ComboError.Forbidden) => ()
@@ -276,7 +344,7 @@ class ComboServiceSpec extends CatsEffectSuite:
       ctx      <- makeCtx
       item1    <- makeItem(ctx)
       item2    <- makeItem(ctx)
-      req       = CreateComboRequest(providerId, "Kit", "D", price, List(ComboItemDefinition(item1.id, 1)))
+      req       = CreateComboRequest(providerId, "Kit", "D", price, List(ComboItemDefinition(item1.id, 1)), List(imageUrl1))
       comboId  <- ctx.svc.createCombo(req)
       _        <- ctx.svc.updateCombo(UpdateComboRequest(
                     comboId          = comboId,
@@ -284,7 +352,8 @@ class ComboServiceSpec extends CatsEffectSuite:
                     name             = "Kit",
                     description      = "D",
                     dailyRate        = price,
-                    itemCompositions = Some(List(ComboItemDefinition(item2.id, 2)))
+                    itemCompositions = Some(List(ComboItemDefinition(item2.id, 2))),
+                    imageUrls        = List(imageUrl1)
                   ))
       comps    <- ctx.comboRepo.findItemsInCombo(comboId)
     yield
@@ -296,7 +365,7 @@ class ComboServiceSpec extends CatsEffectSuite:
     for
       ctx     <- makeCtx
       item    <- makeItem(ctx)
-      req      = CreateComboRequest(providerId, "Kit", "D", price, List(ComboItemDefinition(item.id, 1)))
+      req      = CreateComboRequest(providerId, "Kit", "D", price, List(ComboItemDefinition(item.id, 1)), List(imageUrl1))
       comboId <- ctx.svc.createCombo(req)
       booking  = Booking.create(
                    id          = BookingId.generate,
@@ -314,7 +383,8 @@ class ComboServiceSpec extends CatsEffectSuite:
                    name             = "Kit",
                    description      = "D",
                    dailyRate        = price,
-                   itemCompositions = Some(List(ComboItemDefinition(item.id, 2)))
+                   itemCompositions = Some(List(ComboItemDefinition(item.id, 2))),
+                   imageUrls        = List(imageUrl1)
                  )).attempt
     yield result match
       case Left(_: ComboError.HasBookings) => ()
@@ -325,7 +395,7 @@ class ComboServiceSpec extends CatsEffectSuite:
     for
       ctx     <- makeCtx
       item    <- makeItem(ctx)
-      req      = CreateComboRequest(providerId, "Kit", "D", price, List(ComboItemDefinition(item.id, 1)))
+      req      = CreateComboRequest(providerId, "Kit", "D", price, List(ComboItemDefinition(item.id, 1)), List(imageUrl1))
       comboId <- ctx.svc.createCombo(req)
       booking  = Booking.create(
                    id          = BookingId.generate,
@@ -343,36 +413,38 @@ class ComboServiceSpec extends CatsEffectSuite:
                    name             = "Kit Atualizado",
                    description      = "Nova desc",
                    dailyRate        = price,
-                   itemCompositions = None
+                   itemCompositions = None,
+                   imageUrls        = List(imageUrl1)
                  )).attempt
     yield assert(result.isRight, s"Expected success but got: $result")
   }
 
   test("updateCombo with bookings and itemCompositions logs ComboEditBlocked") {
     for
-      loggerAndGet <- CapturingLogger.make
-      itemRepo     <- InMemoryItemRepository.make[IO]
-      comboRepo    <- InMemoryComboRepository.make[IO]
-      bookingRepo  <- InMemoryBookingRepository.make[IO]
-      svc           = ComboServiceImpl[IO](comboRepo, itemRepo, bookingRepo)(using implicitly, loggerAndGet._1)
-      item         <- {
-                       val i = Item.create(ItemId.generate, providerId, "X", "", Money.fromAmount(BigDecimal("10")).toOption.get, 1, AttendantRequirement.NotAllowed).toOption.get
-                       itemRepo.create(i).map(_ => i)
-                     }
-      req           = CreateComboRequest(providerId, "K", "D", price, List(ComboItemDefinition(item.id, 1)))
-      comboId      <- svc.createCombo(req)
-      booking       = Booking.create(
-                        id          = BookingId.generate,
-                        providerId  = providerId,
-                        customerId  = CustomerId.generate,
-                        items       = List(BookedCombo(comboId, 1)),
-                        startDate   = java.time.LocalDate.of(2026, 9, 1),
-                        endDate     = java.time.LocalDate.of(2026, 9, 3),
-                        totalAmount = price
-                      ).toOption.get
-      _            <- bookingRepo.create(booking)
-      _            <- svc.updateCombo(UpdateComboRequest(comboId, providerId, "K", "D", price, Some(List(ComboItemDefinition(item.id, 2))))).attempt
-      logs         <- loggerAndGet._2
+      loggerAndGet   <- CapturingLogger.make
+      itemRepo       <- InMemoryItemRepository.make[IO]
+      comboRepo      <- InMemoryComboRepository.make[IO]
+      bookingRepo    <- InMemoryBookingRepository.make[IO]
+      comboImageRepo <- InMemoryComboImageRepository.make[IO]
+      svc             = ComboServiceImpl[IO](comboRepo, itemRepo, bookingRepo, comboImageRepo)(using implicitly, loggerAndGet._1)
+      item           <- {
+                         val i = Item.create(ItemId.generate, providerId, "X", "", Money.fromAmount(BigDecimal("10")).toOption.get, 1, AttendantRequirement.NotAllowed).toOption.get
+                         itemRepo.create(i).map(_ => i)
+                       }
+      req             = CreateComboRequest(providerId, "K", "D", price, List(ComboItemDefinition(item.id, 1)), List(imageUrl1))
+      comboId        <- svc.createCombo(req)
+      booking         = Booking.create(
+                          id          = BookingId.generate,
+                          providerId  = providerId,
+                          customerId  = CustomerId.generate,
+                          items       = List(BookedCombo(comboId, 1)),
+                          startDate   = java.time.LocalDate.of(2026, 9, 1),
+                          endDate     = java.time.LocalDate.of(2026, 9, 3),
+                          totalAmount = price
+                        ).toOption.get
+      _              <- bookingRepo.create(booking)
+      _              <- svc.updateCombo(UpdateComboRequest(comboId, providerId, "K", "D", price, Some(List(ComboItemDefinition(item.id, 2))), List(imageUrl1))).attempt
+      logs           <- loggerAndGet._2
     yield
       assert(logs.exists(l => l.contains("ComboEditBlocked") && l.contains(comboId.value)),
         s"Expected ComboEditBlocked log. Got: $logs")
@@ -450,9 +522,30 @@ class ComboServiceSpec extends CatsEffectSuite:
                   name             = "Kit Outro",
                   description      = "Desc",
                   dailyRate        = price,
-                  itemCompositions = List(ComboItemDefinition(item.id, 1))
+                  itemCompositions = List(ComboItemDefinition(item.id, 1)),
+                  imageUrls        = List(imageUrl1)
                 )
       _      <- ctx.svc.createCombo(req)
       result <- ctx.svc.listActiveCombos(providerId)
     yield assertEquals(result, List.empty)
+  }
+
+  test("listActiveCombos returns combos with their images") {
+    for
+      ctx    <- makeCtx
+      item   <- makeItem(ctx)
+      req     = CreateComboRequest(
+                  providerId       = providerId,
+                  name             = "Kit",
+                  description      = "Desc",
+                  dailyRate        = price,
+                  itemCompositions = List(ComboItemDefinition(item.id, 1)),
+                  imageUrls        = List(imageUrl1, imageUrl2)
+                )
+      _      <- ctx.svc.createCombo(req)
+      result <- ctx.svc.listActiveCombos(providerId)
+    yield
+      assertEquals(result.size, 1)
+      val (_, images) = result.head
+      assertEquals(images.map(_.imageUrl.value).toSet, Set(imageUrl1, imageUrl2))
   }
