@@ -27,4 +27,4 @@ trait ItemService[F[_]]:
   def createItem(request: CreateItemRequest): F[ItemId]
   def updateItem(request: UpdateItemRequest): F[Unit]
   def deactivateItem(itemId: ItemId, providerId: ProviderId): F[Unit]
-  def listActiveItems(providerId: ProviderId): F[List[Item]]
+  def listActiveItems(providerId: ProviderId): F[List[(Item, List[ItemImage])]]

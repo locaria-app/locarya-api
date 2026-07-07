@@ -42,7 +42,8 @@ object ItemRoutes:
     dailyRate:            BigDecimal,
     stock:                Int,
     attendantRequirement: String,
-    isActive:             Boolean
+    isActive:             Boolean,
+    imageUrls:            List[String]
   )
 
   private case class CreateItemResponseBody(itemId: String)
@@ -54,7 +55,7 @@ object ItemRoutes:
       case "NotAllowed" => Right(AttendantRequirement.NotAllowed)
       case other        => Left(s"Unknown attendantRequirement: $other")
 
-  private def toResponseBody(item: Item): ItemResponseBody =
+  private def toResponseBody(item: Item, images: List[ItemImage]): ItemResponseBody =
     ItemResponseBody(
       itemId               = item.id.value,
       providerId           = item.providerId.value,
@@ -63,7 +64,8 @@ object ItemRoutes:
       dailyRate            = item.dailyRate.amount,
       stock                = item.stock,
       attendantRequirement = item.attendantRequirement.toString,
-      isActive             = item.isActive
+      isActive             = item.isActive,
+      imageUrls            = images.sortBy(_.displayOrder).map(_.imageUrl.value)
     )
 
   // Endpoint definitions — used both for Swagger docs and for routing
@@ -101,7 +103,7 @@ object ItemRoutes:
     val listServer = listE.serverSecurityLogic[ProviderId, F](security)
       .serverLogic { providerId => _ =>
         itemService.listActiveItems(providerId)
-          .map(items => Right(items.map(toResponseBody)))
+          .map(pairs => Right(pairs.map { case (item, images) => toResponseBody(item, images) }))
           .handleError(e => Left(badRequest(e)))
       }
 
