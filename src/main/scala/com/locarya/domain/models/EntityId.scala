@@ -138,6 +138,23 @@ object ItemImageId {
   }
 }
 
+// ComboImageId
+final case class ComboImageId private (value: String)
+
+object ComboImageId {
+  def generate: ComboImageId = ComboImageId(UUID.randomUUID().toString)
+
+  def fromString(id: String): Either[ValidationError, ComboImageId] = {
+    try {
+      UUID.fromString(id)
+      Right(ComboImageId(id))
+    } catch {
+      case _: IllegalArgumentException =>
+        Left(InvalidEntityId(s"Invalid ComboImageId format: $id"))
+    }
+  }
+}
+
 // PlanId
 final case class PlanId private (value: String)
 
