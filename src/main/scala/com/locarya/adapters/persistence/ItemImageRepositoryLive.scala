@@ -46,6 +46,18 @@ final class ItemImageRepositoryLive[F[_]: Async] private (xa: Transactor[F])
       fr"WHERE item_id = ${UUID.fromString(itemId.value)} ORDER BY display_order")
       .query[ItemImageRow].to[List].transact(xa).flatMap(_.traverse(rowToImage))
 
+  override def findByItemIds(itemIds: List[ItemId]): F[Map[ItemId, List[ItemImage]]] =
+    if itemIds.isEmpty then Map.empty[ItemId, List[ItemImage]].pure[F]
+    else
+      val uuids = itemIds.map(id => UUID.fromString(id.value)).toArray
+      sql"""SELECT id, item_id, image_url, display_order, is_primary
+            FROM item_images
+            WHERE item_id = ANY($uuids)
+            ORDER BY display_order"""
+        .query[ItemImageRow].to[List].transact(xa)
+        .flatMap(_.traverse(rowToImage))
+        .map(images => images.groupBy(_.itemId).view.mapValues(_.sortBy(_.displayOrder)).toMap)
+
   override def replaceImages(itemId: ItemId, images: List[ItemImage]): F[Unit] =
     val itemUuid = UUID.fromString(itemId.value)
     val delete   = sql"DELETE FROM item_images WHERE item_id = $itemUuid".update.run

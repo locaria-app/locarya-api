@@ -79,3 +79,54 @@ class ItemImageRepositorySpec extends CatsEffectSuite:
       found <- repo.findByItemId(itemId)
     yield assertEquals(found, Nil)
   }
+
+  // ── findByItemIds ────────────────────────────────────────────────────────────
+
+  test("findByItemIds returns images grouped by itemId") {
+    val id1    = ItemId.generate
+    val id2    = ItemId.generate
+    val imgs1  = images(id1, List(url1, url2))
+    val imgs2  = images(id2, List(url2))
+    for
+      repo   <- makeRepo
+      _      <- imgs1.traverse(repo.create)
+      _      <- imgs2.traverse(repo.create)
+      result <- repo.findByItemIds(List(id1, id2))
+    yield
+      assertEquals(result(id1).map(_.imageUrl.value).toSet, Set(url1, url2))
+      assertEquals(result(id2).map(_.imageUrl.value).toSet, Set(url2))
+  }
+
+  test("findByItemIds images are ordered by displayOrder ascending") {
+    val id    = ItemId.generate
+    val imgs  = images(id, List(url1, url2))
+    for
+      repo   <- makeRepo
+      _      <- imgs.traverse(repo.create)
+      result <- repo.findByItemIds(List(id))
+    yield
+      val found = result(id)
+      assertEquals(found.map(_.displayOrder), found.sortBy(_.displayOrder).map(_.displayOrder))
+  }
+
+  test("findByItemIds does not include images for absent item ids") {
+    val id1    = ItemId.generate
+    val absent = ItemId.generate
+    val imgs   = images(id1, List(url1))
+    for
+      repo   <- makeRepo
+      _      <- imgs.traverse(repo.create)
+      result <- repo.findByItemIds(List(id1, absent))
+    yield
+      assert(result.contains(id1), "id1 should be in result")
+      assert(!result.contains(absent), "absent id should not be in result")
+  }
+
+  test("findByItemIds returns empty map when itemIds is empty") {
+    val imgs = images()
+    for
+      repo   <- makeRepo
+      _      <- imgs.traverse(repo.create)
+      result <- repo.findByItemIds(List.empty)
+    yield assertEquals(result, Map.empty)
+  }
