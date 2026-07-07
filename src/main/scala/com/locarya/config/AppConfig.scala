@@ -21,11 +21,20 @@ case class JwtConfig(secret: String)
 
 case class AsaasConfig(webhookToken: String)
 
+case class R2Config(
+  endpoint:        String,
+  bucketName:      String,
+  accessKeyId:     String,
+  secretAccessKey: String,
+  publicBaseUrl:   String
+)
+
 case class AppConfig(
   database: DatabaseConfig,
   http:     HttpConfig,
   jwt:      JwtConfig,
-  asaas:    AsaasConfig
+  asaas:    AsaasConfig,
+  r2:       R2Config
 )
 
 object AppConfig {
@@ -50,6 +59,13 @@ object AppConfig {
         ),
         asaas = AsaasConfig(
           webhookToken = sys.env.getOrElse("ASAAS_WEBHOOK_TOKEN", "")
+        ),
+        r2 = R2Config(
+          endpoint        = config.getString("locarya.r2.endpoint"),
+          bucketName      = config.getString("locarya.r2.bucket-name"),
+          accessKeyId     = config.getString("locarya.r2.access-key-id"),
+          secretAccessKey = config.getString("locarya.r2.secret-access-key"),
+          publicBaseUrl   = config.getString("locarya.r2.public-base-url")
         )
       )
     })
