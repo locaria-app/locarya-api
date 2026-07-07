@@ -7,9 +7,10 @@ import com.locarya.domain.ports.*
 import org.typelevel.log4cats.Logger
 
 class ComboServiceImpl[F[_]: Sync: Logger](
-  comboRepo:   ComboRepository[F],
-  itemRepo:    ItemRepository[F],
-  bookingRepo: BookingRepository[F]
+  comboRepo:      ComboRepository[F],
+  itemRepo:       ItemRepository[F],
+  bookingRepo:    BookingRepository[F],
+  comboImageRepo: ComboImageRepository[F]
 ) extends ComboService[F]:
 
   def createCombo(request: CreateComboRequest): F[ComboId] =
@@ -28,16 +29,19 @@ class ComboServiceImpl[F[_]: Sync: Logger](
                         )
                       )
       stored       <- comboRepo.create(combo)
+      images       <- liftValidation(ComboImage.create(stored.id, request.imageUrls))
+      _            <- images.traverse_(comboImageRepo.create)
       _            <- Logger[F].info(
                         s"""{"event":"ComboCreated","comboId":"${stored.id.value}","providerId":"${stored.providerId.value}","itemIds":[${request.itemCompositions.map(c => s""""${c.itemId.value}"""").mkString(",")}]}"""
                       )
     yield stored.id
 
-  def getCombo(comboId: ComboId, providerId: ProviderId): F[Combo] =
+  def getCombo(comboId: ComboId, providerId: ProviderId): F[(Combo, List[ComboImage])] =
     for
-      combo <- requireComboExists(comboId)
-      _     <- requireOwner(combo, providerId)
-    yield combo
+      combo  <- requireComboExists(comboId)
+      _      <- requireOwner(combo, providerId)
+      images <- comboImageRepo.findByComboId(comboId)
+    yield (combo, images)
 
   def updateCombo(request: UpdateComboRequest): F[Unit] =
     for
@@ -67,10 +71,17 @@ class ComboServiceImpl[F[_]: Sync: Logger](
                     )
                   )
       _        <- comboRepo.update(updated)
+      images   <- liftValidation(ComboImage.create(combo.id, request.imageUrls))
+      _        <- comboImageRepo.replaceImages(combo.id, images)
     yield ()
 
-  def listActiveCombos(providerId: ProviderId): F[List[Combo]] =
-    comboRepo.findActiveByProviderId(providerId)
+  def listActiveCombos(providerId: ProviderId): F[List[(Combo, List[ComboImage])]] =
+    for
+      combos <- comboRepo.findActiveByProviderId(providerId)
+      pairs  <- combos.traverse { combo =>
+                  comboImageRepo.findByComboId(combo.id).map(imgs => (combo, imgs))
+                }
+    yield pairs
 
   def softDeleteCombo(comboId: ComboId, providerId: ProviderId): F[Unit] =
     for

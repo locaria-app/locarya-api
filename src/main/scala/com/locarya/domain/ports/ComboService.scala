@@ -7,7 +7,8 @@ final case class CreateComboRequest(
   name:             String,
   description:      String,
   dailyRate:        Money,
-  itemCompositions: List[ComboItemDefinition]
+  itemCompositions: List[ComboItemDefinition],
+  imageUrls:        List[String]
 )
 
 final case class UpdateComboRequest(
@@ -16,12 +17,13 @@ final case class UpdateComboRequest(
   name:             String,
   description:      String,
   dailyRate:        Money,
-  itemCompositions: Option[List[ComboItemDefinition]]
+  itemCompositions: Option[List[ComboItemDefinition]],
+  imageUrls:        List[String]
 )
 
 trait ComboService[F[_]]:
   def createCombo(request: CreateComboRequest): F[ComboId]
-  def getCombo(comboId: ComboId, providerId: ProviderId): F[Combo]
+  def getCombo(comboId: ComboId, providerId: ProviderId): F[(Combo, List[ComboImage])]
   def updateCombo(request: UpdateComboRequest): F[Unit]
   def softDeleteCombo(comboId: ComboId, providerId: ProviderId): F[Unit]
-  def listActiveCombos(providerId: ProviderId): F[List[Combo]]
+  def listActiveCombos(providerId: ProviderId): F[List[(Combo, List[ComboImage])]]

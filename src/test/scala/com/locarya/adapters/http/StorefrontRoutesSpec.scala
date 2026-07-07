@@ -6,6 +6,7 @@ import com.locarya.domain.models.*
 import com.locarya.domain.services.{AuthServiceImpl, ComboServiceImpl, ItemServiceImpl, ProviderServiceImpl, StorefrontServiceImpl}
 import com.locarya.helpers.{
   InMemoryBookingRepository,
+  InMemoryComboImageRepository,
   InMemoryComboRepository,
   InMemoryItemImageRepository,
   InMemoryItemRepository,
@@ -42,12 +43,13 @@ class StorefrontRoutesSpec extends CatsEffectSuite:
       providerRepo  <- InMemoryProviderRepository.make[IO]
       itemRepo      <- InMemoryItemRepository.make[IO]
       imageRepo     <- InMemoryItemImageRepository.make[IO]
-      comboRepo     <- InMemoryComboRepository.make[IO]
-      bookingRepo   <- InMemoryBookingRepository.make[IO]
-      providerSvc    = ProviderServiceImpl[IO](providerRepo)
-      authSvc        = AuthServiceImpl[IO](providerRepo, testJwtSecret)
-      itemSvc        = ItemServiceImpl[IO](itemRepo, imageRepo, bookingRepo)
-      comboSvc       = ComboServiceImpl[IO](comboRepo, itemRepo, bookingRepo)
+      comboRepo      <- InMemoryComboRepository.make[IO]
+      comboImageRepo <- InMemoryComboImageRepository.make[IO]
+      bookingRepo    <- InMemoryBookingRepository.make[IO]
+      providerSvc     = ProviderServiceImpl[IO](providerRepo)
+      authSvc         = AuthServiceImpl[IO](providerRepo, testJwtSecret)
+      itemSvc         = ItemServiceImpl[IO](itemRepo, imageRepo, bookingRepo)
+      comboSvc        = ComboServiceImpl[IO](comboRepo, itemRepo, bookingRepo, comboImageRepo)
       storefrontSvc  = StorefrontServiceImpl[IO](providerRepo, itemRepo, imageRepo, comboRepo)
       auth           = AuthRoutes.routes[IO](providerSvc, authSvc)
       items          = ItemRoutes.routes[IO](itemSvc, testJwtSecret)
@@ -113,7 +115,8 @@ class StorefrontRoutesSpec extends CatsEffectSuite:
       "name":        "Kit Festa",
       "description": "Pacote completo para festas",
       "dailyRate":   300.00,
-      "itemCompositions": [{"itemId":"$itemId","quantity":2}]
+      "itemCompositions": [{"itemId":"$itemId","quantity":2}],
+      "imageUrls":   ["https://example.com/combo.jpg"]
     }"""
 
   private def createCombo(ctx: Ctx, token: String, itemId: String): IO[String] =
