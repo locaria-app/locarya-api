@@ -18,6 +18,14 @@ final class InMemoryItemImageRepository[F[_]: Async] private (
   def findByItemId(itemId: ItemId): F[List[ItemImage]] =
     state.get.map(_.values.filter(_.itemId == itemId).toList.sortBy(_.displayOrder))
 
+  def findByItemIds(itemIds: List[ItemId]): F[Map[ItemId, List[ItemImage]]] =
+    if itemIds.isEmpty then Map.empty[ItemId, List[ItemImage]].pure[F]
+    else
+      state.get.map { store =>
+        val matching = store.values.filter(img => itemIds.contains(img.itemId)).toList
+        matching.groupBy(_.itemId).view.mapValues(_.sortBy(_.displayOrder)).toMap
+      }
+
   def replaceImages(itemId: ItemId, images: List[ItemImage]): F[Unit] =
     state.update { store =>
       val without = store.filter { case (_, img) => img.itemId != itemId }

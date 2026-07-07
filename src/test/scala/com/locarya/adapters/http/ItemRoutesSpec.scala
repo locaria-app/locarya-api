@@ -336,3 +336,41 @@ class ItemRoutesSpec extends CatsEffectSuite:
       response <- ctx.allRoutes.orNotFound(request)
     yield assertEquals(response.status, Status.NotFound)
   }
+
+  // ── imageUrls in list response ────────────────────────────────────────────────
+
+  test("GET /api/v1/dashboard/items returns imageUrls per item") {
+    for
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      _        <- createItem(ctx, auth.token)
+      getReq    = Request[IO](Method.GET, uri"/api/v1/dashboard/items").withHeaders(authHeader(auth.token))
+      getResp  <- ctx.allRoutes.orNotFound(getReq)
+      getBody  <- getResp.as[String]
+      json      = parse(getBody).toOption.get
+    yield
+      val items = json.asArray.getOrElse(Vector.empty)
+      assert(items.nonEmpty, "Expected at least one item in response")
+      items.foreach { item =>
+        val imageUrls = item.hcursor.downField("imageUrls").as[List[String]].toOption
+        assert(imageUrls.isDefined, s"Expected imageUrls field in item: $item")
+        assert(imageUrls.get.nonEmpty, s"Expected non-empty imageUrls for created item: $item")
+      }
+  }
+
+  test("GET /api/v1/dashboard/items — imageUrls contains exactly the created URLs") {
+    for
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      _        <- createItem(ctx, auth.token)
+      getReq    = Request[IO](Method.GET, uri"/api/v1/dashboard/items").withHeaders(authHeader(auth.token))
+      getResp  <- ctx.allRoutes.orNotFound(getReq)
+      getBody  <- getResp.as[String]
+      json      = parse(getBody).toOption.get
+    yield
+      val items = json.asArray.getOrElse(Vector.empty)
+      items.foreach { item =>
+        val imageUrls = item.hcursor.downField("imageUrls").as[List[String]].toOption.getOrElse(Nil)
+        assertEquals(imageUrls.toSet, Set("https://example.com/img1.jpg", "https://example.com/img2.jpg"))
+      }
+  }

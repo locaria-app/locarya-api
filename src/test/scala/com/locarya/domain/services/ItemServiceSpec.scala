@@ -166,8 +166,8 @@ class ItemServiceSpec extends CatsEffectSuite:
       ctx    <- makeCtx
       itemId <- ctx.svc.createItem(validRequest)
       _      <- ctx.svc.deactivateItem(itemId, providerId)
-      items  <- ctx.svc.listActiveItems(providerId)
-    yield assert(!items.exists(_.id == itemId), "Deactivated item should not appear in active list")
+      pairs  <- ctx.svc.listActiveItems(providerId)
+    yield assert(!pairs.exists(_._1.id == itemId), "Deactivated item should not appear in active list")
   }
 
   test("deactivateItem emits ItemDeactivated structured log") {
@@ -222,10 +222,10 @@ class ItemServiceSpec extends CatsEffectSuite:
       id1   <- ctx.svc.createItem(validRequest)
       id2   <- ctx.svc.createItem(validRequest.copy(name = "Item 2"))
       _     <- ctx.svc.deactivateItem(id2, providerId)
-      items <- ctx.svc.listActiveItems(providerId)
+      pairs <- ctx.svc.listActiveItems(providerId)
     yield
-      assert(items.exists(_.id == id1), "Active item should be listed")
-      assert(!items.exists(_.id == id2), "Deactivated item should not be listed")
+      assert(pairs.exists(_._1.id == id1), "Active item should be listed")
+      assert(!pairs.exists(_._1.id == id2), "Deactivated item should not be listed")
   }
 
   test("listActiveItems does not return items from another provider") {
@@ -234,6 +234,52 @@ class ItemServiceSpec extends CatsEffectSuite:
       ctx   <- makeCtx
       _     <- ctx.svc.createItem(validRequest)
       _     <- ctx.svc.createItem(validRequest.copy(providerId = otherProvider))
-      items <- ctx.svc.listActiveItems(providerId)
-    yield assert(items.forall(_.providerId == providerId))
+      pairs <- ctx.svc.listActiveItems(providerId)
+    yield assert(pairs.forall(_._1.providerId == providerId))
+  }
+
+  test("listActiveItems returns item paired with its two images ordered by displayOrder") {
+    for
+      ctx   <- makeCtx
+      itemId <- ctx.svc.createItem(validRequest)
+      pairs  <- ctx.svc.listActiveItems(providerId)
+    yield
+      val (item, images) = pairs.find(_._1.id == itemId).get
+      assertEquals(item.id, itemId)
+      assertEquals(images.size, 2)
+      assertEquals(images.map(_.displayOrder), images.sortBy(_.displayOrder).map(_.displayOrder))
+  }
+
+  test("listActiveItems returns Nil images for an item seeded without images") {
+    for
+      ctx    <- makeCtx
+      item   <- cats.effect.IO.fromEither(
+                  Item.create(
+                    id                   = ItemId.generate,
+                    providerId           = providerId,
+                    name                 = "No Images Item",
+                    description          = "desc",
+                    dailyRate            = price,
+                    stock                = 1,
+                    attendantRequirement = AttendantRequirement.Optional
+                  ).left.map(e => new RuntimeException(e.toString))
+                )
+      _      <- ctx.itemRepo.create(item)
+      pairs  <- ctx.svc.listActiveItems(providerId)
+    yield
+      val (_, images) = pairs.find(_._1.id == item.id).get
+      assertEquals(images, Nil)
+  }
+
+  test("listActiveItems does not mix images across items") {
+    for
+      ctx    <- makeCtx
+      itemId1 <- ctx.svc.createItem(validRequest.copy(imageUrls = List(url1)))
+      itemId2 <- ctx.svc.createItem(validRequest.copy(name = "Item 2", imageUrls = List(url2)))
+      pairs   <- ctx.svc.listActiveItems(providerId)
+    yield
+      val (_, imgs1) = pairs.find(_._1.id == itemId1).get
+      val (_, imgs2) = pairs.find(_._1.id == itemId2).get
+      assert(imgs1.forall(_.imageUrl.value == url1), "Item1 should only have url1")
+      assert(imgs2.forall(_.imageUrl.value == url2), "Item2 should only have url2")
   }

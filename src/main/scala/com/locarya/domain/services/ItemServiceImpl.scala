@@ -68,8 +68,12 @@ class ItemServiceImpl[F[_]: Sync: Logger](
                      )
     yield ()
 
-  def listActiveItems(providerId: ProviderId): F[List[Item]] =
-    itemRepo.findActiveByProviderId(providerId)
+  def listActiveItems(providerId: ProviderId): F[List[(Item, List[ItemImage])]] =
+    for
+      items    <- itemRepo.findActiveByProviderId(providerId)
+      itemIds   = items.map(_.id)
+      imageMap <- imageRepo.findByItemIds(itemIds)
+    yield items.map(item => (item, imageMap.getOrElse(item.id, Nil)))
 
   private def liftValidation[A](e: Either[ValidationError, A]): F[A] =
     e.fold(err => ItemError.InvalidInput(err).raiseError[F, A], _.pure[F])
