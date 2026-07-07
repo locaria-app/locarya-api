@@ -4,9 +4,9 @@ import cats.effect._
 import cats.syntax.all._
 import com.comcast.ip4s._
 import org.flywaydb.core.Flyway
-import com.locarya.adapters.http.{AsaasWebhookRoutes, AttendantRoutes, AuthRoutes, AvailabilityRoutes, ComboRoutes, DashboardAsaasRoutes, DashboardBookingRoutes, DashboardProviderRoutes, HealthEndpoints, ItemRoutes, PaymentRoutes, StorefrontBookingRoutes, StorefrontChargeRoutes, StorefrontRoutes, SwaggerRoutes}
+import com.locarya.adapters.http.{AsaasWebhookRoutes, AttendantRoutes, AuthRoutes, AvailabilityRoutes, ComboRoutes, DashboardAsaasRoutes, DashboardBookingRoutes, DashboardProviderRoutes, DashboardUploadRoutes, HealthEndpoints, ItemRoutes, PaymentRoutes, StorefrontBookingRoutes, StorefrontChargeRoutes, StorefrontRoutes, SwaggerRoutes}
 import com.locarya.adapters.http.middleware.CorrelationIdMiddleware
-import com.locarya.adapters.external.{AsaasClientLive, AsaasGatewayStub, EmailNotificationAdapter}
+import com.locarya.adapters.external.{AsaasClientLive, AsaasGatewayStub, EmailNotificationAdapter, S3ImageStorageLive}
 import com.locarya.adapters.persistence.{AttendantRepositoryLive, BookingChargeRepositoryLive, BookingRepositoryLive, ComboRepositoryLive, CustomerRepositoryLive, Database, ItemImageRepositoryLive, ItemRepositoryLive, NotificationEventRepositoryLive, PaymentRepositoryLive, ProviderRepositoryLive}
 import com.locarya.config.AppConfig
 import com.locarya.domain.services.{AsaasOnboardingServiceImpl, AsaasWebhookServiceImpl, AttendantServiceImpl, AuthServiceImpl, AvailabilityServiceImpl, BookingChargeServiceImpl, BookingServiceImpl, ComboServiceImpl, ItemServiceImpl, NotificationOutboxWorker, PaymentServiceImpl, PixChargeExpirySweeper, ProviderServiceImpl, StorefrontServiceImpl}
@@ -56,6 +56,7 @@ object Main extends IOApp.Simple {
       notifRepo           = NotificationEventRepositoryLive.make[IO](xa)
       asaasGateway        = AsaasGatewayStub.make[IO]
       paymentGateway      = AsaasClientLive.make[IO]
+      storageGateway      = S3ImageStorageLive.make[IO](config.r2)
       providerService     = ProviderServiceImpl[IO](providerRepo)
       authService         = AuthServiceImpl[IO](providerRepo, config.jwt.secret)
       asaasOnboarding     = AsaasOnboardingServiceImpl[IO](providerRepo, asaasGateway)
@@ -77,6 +78,7 @@ object Main extends IOApp.Simple {
       swaggerEnabled = sys.env.getOrElse("SWAGGER_ENABLED", "false") == "true"
       docsRoute      = SwaggerRoutes.maybeDocsRoute[IO](
                          ItemRoutes.allEndpoints ++
+                         DashboardUploadRoutes.allEndpoints ++
                          AuthRoutes.allEndpoints ++
                          StorefrontRoutes.allEndpoints ++
                          AvailabilityRoutes.allEndpoints ++
@@ -103,6 +105,7 @@ object Main extends IOApp.Simple {
                  DashboardProviderRoutes.routes[IO](providerService, config.jwt.secret) <+>
                  DashboardAsaasRoutes.routes[IO](asaasOnboarding, config.jwt.secret) <+>
                  ItemRoutes.routes[IO](itemService, config.jwt.secret) <+>
+                 DashboardUploadRoutes.routes[IO](storageGateway, config.jwt.secret) <+>
                  ComboRoutes.routes[IO](comboService, config.jwt.secret) <+>
                  AttendantRoutes.routes[IO](attendantService, config.jwt.secret) <+>
                  PaymentRoutes.routes[IO](paymentService, config.jwt.secret) <+>

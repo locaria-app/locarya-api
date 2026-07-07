@@ -61,6 +61,9 @@ lazy val root = project
       "com.softwaremill.sttp.tapir" %% "tapir-swagger-ui-bundle" % "1.11.50",
       "com.softwaremill.sttp.tapir" %% "tapir-json-circe"        % "1.11.50",
 
+      // AWS SDK v2 (S3 presigned URLs — Cloudflare R2 compatible)
+      "software.amazon.awssdk" % "s3" % "2.26.31",
+
       // Test — in-memory port impls + stub gateways (no Testcontainers). See ADR 0007.
       "org.scalameta" %% "munit" % "1.1.0" % Test,
       "org.typelevel" %% "munit-cats-effect" % "2.1.0" % Test
