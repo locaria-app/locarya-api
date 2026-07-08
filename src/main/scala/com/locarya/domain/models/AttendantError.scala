@@ -17,3 +17,6 @@ object AttendantError:
 
   final case class BookingNotFound(id: BookingId)
       extends AttendantError(s"Booking '${id.value}' not found")
+
+  final case class BookingLineNotFound(bookingId: BookingId, lineRef: BookingLineRef)
+      extends AttendantError(s"Booking line not found in booking '${bookingId.value}'")

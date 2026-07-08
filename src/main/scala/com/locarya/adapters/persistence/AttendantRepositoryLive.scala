@@ -106,7 +106,10 @@ final class AttendantRepositoryLive[F[_]: Async] private (xa: Transactor[F])
                 AND bi.item_type  = 'COMBO'
                 AND bi.combo_id   = $cId
               LIMIT 1"""
-    frag.update.run.transact(xa).void
+    frag.update.run.transact(xa).flatMap { n =>
+      if n == 0 then Async[F].raiseError(AttendantError.BookingLineNotFound(bookingId, lineRef))
+      else ().pure[F]
+    }
 
   override def removeFromBookingLine(bookingId: BookingId, lineRef: BookingLineRef, attendantId: AttendantId): F[Unit] =
     val bId  = UUID.fromString(bookingId.value)
@@ -134,7 +137,10 @@ final class AttendantRepositoryLive[F[_]: Async] private (xa: Transactor[F])
                     AND combo_id   = $cId
                   LIMIT 1
                 )"""
-    frag.update.run.transact(xa).void
+    frag.update.run.transact(xa).flatMap { n =>
+      if n == 0 then Async[F].raiseError(AttendantError.BookingLineNotFound(bookingId, lineRef))
+      else ().pure[F]
+    }
 
   override def findByBookingGrouped(bookingId: BookingId): F[Map[BookingLineRef, Set[AttendantId]]] =
     val bId = UUID.fromString(bookingId.value)

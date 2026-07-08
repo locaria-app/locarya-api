@@ -157,11 +157,12 @@ object AttendantRoutes:
           _            <- attendantService.assignAttendants(req2)
         yield Right(()))
           .handleErrorWith {
-            case _: AttendantError.AttendantNotFound => Left(notFound("Attendant not found")).pure[F]
-            case _: AttendantError.BookingNotFound   => Left(notFound("Booking not found")).pure[F]
-            case _: AttendantError.Forbidden         => Left(forbidden("Access denied")).pure[F]
-            case _: AttendantError.AttendantInactive => Left(badRequest("Attendant is inactive")).pure[F]
-            case e: AttendantError                   => Left(badRequest(e.getMessage)).pure[F]
+            case _: AttendantError.AttendantNotFound    => Left(notFound("Attendant not found")).pure[F]
+            case _: AttendantError.BookingNotFound      => Left(notFound("Booking not found")).pure[F]
+            case _: AttendantError.BookingLineNotFound  => Left(notFound("Booking line not found")).pure[F]
+            case _: AttendantError.Forbidden            => Left(forbidden("Access denied")).pure[F]
+            case _: AttendantError.AttendantInactive    => Left(badRequest("Attendant is inactive")).pure[F]
+            case e: AttendantError                      => Left(badRequest(e.getMessage)).pure[F]
           }
       }
 
@@ -178,9 +179,10 @@ object AttendantRoutes:
           _           <- attendantService.removeAttendantFromLine(req2)
         yield Right(()))
           .handleErrorWith {
-            case _: AttendantError.AttendantNotFound => Left(notFound("Attendant not found")).pure[F]
-            case _: AttendantError.Forbidden         => Left(forbidden("Access denied")).pure[F]
-            case e: AttendantError                   => Left(badRequest(e.getMessage)).pure[F]
+            case _: AttendantError.AttendantNotFound   => Left(notFound("Attendant not found")).pure[F]
+            case _: AttendantError.BookingLineNotFound => Left(notFound("Booking line not found")).pure[F]
+            case _: AttendantError.Forbidden           => Left(forbidden("Access denied")).pure[F]
+            case e: AttendantError                     => Left(badRequest(e.getMessage)).pure[F]
           }
       }
 
