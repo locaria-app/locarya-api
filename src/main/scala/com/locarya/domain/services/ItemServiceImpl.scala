@@ -18,13 +18,13 @@ class ItemServiceImpl[F[_]: Sync: Logger](
       images <- liftValidation(ItemImage.create(ItemId.generate, request.imageUrls))
       item   <- liftValidation(
                   Item.create(
-                    id                   = images.head.itemId,
-                    providerId           = request.providerId,
-                    name                 = request.name,
-                    description          = request.description,
-                    dailyRate            = request.dailyRate,
-                    stock                = request.stock,
-                    attendantRequirement = request.attendantRequirement
+                    id              = images.head.itemId,
+                    providerId      = request.providerId,
+                    name            = request.name,
+                    description     = request.description,
+                    dailyRate       = request.dailyRate,
+                    stock           = request.stock,
+                    requiresMonitor = request.requiresMonitor
                   )
                 )
       stored <- itemRepo.create(item)
@@ -42,13 +42,13 @@ class ItemServiceImpl[F[_]: Sync: Logger](
       newImages <- liftValidation(ItemImage.create(request.itemId, request.imageUrls))
       updated  <- liftValidation(
                     Item.create(
-                      id                   = request.itemId,
-                      providerId           = request.providerId,
-                      name                 = request.name,
-                      description          = request.description,
-                      dailyRate            = request.dailyRate,
-                      stock                = request.stock,
-                      attendantRequirement = request.attendantRequirement
+                      id              = request.itemId,
+                      providerId      = request.providerId,
+                      name            = request.name,
+                      description     = request.description,
+                      dailyRate       = request.dailyRate,
+                      stock           = request.stock,
+                      requiresMonitor = request.requiresMonitor
                     )
                   )
       _        <- itemRepo.update(updated)

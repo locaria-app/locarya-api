@@ -25,7 +25,6 @@ case class InvalidAttendant(message: String)          extends ValidationError
 case class InvalidPayment(message: String)            extends ValidationError
 case class InvalidPlan(message: String)               extends ValidationError
 case class InvalidSubscription(message: String)       extends ValidationError
-case class InvalidAttendantRequirement(message: String) extends ValidationError
 case class InvalidBookingCode(message: String)           extends ValidationError
 case class InvalidAsaasCharge(message: String)           extends ValidationError
 case class InvalidBookingCharge(message: String)         extends ValidationError

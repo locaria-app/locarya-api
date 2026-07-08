@@ -102,12 +102,12 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
 
   private val validItemBody =
     """{
-      "name":                 "Cadeira de Festa",
-      "description":          "Cadeira dobrável para eventos",
-      "dailyRate":            50.00,
-      "stock":                10,
-      "attendantRequirement": "Optional",
-      "imageUrls":            ["https://example.com/cadeira.jpg"]
+      "name":            "Cadeira de Festa",
+      "description":     "Cadeira dobrável para eventos",
+      "dailyRate":       50.00,
+      "stock":           10,
+      "requiresMonitor": false,
+      "imageUrls":       ["https://example.com/cadeira.jpg"]
     }"""
 
   private def createItem(ctx: Ctx, token: String): IO[String] =

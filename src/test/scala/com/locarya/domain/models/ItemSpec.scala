@@ -16,7 +16,7 @@ class ItemSpec extends FunSuite {
       description = "Compact drone for aerial photography",
       dailyRate = dailyRate,
       stock = 5,
-      attendantRequirement = AttendantRequirement.Optional
+      requiresMonitor = true
     )
 
     assert(result.isRight, "Should create Item with valid data")
@@ -27,7 +27,7 @@ class ItemSpec extends FunSuite {
       assertEquals(item.description, "Compact drone for aerial photography")
       assertEquals(item.dailyRate, dailyRate)
       assertEquals(item.stock, 5)
-      assertEquals(item.attendantRequirement, AttendantRequirement.Optional)
+      assertEquals(item.requiresMonitor, true)
     }
   }
 
@@ -43,7 +43,7 @@ class ItemSpec extends FunSuite {
       description = "Some description",
       dailyRate = dailyRate,
       stock = 5,
-      attendantRequirement = AttendantRequirement.Optional
+      requiresMonitor = false
     )
 
     assert(result.isLeft, "Should fail to create Item with empty name")
@@ -64,7 +64,7 @@ class ItemSpec extends FunSuite {
       description = "Some description",
       dailyRate = dailyRate,
       stock = 5,
-      attendantRequirement = AttendantRequirement.Optional
+      requiresMonitor = false
     )
 
     assert(result.isLeft, "Should fail to create Item with whitespace-only name")
@@ -85,7 +85,7 @@ class ItemSpec extends FunSuite {
       description = "Professional camera",
       dailyRate = dailyRate,
       stock = -1,
-      attendantRequirement = AttendantRequirement.Optional
+      requiresMonitor = false
     )
 
     assert(result.isLeft, "Should fail to create Item with negative stock")
@@ -106,7 +106,7 @@ class ItemSpec extends FunSuite {
       description = "Professional camera",
       dailyRate = dailyRate,
       stock = 0,
-      attendantRequirement = AttendantRequirement.Optional
+      requiresMonitor = false
     )
 
     assert(result.isRight, "Should create Item with zero stock")
@@ -127,7 +127,7 @@ class ItemSpec extends FunSuite {
       description = "  Professional camera  ",
       dailyRate = dailyRate,
       stock = 5,
-      attendantRequirement = AttendantRequirement.Optional
+      requiresMonitor = false
     )
 
     assert(result.isRight, "Should create Item and trim whitespace")

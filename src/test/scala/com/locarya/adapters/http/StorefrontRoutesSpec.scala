@@ -93,12 +93,12 @@ class StorefrontRoutesSpec extends CatsEffectSuite:
 
   private val validItemBody =
     """{
-      "name":                 "Cadeira de Festa",
-      "description":          "Cadeira dobrável para eventos",
-      "dailyRate":            50.00,
-      "stock":                20,
-      "attendantRequirement": "Optional",
-      "imageUrls":            ["https://example.com/cadeira.jpg"]
+      "name":            "Cadeira de Festa",
+      "description":     "Cadeira dobrável para eventos",
+      "dailyRate":       50.00,
+      "stock":           20,
+      "requiresMonitor": false,
+      "imageUrls":       ["https://example.com/cadeira.jpg"]
     }"""
 
   private def createItem(ctx: Ctx, token: String): IO[String] =
@@ -172,7 +172,7 @@ class StorefrontRoutesSpec extends CatsEffectSuite:
       assert(item.hcursor.downField("description").focus.isDefined,           s"Missing description: $body")
       assert(item.hcursor.downField("price").focus.isDefined,                 s"Missing price: $body")
       assert(item.hcursor.downField("stockQuantity").focus.isDefined,         s"Missing stockQuantity: $body")
-      assert(item.hcursor.downField("attendantRequirement").focus.isDefined,  s"Missing attendantRequirement: $body")
+      assert(item.hcursor.downField("requiresMonitor").focus.isDefined,  s"Missing requiresMonitor: $body")
       val images = item.hcursor.downField("images").focus.get.asArray.get
       assert(images.nonEmpty, s"Expected images array to be non-empty: $body")
       assertEquals(images.head.hcursor.downField("isPrimary").as[Boolean].toOption, Some(true))
@@ -200,7 +200,7 @@ class StorefrontRoutesSpec extends CatsEffectSuite:
       assert(combo.hcursor.downField("name").focus.isDefined,             s"Missing name: $body")
       assert(combo.hcursor.downField("description").focus.isDefined,      s"Missing description: $body")
       assert(combo.hcursor.downField("price").focus.isDefined,            s"Missing price: $body")
-      assert(combo.hcursor.downField("attendantRequirement").focus.isDefined, s"Missing attendantRequirement: $body")
+      assert(combo.hcursor.downField("requiresMonitor").focus.isDefined, s"Missing requiresMonitor: $body")
       val compositions = combo.hcursor.downField("itemCompositions").focus.get.asArray.get
       assert(compositions.nonEmpty, s"Expected at least one item composition: $body")
       val comp = compositions.head

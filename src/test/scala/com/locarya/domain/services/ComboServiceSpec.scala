@@ -41,15 +41,15 @@ class ComboServiceSpec extends CatsEffectSuite:
       svc             = ComboServiceImpl[IO](comboRepo, itemRepo, bookingRepo, comboImageRepo)
     yield Ctx(svc, itemRepo, comboRepo, bookingRepo, comboImageRepo)
 
-  private def makeItem(ctx: Ctx, pid: ProviderId = providerId): IO[Item] =
+  private def makeItem(ctx: Ctx, pid: ProviderId = providerId, requiresMonitor: Boolean = false): IO[Item] =
     val item = Item.create(
-      id                   = ItemId.generate,
-      providerId           = pid,
-      name                 = "Cadeira",
-      description          = "Cadeira de festa",
-      dailyRate            = Money.fromAmount(BigDecimal("50.00")).toOption.get,
-      stock                = 10,
-      attendantRequirement = AttendantRequirement.Optional
+      id              = ItemId.generate,
+      providerId      = pid,
+      name            = "Cadeira",
+      description     = "Cadeira de festa",
+      dailyRate       = Money.fromAmount(BigDecimal("50.00")).toOption.get,
+      stock           = 10,
+      requiresMonitor = requiresMonitor
     ).toOption.get
     ctx.itemRepo.create(item).map(_ => item)
 
@@ -111,6 +111,59 @@ class ComboServiceSpec extends CatsEffectSuite:
       assertEquals(comps.head.quantity, 3)
   }
 
+  // ── requiresMonitor inference ────────────────────────────────────────────────
+
+  test("createCombo infers requiresMonitor = false when all items have requiresMonitor = false") {
+    for
+      ctx     <- makeCtx
+      item1   <- makeItem(ctx, requiresMonitor = false)
+      item2   <- makeItem(ctx, requiresMonitor = false)
+      comboId <- ctx.svc.createCombo(CreateComboRequest(
+                   providerId       = providerId,
+                   name             = "Combo sem Monitor",
+                   description      = "Nenhum item exige monitor",
+                   dailyRate        = price,
+                   itemCompositions = List(ComboItemDefinition(item1.id, 1), ComboItemDefinition(item2.id, 1)),
+                   imageUrls        = List(imageUrl1)
+                 ))
+      stored  <- ctx.comboRepo.findById(comboId)
+    yield assertEquals(stored.map(_.requiresMonitor), Some(false))
+  }
+
+  test("createCombo infers requiresMonitor = true when at least one item has requiresMonitor = true") {
+    for
+      ctx     <- makeCtx
+      item1   <- makeItem(ctx, requiresMonitor = false)
+      item2   <- makeItem(ctx, requiresMonitor = true)
+      comboId <- ctx.svc.createCombo(CreateComboRequest(
+                   providerId       = providerId,
+                   name             = "Combo Misto",
+                   description      = "Um item exige monitor",
+                   dailyRate        = price,
+                   itemCompositions = List(ComboItemDefinition(item1.id, 1), ComboItemDefinition(item2.id, 1)),
+                   imageUrls        = List(imageUrl1)
+                 ))
+      stored  <- ctx.comboRepo.findById(comboId)
+    yield assertEquals(stored.map(_.requiresMonitor), Some(true))
+  }
+
+  test("createCombo infers requiresMonitor = true when all items have requiresMonitor = true") {
+    for
+      ctx     <- makeCtx
+      item1   <- makeItem(ctx, requiresMonitor = true)
+      item2   <- makeItem(ctx, requiresMonitor = true)
+      comboId <- ctx.svc.createCombo(CreateComboRequest(
+                   providerId       = providerId,
+                   name             = "Combo com Monitor",
+                   description      = "Todos os itens exigem monitor",
+                   dailyRate        = price,
+                   itemCompositions = List(ComboItemDefinition(item1.id, 1), ComboItemDefinition(item2.id, 1)),
+                   imageUrls        = List(imageUrl1)
+                 ))
+      stored  <- ctx.comboRepo.findById(comboId)
+    yield assertEquals(stored.map(_.requiresMonitor), Some(true))
+  }
+
   test("createCombo with valid imageUrls stores images in comboImageRepo") {
     for
       ctx     <- makeCtx
@@ -155,7 +208,7 @@ class ComboServiceSpec extends CatsEffectSuite:
       comboImageRepo <- InMemoryComboImageRepository.make[IO]
       svc             = ComboServiceImpl[IO](comboRepo, itemRepo, bookingRepo, comboImageRepo)(using implicitly, loggerAndGet._1)
       item           <- {
-                         val i = Item.create(ItemId.generate, providerId, "X", "", Money.fromAmount(BigDecimal("10")).toOption.get, 1, AttendantRequirement.NotAllowed).toOption.get
+                         val i = Item.create(ItemId.generate, providerId, "X", "", Money.fromAmount(BigDecimal("10")).toOption.get, 1, false).toOption.get
                          itemRepo.create(i).map(_ => i)
                        }
       req             = CreateComboRequest(providerId, "K", "D", price, List(ComboItemDefinition(item.id, 1)), List(imageUrl1))
@@ -428,7 +481,7 @@ class ComboServiceSpec extends CatsEffectSuite:
       comboImageRepo <- InMemoryComboImageRepository.make[IO]
       svc             = ComboServiceImpl[IO](comboRepo, itemRepo, bookingRepo, comboImageRepo)(using implicitly, loggerAndGet._1)
       item           <- {
-                         val i = Item.create(ItemId.generate, providerId, "X", "", Money.fromAmount(BigDecimal("10")).toOption.get, 1, AttendantRequirement.NotAllowed).toOption.get
+                         val i = Item.create(ItemId.generate, providerId, "X", "", Money.fromAmount(BigDecimal("10")).toOption.get, 1, false).toOption.get
                          itemRepo.create(i).map(_ => i)
                        }
       req             = CreateComboRequest(providerId, "K", "D", price, List(ComboItemDefinition(item.id, 1)), List(imageUrl1))

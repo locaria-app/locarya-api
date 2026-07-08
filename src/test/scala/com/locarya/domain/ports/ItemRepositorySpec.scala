@@ -17,13 +17,13 @@ class ItemRepositorySpec extends CatsEffectSuite:
     name: String = "Cadeira Tiffany"
   ): Item =
     Item.create(
-      id = ItemId.generate,
-      providerId = providerId,
-      name = name,
-      description = "Cadeira para eventos",
-      dailyRate = dailyRate,
-      stock = 10,
-      attendantRequirement = AttendantRequirement.Optional
+      id              = ItemId.generate,
+      providerId      = providerId,
+      name            = name,
+      description     = "Cadeira para eventos",
+      dailyRate       = dailyRate,
+      stock           = 10,
+      requiresMonitor = false
     ).toOption.get
 
   test("create stores item and findById retrieves it") {
@@ -73,7 +73,7 @@ class ItemRepositorySpec extends CatsEffectSuite:
       repo    <- makeRepo
       item     = makeItem()
       _       <- repo.create(item)
-      updated  = Item.create(item.id, item.providerId, item.name, item.description, item.dailyRate, 20, item.attendantRequirement).toOption.get
+      updated  = Item.create(item.id, item.providerId, item.name, item.description, item.dailyRate, 20, item.requiresMonitor).toOption.get
       saved   <- repo.update(updated)
       found   <- repo.findById(item.id)
     yield
@@ -95,7 +95,7 @@ class ItemRepositorySpec extends CatsEffectSuite:
     for
       repo     <- makeRepo
       active    = makeItem(pid, "Mesa Redonda")
-      inactive  = Item.create(ItemId.generate, pid, "Old Item", "desc", dailyRate, 1, AttendantRequirement.NotAllowed, isActive = false).toOption.get
+      inactive  = Item.create(ItemId.generate, pid, "Old Item", "desc", dailyRate, 1, false, isActive = false).toOption.get
       _        <- repo.create(active)
       _        <- repo.create(inactive)
       results  <- repo.findActiveByProviderId(pid)
@@ -108,7 +108,7 @@ class ItemRepositorySpec extends CatsEffectSuite:
     val pid = ProviderId.generate
     for
       repo    <- makeRepo
-      item     = Item.create(ItemId.generate, pid, "Item", "desc", dailyRate, 1, AttendantRequirement.Optional, isActive = false).toOption.get
+      item     = Item.create(ItemId.generate, pid, "Item", "desc", dailyRate, 1, false, isActive = false).toOption.get
       _       <- repo.create(item)
       results <- repo.findActiveByProviderId(pid)
     yield assertEquals(results, Nil)

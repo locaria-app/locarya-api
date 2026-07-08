@@ -116,12 +116,12 @@ class StorefrontChargeRoutesSpec extends CatsEffectSuite:
 
   private val itemBody =
     """{
-      "name":                 "Cadeira de Festa",
-      "description":          "Cadeira dobrável",
-      "dailyRate":            50.00,
-      "stock":                10,
-      "attendantRequirement": "Optional",
-      "imageUrls":            ["https://example.com/img.jpg"]
+      "name":            "Cadeira de Festa",
+      "description":     "Cadeira dobrável",
+      "dailyRate":       50.00,
+      "stock":           10,
+      "requiresMonitor": false,
+      "imageUrls":       ["https://example.com/img.jpg"]
     }"""
 
   private def createBooking(ctx: Ctx, slug: String): IO[String] =

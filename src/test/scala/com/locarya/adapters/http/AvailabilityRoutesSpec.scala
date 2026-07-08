@@ -71,7 +71,7 @@ class AvailabilityRoutesSpec extends CatsEffectSuite:
       description          = "Para festa",
       dailyRate            = price,
       stock                = stock,
-      attendantRequirement = AttendantRequirement.Optional
+      requiresMonitor = false
     ).toOption.get
     ctx.itemRepo.create(item).as(item)
 
@@ -83,7 +83,7 @@ class AvailabilityRoutesSpec extends CatsEffectSuite:
       description          = "Combo de festa",
       dailyRate            = price,
       items                = items.map((i, q) => ComboItemDefinition(i.id, q)),
-      attendantRequirement = AttendantRequirement.Optional
+      requiresMonitor = false
     ).toOption.get
     ctx.comboRepo.create(combo).as(combo)
 

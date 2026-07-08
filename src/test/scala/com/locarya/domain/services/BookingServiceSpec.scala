@@ -90,7 +90,7 @@ class BookingServiceSpec extends CatsEffectSuite:
       description          = "Para festa",
       dailyRate            = itemPrice,
       stock                = stock,
-      attendantRequirement = AttendantRequirement.Optional
+      requiresMonitor = false
     ).toOption.get
 
   private def seedItem(ctx: Ctx, stock: Int = 5, itemPrice: Money = price): IO[Item] =
@@ -476,7 +476,7 @@ class BookingServiceSpec extends CatsEffectSuite:
                         description          = "desc",
                         dailyRate            = price,
                         stock                = 5,
-                        attendantRequirement = AttendantRequirement.Optional
+                        requiresMonitor = false
                       ).toOption.get
       item2         = Item.create(
                         id                   = ItemId.generate,
@@ -485,7 +485,7 @@ class BookingServiceSpec extends CatsEffectSuite:
                         description          = "desc",
                         dailyRate            = price,
                         stock                = 5,
-                        attendantRequirement = AttendantRequirement.Optional
+                        requiresMonitor = false
                       ).toOption.get
       _            <- itemRepo.create(item1)
       _            <- itemRepo.create(item2)
@@ -707,7 +707,7 @@ class BookingServiceSpec extends CatsEffectSuite:
       description          = "Requer monitor",
       dailyRate            = price,
       stock                = 5,
-      attendantRequirement = AttendantRequirement.Required
+      requiresMonitor = true
     ).toOption.get
     ctx.itemRepo.create(item).as(item)
 

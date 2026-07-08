@@ -77,12 +77,12 @@ class ItemRoutesSpec extends CatsEffectSuite:
 
   private val validItemBody =
     """{
-      "name":                 "Cama Elástica Grande",
-      "description":          "Cama elástica para festas",
-      "dailyRate":            150.00,
-      "stock":                2,
-      "attendantRequirement": "Required",
-      "imageUrls":            ["https://example.com/img1.jpg","https://example.com/img2.jpg"]
+      "name":            "Cama Elástica Grande",
+      "description":     "Cama elástica para festas",
+      "dailyRate":       150.00,
+      "stock":           2,
+      "requiresMonitor": true,
+      "imageUrls":       ["https://example.com/img1.jpg","https://example.com/img2.jpg"]
     }"""
 
   private def authHeader(token: String) =
@@ -149,7 +149,7 @@ class ItemRoutesSpec extends CatsEffectSuite:
   }
 
   test("POST /api/v1/dashboard/items with stock = 0 returns 400") {
-    val badBody = validItemBody.replace("\"stock\":                2", "\"stock\":                0")
+    val badBody = validItemBody.replace("\"stock\":           2", "\"stock\":           0")
     for
       ctx      <- makeCtx
       auth     <- signupAndLogin(ctx)
@@ -162,8 +162,8 @@ class ItemRoutesSpec extends CatsEffectSuite:
 
   test("POST /api/v1/dashboard/items with no imageUrls returns 400") {
     val badBody = validItemBody.replace(
-      """"imageUrls":            ["https://example.com/img1.jpg","https://example.com/img2.jpg"]""",
-      """"imageUrls":            []"""
+      """"imageUrls":       ["https://example.com/img1.jpg","https://example.com/img2.jpg"]""",
+      """"imageUrls":       []"""
     )
     for
       ctx      <- makeCtx
@@ -190,12 +190,12 @@ class ItemRoutesSpec extends CatsEffectSuite:
   test("PUT /api/v1/dashboard/items/:id updates item and returns 200") {
     val updatedBody =
       """{
-        "name":                 "Cama Elástica Atualizada",
-        "description":          "Nova descrição",
-        "dailyRate":            200.00,
-        "stock":                4,
-        "attendantRequirement": "Optional",
-        "imageUrls":            ["https://example.com/new.jpg"]
+        "name":            "Cama Elástica Atualizada",
+        "description":     "Nova descrição",
+        "dailyRate":       200.00,
+        "stock":           4,
+        "requiresMonitor": false,
+        "imageUrls":       ["https://example.com/new.jpg"]
       }"""
     for
       ctx        <- makeCtx

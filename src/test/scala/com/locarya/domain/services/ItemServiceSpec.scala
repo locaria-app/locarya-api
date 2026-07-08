@@ -34,13 +34,13 @@ class ItemServiceSpec extends CatsEffectSuite:
     yield Ctx(svc, itemRepo, imageRepo, bookingRepo)
 
   private val validRequest = CreateItemRequest(
-    providerId           = providerId,
-    name                 = "Cama Elástica",
-    description          = "Cama elástica infantil",
-    dailyRate            = price,
-    stock                = 3,
-    attendantRequirement = AttendantRequirement.Required,
-    imageUrls            = List(url1, url2)
+    providerId      = providerId,
+    name            = "Cama Elástica",
+    description     = "Cama elástica infantil",
+    dailyRate       = price,
+    stock           = 3,
+    requiresMonitor = true,
+    imageUrls       = List(url1, url2)
   )
 
   // ── createItem happy path ────────────────────────────────────────────────────
@@ -64,7 +64,7 @@ class ItemServiceSpec extends CatsEffectSuite:
         assertEquals(item.stock, 3)
         assertEquals(item.dailyRate, price)
         assertEquals(item.isActive, true)
-        assertEquals(item.attendantRequirement, AttendantRequirement.Required)
+        assertEquals(item.requiresMonitor, true)
       }
   }
 
@@ -123,14 +123,14 @@ class ItemServiceSpec extends CatsEffectSuite:
       ctx    <- makeCtx
       itemId <- ctx.svc.createItem(validRequest)
       _      <- ctx.svc.updateItem(UpdateItemRequest(
-                  itemId               = itemId,
-                  providerId           = providerId,
-                  name                 = "Mesa Dobrável",
-                  description          = "Mesa de festa",
-                  dailyRate            = price,
-                  stock                = 5,
-                  attendantRequirement = AttendantRequirement.NotAllowed,
-                  imageUrls            = List(url2)
+                  itemId          = itemId,
+                  providerId      = providerId,
+                  name            = "Mesa Dobrável",
+                  description     = "Mesa de festa",
+                  dailyRate       = price,
+                  stock           = 5,
+                  requiresMonitor = false,
+                  imageUrls       = List(url2)
                 ))
       stored <- ctx.itemRepo.findById(itemId)
       images <- ctx.imageRepo.findByItemId(itemId)
@@ -147,14 +147,14 @@ class ItemServiceSpec extends CatsEffectSuite:
       ctx    <- makeCtx
       itemId <- ctx.svc.createItem(validRequest)
       result <- ctx.svc.updateItem(UpdateItemRequest(
-                   itemId               = itemId,
-                   providerId           = otherId,
-                   name                 = "Hack",
-                   description          = "",
-                   dailyRate            = price,
-                   stock                = 1,
-                   attendantRequirement = AttendantRequirement.Optional,
-                   imageUrls            = List(url1)
+                   itemId          = itemId,
+                   providerId      = otherId,
+                   name            = "Hack",
+                   description     = "",
+                   dailyRate       = price,
+                   stock           = 1,
+                   requiresMonitor = false,
+                   imageUrls       = List(url1)
                  )).attempt
     yield assert(result.isLeft, "Expected failure for wrong provider")
   }
@@ -255,13 +255,13 @@ class ItemServiceSpec extends CatsEffectSuite:
       ctx    <- makeCtx
       item   <- cats.effect.IO.fromEither(
                   Item.create(
-                    id                   = ItemId.generate,
-                    providerId           = providerId,
-                    name                 = "No Images Item",
-                    description          = "desc",
-                    dailyRate            = price,
-                    stock                = 1,
-                    attendantRequirement = AttendantRequirement.Optional
+                    id              = ItemId.generate,
+                    providerId      = providerId,
+                    name            = "No Images Item",
+                    description     = "desc",
+                    dailyRate       = price,
+                    stock           = 1,
+                    requiresMonitor = false
                   ).left.map(e => new RuntimeException(e.toString))
                 )
       _      <- ctx.itemRepo.create(item)

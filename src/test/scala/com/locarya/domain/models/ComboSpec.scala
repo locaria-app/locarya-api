@@ -23,7 +23,7 @@ class ComboSpec extends FunSuite {
       description = "Complete party equipment",
       dailyRate = dailyRate,
       items = items,
-      attendantRequirement = AttendantRequirement.Required
+      requiresMonitor = true
     )
 
     assert(result.isRight, "Should create Combo with valid data")
@@ -34,7 +34,7 @@ class ComboSpec extends FunSuite {
       assertEquals(combo.description, "Complete party equipment")
       assertEquals(combo.dailyRate, dailyRate)
       assertEquals(combo.items.size, 2)
-      assertEquals(combo.attendantRequirement, AttendantRequirement.Required)
+      assertEquals(combo.requiresMonitor, true)
     }
   }
 
@@ -51,7 +51,7 @@ class ComboSpec extends FunSuite {
       description = "Some description",
       dailyRate = dailyRate,
       items = List(ComboItemDefinition(itemId, 1)),
-      attendantRequirement = AttendantRequirement.Optional
+      requiresMonitor = false
     )
 
     assert(result.isLeft, "Should fail to create Combo with empty name")
@@ -73,7 +73,7 @@ class ComboSpec extends FunSuite {
       description = "Some description",
       dailyRate = dailyRate,
       items = List(ComboItemDefinition(itemId, 1)),
-      attendantRequirement = AttendantRequirement.Optional
+      requiresMonitor = false
     )
 
     assert(result.isLeft, "Should fail to create Combo with whitespace-only name")
@@ -94,7 +94,7 @@ class ComboSpec extends FunSuite {
       description = "Should fail",
       dailyRate = dailyRate,
       items = List.empty,
-      attendantRequirement = AttendantRequirement.Optional
+      requiresMonitor = false
     )
 
     assert(result.isLeft, "Should fail to create Combo with empty items list")
@@ -116,7 +116,7 @@ class ComboSpec extends FunSuite {
       description = "Has zero quantity",
       dailyRate = dailyRate,
       items = List(ComboItemDefinition(itemId, 0)),
-      attendantRequirement = AttendantRequirement.Optional
+      requiresMonitor = false
     )
 
     assert(result.isLeft, "Should fail to create Combo with zero quantity item")
@@ -138,7 +138,7 @@ class ComboSpec extends FunSuite {
       description = "Has negative quantity",
       dailyRate = dailyRate,
       items = List(ComboItemDefinition(itemId, -1)),
-      attendantRequirement = AttendantRequirement.Optional
+      requiresMonitor = false
     )
 
     assert(result.isLeft, "Should fail to create Combo with negative quantity item")
@@ -160,7 +160,7 @@ class ComboSpec extends FunSuite {
       description = "  Complete party equipment  ",
       dailyRate = dailyRate,
       items = List(ComboItemDefinition(itemId, 1)),
-      attendantRequirement = AttendantRequirement.Required
+      requiresMonitor = true
     )
 
     assert(result.isRight, "Should create Combo and trim whitespace")

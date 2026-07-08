@@ -46,7 +46,7 @@ class AvailabilityServiceSpec extends CatsEffectSuite:
       description          = "Para festa",
       dailyRate            = price,
       stock                = stock,
-      attendantRequirement = AttendantRequirement.Optional
+      requiresMonitor = false
     ).toOption.get
     ctx.itemRepo.create(item).as(item)
 
@@ -58,7 +58,7 @@ class AvailabilityServiceSpec extends CatsEffectSuite:
       description          = "Combo de festa",
       dailyRate            = price,
       items                = items.map((i, q) => ComboItemDefinition(i.id, q)),
-      attendantRequirement = AttendantRequirement.Optional
+      requiresMonitor = false
     ).toOption.get
     ctx.comboRepo.create(combo).as(combo)
 
@@ -89,7 +89,7 @@ class AvailabilityServiceSpec extends CatsEffectSuite:
       description          = "Removido do catálogo",
       dailyRate            = price,
       stock                = stock,
-      attendantRequirement = AttendantRequirement.Optional,
+      requiresMonitor = false,
       isActive             = false
     ).toOption.get
     ctx.itemRepo.create(item).as(item)
@@ -343,7 +343,7 @@ class AvailabilityServiceSpec extends CatsEffectSuite:
       comboRepo         <- InMemoryComboRepository.make[IO]
       bookingRepo       <- InMemoryBookingRepository.make[IO]
       svc                = { given Logger[IO] = logger; AvailabilityServiceImpl[IO](itemRepo, comboRepo, bookingRepo) }
-      item               = Item.create(ItemId.generate, providerId, "X", "d", price, 1, AttendantRequirement.Optional).toOption.get
+      item               = Item.create(ItemId.generate, providerId, "X", "d", price, 1, false).toOption.get
       _                 <- itemRepo.create(item)
       _                 <- svc.checkAvailability(List((item.id, 1)), date, None)
       logs              <- getLogs
