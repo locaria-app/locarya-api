@@ -21,7 +21,7 @@ _Avoid_: Recreador, atendente, funcionário
 ### Produtos e Inventário
 
 **Item**:
-Qualquer coisa que pode ser alugada — individual (ex: uma cama elástica) ou agrupada (Combo). Cada Item tem quantidade em estoque, configuração de Monitor (obrigatório/opcional/não permite), status (ativo/inativo) e **imagens** (1 principal obrigatória + até 4 adicionais, máximo 5). Primeira imagem é o destaque na Loja, demais formam galeria. Apenas Itens ativos aparecem na Loja. Itens que já têm Reservas não podem ser deletados, apenas desativados.
+Qualquer coisa que pode ser alugada — individual (ex: uma cama elástica) ou agrupada (Combo). Cada Item tem quantidade em estoque, indicação se exige Monitor (sim/não), status (ativo/inativo) e **imagens** (1 principal obrigatória + até 4 adicionais, máximo 5). Primeira imagem é o destaque na Loja, demais formam galeria. Apenas Itens ativos aparecem na Loja. Itens que já têm Reservas não podem ser deletados, apenas desativados.
 _Avoid_: Produto, brinquedo (como termo técnico), equipamento
 
 **Combo**:
@@ -73,12 +73,13 @@ _Avoid_: Assinatura, tier, nível
 - **Itens** ou **Combos** que já têm Reservas não podem ser deletados, apenas desativados
 - **Itens** têm 1 imagem principal (obrigatória) + até 4 imagens adicionais (total: 5 máximo). Armazenadas em tabela separada com ordem de exibição
 - **Combos** têm 1 imagem principal (obrigatória) + até 4 imagens adicionais (total: 5 máximo), independentes das imagens dos Itens que os compõem. Armazenadas em tabela separada com ordem de exibição. Obrigatórias na criação e substituição total no update
-- Um **Item** pode exigir **Monitor** (obrigatório), permitir **Monitor** (opcional) ou não permitir
+- Um **Item** pode ser marcado como "exige Monitor" (sim/não). Independente dessa marcação, o Locador sempre pode associar um **Monitor** a qualquer Item de uma Reserva — a marcação só determina se o sistema avisa quando falta
+- Um **Monitor** é associado a um Item específico dentro da Reserva, não à Reserva como um todo. Um Combo é tratado como uma unidade só: se ele exige Monitor (porque algum Item que o compõe exige), o Monitor é associado ao Combo, não a um Item individual dentro dele
 - Uma **Reserva** pertence a um **Locador** e a um **Cliente**
 - Uma **Reserva** contém um ou mais **Itens** (individuais e/ou Combos), uma data, endereço de entrega
 - Uma **Reserva** pode ter **Pagamentos** associados
 - Uma **Reserva** pode ter um **Contrato** (se o Locador habilitar contratos)
-- Uma **Reserva** que requer Monitor deve ter um **Monitor** atribuído
+- Ao confirmar uma **Reserva** com um Item que exige Monitor sem nenhum associado, o Locador recebe um aviso e pode confirmar mesmo assim assumindo o risco — Monitores costumam ser freelancers que só confirmam presença em cima da hora. Essa confirmação sem Monitor fica registrada na Reserva
 - Disponibilidade de **Item**: se há Reserva Confirmada para uma data, a quantidade do Item (ou dos Itens que compõem o Combo) é descontada do estoque para aquele dia inteiro (MVP não considera horários para disponibilidade)
 
 ## Status de Reserva
@@ -137,9 +138,9 @@ Locador gera link de pagamento no Dashboard → envia para Cliente (ex: WhatsApp
 
 **Domain Expert:** Sim! O João define o preço do Combo na hora que monta. Geralmente é mais barato que comprar separado (incentivo para o Cliente fechar o pacote).
 
-**Dev:** E o Monitor? Se a cama elástica gigante precisa obrigatoriamente de Monitor, e o João só tem um Monitor disponível, isso também bloqueia?
+**Dev:** E o Monitor? Se a cama elástica gigante exige Monitor para operar, e o João não tem nenhum disponível ainda, isso bloqueia a confirmação?
 
-**Domain Expert:** Sim, mas isso é validado quando o João confirma a Reserva. O sistema avisa "você precisa atribuir um Monitor para esse Item". Se não tem Monitor disponível naquela data, ele não consegue confirmar.
+**Domain Expert:** Não bloqueia. Isso é avisado quando o João confirma a Reserva — o sistema mostra "esse Item exige Monitor, nenhum associado ainda". Ele pode associar um Monitor cadastrado ali mesmo, ou confirmar assumindo o risco. Na prática monitores são freelancers, muita gente só confirma presença em cima da hora — não faz sentido travar a Reserva por causa disso.
 
 **Dev:** E pagamento — quando o Cliente paga no checkout, o dinheiro vai direto pro João?
 
