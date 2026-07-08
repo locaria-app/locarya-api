@@ -30,7 +30,6 @@ class BookingSpec extends FunSuite {
       assertEquals(booking.startDate, startDate)
       assertEquals(booking.endDate, endDate)
       assertEquals(booking.status, BookingStatus.Pending)
-      assertEquals(booking.attendantId, None)
     }
   }
 
@@ -212,31 +211,6 @@ class BookingSpec extends FunSuite {
     result.foreach { updatedBooking =>
       assertEquals(updatedBooking.status, BookingStatus.Confirmed)
     }
-  }
-
-  test("assign attendant to Booking succeeds") {
-    val bookingId = BookingId.generate
-    val providerId = ProviderId.generate
-    val customerId = CustomerId.generate
-    val itemId = ItemId.generate
-    val attendantId = AttendantId.generate
-    val totalAmount = Money.fromAmount(BigDecimal("100.00")).toOption.get
-    val startDate = LocalDate.of(2026, 6, 1)
-    val endDate = LocalDate.of(2026, 6, 5)
-
-    val booking = Booking.create(
-      id = bookingId,
-      providerId = providerId,
-      customerId = customerId,
-      items = List(BookedIndividualItem(itemId, 1)),
-      startDate = startDate,
-      endDate = endDate,
-      totalAmount = totalAmount
-    ).toOption.get
-
-    val updatedBooking = booking.assignAttendant(attendantId)
-
-    assertEquals(updatedBooking.attendantId, Some(attendantId))
   }
 
   test("create Booking with delivery address for delivery succeeds") {

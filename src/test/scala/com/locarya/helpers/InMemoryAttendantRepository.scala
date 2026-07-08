@@ -8,7 +8,7 @@ import com.locarya.domain.ports.AttendantRepository
 
 final class InMemoryAttendantRepository[F[_]: Async] private (
   state:     Ref[F, Map[AttendantId, Attendant]],
-  joinState: Ref[F, Map[BookingId, Set[AttendantId]]]
+  joinState: Ref[F, Map[(BookingId, BookingLineRef), Set[AttendantId]]]
 ) extends AttendantRepository[F]:
 
   def create(attendant: Attendant): F[Attendant] =
@@ -31,26 +31,28 @@ final class InMemoryAttendantRepository[F[_]: Async] private (
   def findActiveByProvider(providerId: ProviderId): F[List[Attendant]] =
     state.get.map(_.values.filter(a => a.providerId == providerId && a.isActive).toList)
 
-  def findByBooking(bookingId: BookingId): F[List[Attendant]] =
-    for
-      join         <- joinState.get
-      attendantIds  = join.getOrElse(bookingId, Set.empty)
-      allAttendants <- state.get
-    yield attendantIds.flatMap(allAttendants.get).toList
-
-  def assignToBooking(bookingId: BookingId, attendantId: AttendantId): F[Unit] =
+  def assignToBookingLine(bookingId: BookingId, lineRef: BookingLineRef, attendantId: AttendantId): F[Unit] =
+    val key = (bookingId, lineRef)
     joinState.update(store =>
-      store + (bookingId -> (store.getOrElse(bookingId, Set.empty) + attendantId))
+      store + (key -> (store.getOrElse(key, Set.empty) + attendantId))
     )
 
-  def removeFromBooking(bookingId: BookingId, attendantId: AttendantId): F[Unit] =
+  def removeFromBookingLine(bookingId: BookingId, lineRef: BookingLineRef, attendantId: AttendantId): F[Unit] =
+    val key = (bookingId, lineRef)
     joinState.update(store =>
-      store + (bookingId -> (store.getOrElse(bookingId, Set.empty) - attendantId))
+      store + (key -> (store.getOrElse(key, Set.empty) - attendantId))
     )
+
+  def findByBookingGrouped(bookingId: BookingId): F[Map[BookingLineRef, Set[AttendantId]]] =
+    joinState.get.map { store =>
+      store.collect {
+        case ((bid, lineRef), ids) if bid == bookingId && ids.nonEmpty => lineRef -> ids
+      }
+    }
 
 object InMemoryAttendantRepository:
   def make[F[_]: Async]: F[InMemoryAttendantRepository[F]] =
     for
       state     <- Ref.of[F, Map[AttendantId, Attendant]](Map.empty)
-      joinState <- Ref.of[F, Map[BookingId, Set[AttendantId]]](Map.empty)
+      joinState <- Ref.of[F, Map[(BookingId, BookingLineRef), Set[AttendantId]]](Map.empty)
     yield new InMemoryAttendantRepository(state, joinState)

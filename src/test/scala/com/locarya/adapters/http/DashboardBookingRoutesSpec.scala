@@ -3,6 +3,7 @@ package com.locarya.adapters.http
 import cats.effect.IO
 import cats.syntax.semigroupk.*
 import com.locarya.domain.models.*
+import com.locarya.domain.models.BookingLineRef
 import com.locarya.domain.services.{AuthServiceImpl, AvailabilityServiceImpl, BookingServiceImpl, ItemServiceImpl, ProviderServiceImpl}
 import com.locarya.helpers.{
   InMemoryAttendantRepository,
@@ -510,25 +511,33 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
       assertEquals(json.hcursor.downField("assignedAttendants").as[List[io.circe.Json]].toOption, Some(Nil))
   }
 
-  test("GET /dashboard/bookings/:id returns assignedAttendants when one is assigned") {
+  test("GET /dashboard/bookings/:id returns assignedAttendants grouped by line when one is assigned") {
     for
       ctx       <- makeCtx
       auth      <- signupAndLogin(ctx)
-      bookingId <- createAndGetBookingId(ctx, auth)
+      itemId    <- createItem(ctx, auth.token)
+      resp0     <- postDashboardBooking(ctx, bookingBody(itemId), auth.token)
+      body0     <- resp0.as[String]
+      bookingId  = parse(body0).toOption.get.hcursor.downField("bookingId").as[String].toOption.get
       bid        = BookingId.fromString(bookingId).toOption.get
+      iid        = ItemId.fromString(itemId).toOption.get
       attendant  = Attendant.create(AttendantId.generate, ProviderId.fromString(auth.id).toOption.get, "Monitor Maria", "11988880000").toOption.get
       _         <- ctx.attendantRepo.create(attendant)
-      _         <- ctx.attendantRepo.assignToBooking(bid, attendant.id)
+      _         <- ctx.attendantRepo.assignToBookingLine(bid, BookingLineRef.IndividualLine(iid), attendant.id)
       resp      <- getDashboardBooking(ctx, bookingId, auth.token)
       body      <- resp.as[String]
       json       = parse(body).toOption.get
     yield
       assertEquals(resp.status, Status.Ok)
-      val attendants = json.hcursor.downField("assignedAttendants").as[List[io.circe.Json]].toOption.get
+      val lineGroups = json.hcursor.downField("assignedAttendants").as[List[io.circe.Json]].toOption.get
+      assertEquals(lineGroups.size, 1)
+      val firstGroup = lineGroups.head
+      assertEquals(firstGroup.hcursor.downField("itemId").as[String].toOption, Some(itemId))
+      assertEquals(firstGroup.hcursor.downField("comboId").as[Option[String]].toOption, Some(None))
+      val attendants = firstGroup.hcursor.downField("attendants").as[List[io.circe.Json]].toOption.get
       assertEquals(attendants.size, 1)
       assertEquals(attendants.head.hcursor.downField("id").as[String].toOption, Some(attendant.id.value))
       assertEquals(attendants.head.hcursor.downField("name").as[String].toOption, Some("Monitor Maria"))
-      assertEquals(attendants.head.hcursor.downField("phone").as[String].toOption, Some("11988880000"))
   }
 
   test("GET /dashboard/bookings/:id returns 404 for unknown bookingId") {

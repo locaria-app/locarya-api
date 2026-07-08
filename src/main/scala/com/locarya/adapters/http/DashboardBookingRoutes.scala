@@ -5,8 +5,10 @@ import cats.syntax.all.*
 import com.locarya.adapters.http.TapirSupport.{ErrorBody, securedBase, validateBearer}
 import com.locarya.domain.models.ValidationError
 import com.locarya.domain.models.*
-import com.locarya.domain.ports.{BookingLineInput, BookingService, CreateBookingByProviderRequest, CustomerInput, DashboardBookingDetailView, DashboardBookingView}
+import com.locarya.domain.models.BookingLineRef
+import com.locarya.domain.ports.{BookingLineAttendants, BookingLineInput, BookingService, CreateBookingByProviderRequest, CustomerInput, DashboardBookingDetailView, DashboardBookingView}
 import io.circe.generic.auto.*
+import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 import org.http4s.HttpRoutes
@@ -78,6 +80,16 @@ object DashboardBookingRoutes:
 
   private case class AttendantResponse(id: String, name: String, phone: String)
 
+  private case class LineAttendantsResponse(
+    itemId:     Option[String],
+    comboId:    Option[String],
+    attendants: List[AttendantResponse]
+  )
+  private given io.circe.Encoder[AttendantResponse]     = deriveEncoder
+  private given io.circe.Decoder[AttendantResponse]     = deriveDecoder
+  private given io.circe.Encoder[LineAttendantsResponse] = deriveEncoder
+  private given io.circe.Decoder[LineAttendantsResponse] = deriveDecoder
+
   private case class BookingDetailResponse(
     id:                 String,
     customer:           CustomerResponse,
@@ -88,7 +100,7 @@ object DashboardBookingRoutes:
     totalAmount:        BigDecimal,
     createdBy:          String,
     bookingCode:        String,
-    assignedAttendants: List[AttendantResponse]
+    assignedAttendants: List[LineAttendantsResponse]
   )
 
   private def toKebab(s: String): String =
@@ -148,7 +160,12 @@ object DashboardBookingRoutes:
       totalAmount        = base.totalAmount,
       createdBy          = base.createdBy,
       bookingCode        = base.bookingCode,
-      assignedAttendants = view.assignedAttendants.map(a => AttendantResponse(a.id.value, a.name, a.phone))
+      assignedAttendants = view.assignedAttendants.map { la =>
+        val (itemIdOpt, comboIdOpt) = la.lineRef match
+          case BookingLineRef.IndividualLine(iid) => (Some(iid.value), None)
+          case BookingLineRef.ComboLine(cid)      => (None, Some(cid.value))
+        LineAttendantsResponse(itemIdOpt, comboIdOpt, la.attendants.map(a => AttendantResponse(a.id.value, a.name, a.phone)))
+      }
     )
 
   private def toBookingListResponse(view: DashboardBookingView): BookingListResponse =

@@ -20,6 +20,13 @@ final class AttendantRepositoryLive[F[_]: Async] private (xa: Transactor[F])
     isActive:   Boolean
   ) derives Read
 
+  private case class GroupedRow(
+    itemType:    String,
+    itemId:      Option[UUID],
+    comboId:     Option[UUID],
+    attendantId: UUID
+  ) derives Read
+
   private def rowToAttendant(row: AttendantRow): F[Attendant] =
     (for
       id         <- AttendantId.fromString(row.id.toString)
@@ -77,29 +84,94 @@ final class AttendantRepositoryLive[F[_]: Async] private (xa: Transactor[F])
       .transact(xa)
       .flatMap(_.traverse(rowToAttendant))
 
-  override def findByBooking(bookingId: BookingId): F[List[Attendant]] =
-    val uuid = UUID.fromString(bookingId.value)
-    sql"""SELECT a.id, a.provider_id, a.name, a.phone, a.is_active
-          FROM attendants a
-          JOIN booking_attendants ba ON ba.attendant_id = a.id
-          WHERE ba.booking_id = $uuid"""
-      .query[AttendantRow]
+  override def assignToBookingLine(bookingId: BookingId, lineRef: BookingLineRef, attendantId: AttendantId): F[Unit] =
+    val bId  = UUID.fromString(bookingId.value)
+    val aId  = UUID.fromString(attendantId.value)
+    val frag = lineRef match
+      case BookingLineRef.IndividualLine(itemId) =>
+        val iId = UUID.fromString(itemId.value)
+        sql"""INSERT INTO booking_attendants (id, booking_id, attendant_id, booking_item_id)
+              SELECT gen_random_uuid(), $bId, $aId, bi.id
+              FROM booking_items bi
+              WHERE bi.booking_id = $bId
+                AND bi.item_type  = 'INDIVIDUAL'
+                AND bi.item_id    = $iId
+              LIMIT 1"""
+      case BookingLineRef.ComboLine(comboId) =>
+        val cId = UUID.fromString(comboId.value)
+        sql"""INSERT INTO booking_attendants (id, booking_id, attendant_id, booking_item_id)
+              SELECT gen_random_uuid(), $bId, $aId, bi.id
+              FROM booking_items bi
+              WHERE bi.booking_id = $bId
+                AND bi.item_type  = 'COMBO'
+                AND bi.combo_id   = $cId
+              LIMIT 1"""
+    frag.update.run.transact(xa).void
+
+  override def removeFromBookingLine(bookingId: BookingId, lineRef: BookingLineRef, attendantId: AttendantId): F[Unit] =
+    val bId  = UUID.fromString(bookingId.value)
+    val aId  = UUID.fromString(attendantId.value)
+    val frag = lineRef match
+      case BookingLineRef.IndividualLine(itemId) =>
+        val iId = UUID.fromString(itemId.value)
+        sql"""DELETE FROM booking_attendants
+              WHERE attendant_id   = $aId
+                AND booking_item_id = (
+                  SELECT id FROM booking_items
+                  WHERE booking_id = $bId
+                    AND item_type  = 'INDIVIDUAL'
+                    AND item_id    = $iId
+                  LIMIT 1
+                )"""
+      case BookingLineRef.ComboLine(comboId) =>
+        val cId = UUID.fromString(comboId.value)
+        sql"""DELETE FROM booking_attendants
+              WHERE attendant_id   = $aId
+                AND booking_item_id = (
+                  SELECT id FROM booking_items
+                  WHERE booking_id = $bId
+                    AND item_type  = 'COMBO'
+                    AND combo_id   = $cId
+                  LIMIT 1
+                )"""
+    frag.update.run.transact(xa).void
+
+  override def findByBookingGrouped(bookingId: BookingId): F[Map[BookingLineRef, Set[AttendantId]]] =
+    val bId = UUID.fromString(bookingId.value)
+    sql"""SELECT bi.item_type, bi.item_id, bi.combo_id, ba.attendant_id
+          FROM booking_attendants ba
+          JOIN booking_items bi ON bi.id = ba.booking_item_id
+          WHERE bi.booking_id = $bId"""
+      .query[GroupedRow]
       .to[List]
       .transact(xa)
-      .flatMap(_.traverse(rowToAttendant))
-
-  override def assignToBooking(bookingId: BookingId, attendantId: AttendantId): F[Unit] =
-    sql"""INSERT INTO booking_attendants (id, booking_id, attendant_id)
-          VALUES (${UUID.randomUUID()},
-                  ${UUID.fromString(bookingId.value)},
-                  ${UUID.fromString(attendantId.value)})"""
-      .update.run.transact(xa).void
-
-  override def removeFromBooking(bookingId: BookingId, attendantId: AttendantId): F[Unit] =
-    sql"""DELETE FROM booking_attendants
-          WHERE booking_id = ${UUID.fromString(bookingId.value)}
-            AND attendant_id = ${UUID.fromString(attendantId.value)}"""
-      .update.run.transact(xa).void
+      .flatMap { rows =>
+        rows.traverse { row =>
+          val lineRefF: F[BookingLineRef] = row.itemType match
+            case "INDIVIDUAL" =>
+              row.itemId match
+                case Some(uuid) =>
+                  ItemId.fromString(uuid.toString)
+                    .fold(err => Async[F].raiseError(new RuntimeException(s"DB→domain mapping failed: $err")), id => BookingLineRef.IndividualLine(id).pure[F])
+                case None =>
+                  Async[F].raiseError(new RuntimeException("INDIVIDUAL booking_item has null item_id"))
+            case "COMBO" =>
+              row.comboId match
+                case Some(uuid) =>
+                  ComboId.fromString(uuid.toString)
+                    .fold(err => Async[F].raiseError(new RuntimeException(s"DB→domain mapping failed: $err")), id => BookingLineRef.ComboLine(id).pure[F])
+                case None =>
+                  Async[F].raiseError(new RuntimeException("COMBO booking_item has null combo_id"))
+            case other =>
+              Async[F].raiseError(new RuntimeException(s"Unknown item_type: $other"))
+          val attendantIdF: F[AttendantId] =
+            AttendantId.fromString(row.attendantId.toString)
+              .fold(err => Async[F].raiseError(new RuntimeException(s"DB→domain mapping failed: $err")), _.pure[F])
+          (lineRefF, attendantIdF).tupled
+        }.map { pairs =>
+          pairs.groupMap(_._1)(_._2).map { case (k, vs) => k -> vs.toSet }
+        }
+      }
 
 object AttendantRepositoryLive:
   def make[F[_]: Async](xa: Transactor[F]): AttendantRepository[F] =

@@ -2,6 +2,7 @@ package com.locarya.domain.ports
 
 import cats.effect.IO
 import com.locarya.domain.models.*
+import com.locarya.domain.models.BookingLineRef
 import com.locarya.helpers.InMemoryAttendantRepository
 import munit.CatsEffectSuite
 
@@ -85,32 +86,76 @@ class AttendantRepositorySpec extends CatsEffectSuite:
     yield assertEquals(list.map(_.id), List(active.id))
   }
 
-  test("assignToBooking and findByBooking return assigned attendants") {
+  test("assignToBookingLine and findByBookingGrouped return attendant under correct line") {
     val bookingId = BookingId.generate
+    val itemId    = ItemId.generate
+    val lineRef   = BookingLineRef.IndividualLine(itemId)
     for
       repo      <- makeRepo
       attendant  = makeAttendant()
       _         <- repo.create(attendant)
-      _         <- repo.assignToBooking(bookingId, attendant.id)
-      found     <- repo.findByBooking(bookingId)
-    yield assertEquals(found.map(_.id), List(attendant.id))
+      _         <- repo.assignToBookingLine(bookingId, lineRef, attendant.id)
+      grouped   <- repo.findByBookingGrouped(bookingId)
+    yield
+      assertEquals(grouped.get(lineRef).map(_.toList), Some(List(attendant.id)))
   }
 
-  test("removeFromBooking unassigns attendant from booking") {
+  test("assignToBookingLine with ComboLine groups under combo key") {
     val bookingId = BookingId.generate
+    val comboId   = ComboId.generate
+    val lineRef   = BookingLineRef.ComboLine(comboId)
     for
       repo      <- makeRepo
       attendant  = makeAttendant()
       _         <- repo.create(attendant)
-      _         <- repo.assignToBooking(bookingId, attendant.id)
-      _         <- repo.removeFromBooking(bookingId, attendant.id)
-      found     <- repo.findByBooking(bookingId)
-    yield assertEquals(found, Nil)
+      _         <- repo.assignToBookingLine(bookingId, lineRef, attendant.id)
+      grouped   <- repo.findByBookingGrouped(bookingId)
+    yield
+      assertEquals(grouped.get(lineRef).map(_.toList), Some(List(attendant.id)))
   }
 
-  test("findByBooking returns empty list for booking with no attendants") {
+  test("removeFromBookingLine clears only that line's attendant") {
+    val bookingId  = BookingId.generate
+    val itemId1    = ItemId.generate
+    val itemId2    = ItemId.generate
+    val line1      = BookingLineRef.IndividualLine(itemId1)
+    val line2      = BookingLineRef.IndividualLine(itemId2)
     for
-      repo  <- makeRepo
-      found <- repo.findByBooking(BookingId.generate)
-    yield assertEquals(found, Nil)
+      repo       <- makeRepo
+      attendant1  = makeAttendant()
+      attendant2  = makeAttendant()
+      _          <- repo.create(attendant1)
+      _          <- repo.create(attendant2)
+      _          <- repo.assignToBookingLine(bookingId, line1, attendant1.id)
+      _          <- repo.assignToBookingLine(bookingId, line2, attendant2.id)
+      _          <- repo.removeFromBookingLine(bookingId, line1, attendant1.id)
+      grouped    <- repo.findByBookingGrouped(bookingId)
+    yield
+      assert(grouped.get(line1).forall(_.isEmpty), "line1 should be empty after removal")
+      assertEquals(grouped.get(line2).map(_.toList), Some(List(attendant2.id)))
+  }
+
+  test("findByBookingGrouped returns empty map for booking with no assignments") {
+    for
+      repo    <- makeRepo
+      grouped <- repo.findByBookingGrouped(BookingId.generate)
+    yield assertEquals(grouped, Map.empty)
+  }
+
+  test("two lines on same booking each track their own attendant independently") {
+    val bookingId = BookingId.generate
+    val line1     = BookingLineRef.IndividualLine(ItemId.generate)
+    val line2     = BookingLineRef.ComboLine(ComboId.generate)
+    for
+      repo       <- makeRepo
+      attendant1  = makeAttendant()
+      attendant2  = makeAttendant()
+      _          <- repo.create(attendant1)
+      _          <- repo.create(attendant2)
+      _          <- repo.assignToBookingLine(bookingId, line1, attendant1.id)
+      _          <- repo.assignToBookingLine(bookingId, line2, attendant2.id)
+      grouped    <- repo.findByBookingGrouped(bookingId)
+    yield
+      assertEquals(grouped.get(line1).map(_.toList), Some(List(attendant1.id)))
+      assertEquals(grouped.get(line2).map(_.toList), Some(List(attendant2.id)))
   }

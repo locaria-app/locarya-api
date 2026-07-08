@@ -3,6 +3,7 @@ package com.locarya.adapters.http
 import cats.effect.IO
 import cats.syntax.semigroupk.*
 import com.locarya.domain.models.*
+import com.locarya.domain.models.BookingLineRef
 import com.locarya.domain.services.{AttendantServiceImpl, AuthServiceImpl, ProviderServiceImpl}
 import com.locarya.helpers.{InMemoryAttendantRepository, InMemoryBookingRepository, InMemoryProviderRepository}
 import io.circe.parser.parse
@@ -262,23 +263,61 @@ class AttendantRoutesSpec extends CatsEffectSuite:
 
   // ── PUT /api/v1/dashboard/bookings/:id/attendants ────────────────────────────────
 
-  test("PUT /api/v1/dashboard/bookings/:id/attendants assigns attendant and returns 200") {
+  test("PUT /api/v1/dashboard/bookings/:id/attendants assigns attendant to item line and returns 200") {
     for
       ctx         <- makeCtx
       auth        <- signupAndLogin(ctx)
       createResp  <- postAttendant(ctx, auth.token)
       attendantId <- getAttendantId(createResp)
       bookingId    = BookingId.generate.value
+      itemId       = ItemId.generate.value
       assignResp  <- ctx.allRoutes.orNotFound(
+                       Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/v1/dashboard/bookings/$bookingId/attendants"))
+                         .withEntity(s"""{"attendantIds":["$attendantId"],"itemId":"$itemId"}""")
+                         .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
+                     )
+      bid          = BookingId.fromString(bookingId).toOption.get
+      iid          = ItemId.fromString(itemId).toOption.get
+      grouped     <- ctx.attendantRepo.findByBookingGrouped(bid)
+    yield
+      assertEquals(assignResp.status, Status.Ok)
+      assertEquals(grouped.get(BookingLineRef.IndividualLine(iid)).map(_.size), Some(1))
+  }
+
+  test("PUT /api/v1/dashboard/bookings/:id/attendants assigns attendant to combo line and returns 200") {
+    for
+      ctx         <- makeCtx
+      auth        <- signupAndLogin(ctx)
+      createResp  <- postAttendant(ctx, auth.token)
+      attendantId <- getAttendantId(createResp)
+      bookingId    = BookingId.generate.value
+      comboId      = ComboId.generate.value
+      assignResp  <- ctx.allRoutes.orNotFound(
+                       Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/v1/dashboard/bookings/$bookingId/attendants"))
+                         .withEntity(s"""{"attendantIds":["$attendantId"],"comboId":"$comboId"}""")
+                         .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
+                     )
+      bid          = BookingId.fromString(bookingId).toOption.get
+      cid          = ComboId.fromString(comboId).toOption.get
+      grouped     <- ctx.attendantRepo.findByBookingGrouped(bid)
+    yield
+      assertEquals(assignResp.status, Status.Ok)
+      assertEquals(grouped.get(BookingLineRef.ComboLine(cid)).map(_.size), Some(1))
+  }
+
+  test("PUT /api/v1/dashboard/bookings/:id/attendants returns 400 when neither itemId nor comboId is provided") {
+    for
+      ctx         <- makeCtx
+      auth        <- signupAndLogin(ctx)
+      createResp  <- postAttendant(ctx, auth.token)
+      attendantId <- getAttendantId(createResp)
+      bookingId    = BookingId.generate.value
+      resp        <- ctx.allRoutes.orNotFound(
                        Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/v1/dashboard/bookings/$bookingId/attendants"))
                          .withEntity(s"""{"attendantIds":["$attendantId"]}""")
                          .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
                      )
-      assigned    <- ctx.attendantRepo.findByBooking(BookingId.fromString(bookingId).toOption.get)
-    yield
-      assertEquals(assignResp.status, Status.Ok)
-      assertEquals(assigned.size, 1)
-      assertEquals(assigned.head.id.value, attendantId)
+    yield assertEquals(resp.status, Status.BadRequest)
   }
 
   test("PUT /api/v1/dashboard/bookings/:id/attendants returns 404 for unknown attendant id") {
@@ -286,10 +325,11 @@ class AttendantRoutesSpec extends CatsEffectSuite:
       ctx        <- makeCtx
       auth       <- signupAndLogin(ctx)
       bookingId   = BookingId.generate.value
+      itemId      = ItemId.generate.value
       bogusId     = AttendantId.generate.value
       resp       <- ctx.allRoutes.orNotFound(
                       Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/v1/dashboard/bookings/$bookingId/attendants"))
-                        .withEntity(s"""{"attendantIds":["$bogusId"]}""")
+                        .withEntity(s"""{"attendantIds":["$bogusId"],"itemId":"$itemId"}""")
                         .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
                     )
     yield assertEquals(resp.status, Status.NotFound)
@@ -306,9 +346,10 @@ class AttendantRoutesSpec extends CatsEffectSuite:
                          .withHeaders(authHeader(auth.token))
                      )
       bookingId    = BookingId.generate.value
+      itemId       = ItemId.generate.value
       resp        <- ctx.allRoutes.orNotFound(
                        Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/v1/dashboard/bookings/$bookingId/attendants"))
-                         .withEntity(s"""{"attendantIds":["$attendantId"]}""")
+                         .withEntity(s"""{"attendantIds":["$attendantId"],"itemId":"$itemId"}""")
                          .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
                      )
     yield assertEquals(resp.status, Status.BadRequest)
@@ -319,10 +360,54 @@ class AttendantRoutesSpec extends CatsEffectSuite:
       ctx        <- makeCtx
       bookingId   = BookingId.generate.value
       bogusId     = AttendantId.generate.value
+      itemId      = ItemId.generate.value
       resp       <- ctx.allRoutes.orNotFound(
                       Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/v1/dashboard/bookings/$bookingId/attendants"))
-                        .withEntity(s"""{"attendantIds":["$bogusId"]}""")
+                        .withEntity(s"""{"attendantIds":["$bogusId"],"itemId":"$itemId"}""")
                         .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
                     )
+    yield assertEquals(resp.status, Status.Unauthorized)
+  }
+
+  // ── DELETE /api/v1/dashboard/bookings/:id/attendants/:attendantId ────────
+
+  test("DELETE /api/v1/dashboard/bookings/:id/attendants/:attendantId removes assignment and returns 200") {
+    for
+      ctx         <- makeCtx
+      auth        <- signupAndLogin(ctx)
+      createResp  <- postAttendant(ctx, auth.token)
+      attendantId <- getAttendantId(createResp)
+      bookingId    = BookingId.generate.value
+      itemId       = ItemId.generate.value
+      _           <- ctx.allRoutes.orNotFound(
+                       Request[IO](Method.PUT, Uri.unsafeFromString(s"/api/v1/dashboard/bookings/$bookingId/attendants"))
+                         .withEntity(s"""{"attendantIds":["$attendantId"],"itemId":"$itemId"}""")
+                         .withHeaders(Header.Raw(ci"Content-Type", "application/json"), authHeader(auth.token))
+                     )
+      removeResp  <- ctx.allRoutes.orNotFound(
+                       Request[IO](Method.DELETE, Uri.unsafeFromString(
+                         s"/api/v1/dashboard/bookings/$bookingId/attendants/$attendantId?itemId=$itemId"
+                       ))
+                         .withHeaders(authHeader(auth.token))
+                     )
+      bid          = BookingId.fromString(bookingId).toOption.get
+      iid          = ItemId.fromString(itemId).toOption.get
+      grouped     <- ctx.attendantRepo.findByBookingGrouped(bid)
+    yield
+      assertEquals(removeResp.status, Status.Ok)
+      assert(grouped.get(BookingLineRef.IndividualLine(iid)).forall(_.isEmpty))
+  }
+
+  test("DELETE /api/v1/dashboard/bookings/:id/attendants/:attendantId returns 401 without auth") {
+    for
+      ctx         <- makeCtx
+      bookingId    = BookingId.generate.value
+      attendantId  = AttendantId.generate.value
+      itemId       = ItemId.generate.value
+      resp        <- ctx.allRoutes.orNotFound(
+                       Request[IO](Method.DELETE, Uri.unsafeFromString(
+                         s"/api/v1/dashboard/bookings/$bookingId/attendants/$attendantId?itemId=$itemId"
+                       ))
+                     )
     yield assertEquals(resp.status, Status.Unauthorized)
   }

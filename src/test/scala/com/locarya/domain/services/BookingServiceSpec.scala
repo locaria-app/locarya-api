@@ -2,6 +2,7 @@ package com.locarya.domain.services
 
 import cats.effect.IO
 import com.locarya.domain.models.*
+import com.locarya.domain.models.BookingLineRef
 import com.locarya.domain.ports.*
 import com.locarya.helpers.{
   CapturingLogger,
@@ -719,7 +720,7 @@ class BookingServiceSpec extends CatsEffectSuite:
       bid        = created.bookingId
       attendant  = Attendant.create(AttendantId.generate, ctx.provider.id, "Monitor Joao", "11900000000").toOption.get
       _         <- ctx.attendantRepo.create(attendant)
-      _         <- ctx.attendantRepo.assignToBooking(bid, attendant.id)
+      _         <- ctx.attendantRepo.assignToBookingLine(bid, BookingLineRef.IndividualLine(item.id), attendant.id)
       updated   <- ctx.svc.updateBookingStatus(ctx.provider.id, bid, BookingStatus.Confirmed, None)
     yield assertEquals(updated.status, BookingStatus.Confirmed)
   }
@@ -758,7 +759,7 @@ class BookingServiceSpec extends CatsEffectSuite:
       failed    <- ctx.svc.updateBookingStatus(ctx.provider.id, bid, BookingStatus.Confirmed, None).attempt
       attendant  = Attendant.create(AttendantId.generate, ctx.provider.id, "Monitor Maria", "11900000001").toOption.get
       _         <- ctx.attendantRepo.create(attendant)
-      _         <- ctx.attendantRepo.assignToBooking(bid, attendant.id)
+      _         <- ctx.attendantRepo.assignToBookingLine(bid, BookingLineRef.IndividualLine(item.id), attendant.id)
       updated   <- ctx.svc.updateBookingStatus(ctx.provider.id, bid, BookingStatus.Confirmed, None)
     yield
       assert(failed.isLeft, "Expected confirmation to fail without attendant")
@@ -836,19 +837,21 @@ class BookingServiceSpec extends CatsEffectSuite:
       assertEquals(detail.assignedAttendants, Nil)
   }
 
-  test("getBookingDetail — returns assignedAttendants when one is pre-assigned") {
+  test("getBookingDetail — returns assignedAttendants grouped by line when one is pre-assigned") {
     for
       ctx       <- makeCtx()
       item      <- seedItem(ctx)
       bookingId <- createConfirmedBooking(ctx, item)
+      lineRef    = BookingLineRef.IndividualLine(item.id)
       attendant  = Attendant.create(AttendantId.generate, ctx.provider.id, "Monitor João", "11900000001").toOption.get
       _         <- ctx.attendantRepo.create(attendant)
-      _         <- ctx.attendantRepo.assignToBooking(bookingId, attendant.id)
+      _         <- ctx.attendantRepo.assignToBookingLine(bookingId, lineRef, attendant.id)
       detail    <- ctx.svc.getBookingDetail(ctx.provider.id, bookingId)
     yield
-      assertEquals(detail.assignedAttendants.map(_.id), List(attendant.id))
-      assertEquals(detail.assignedAttendants.map(_.name), List("Monitor João"))
-      assertEquals(detail.assignedAttendants.map(_.phone), List("11900000001"))
+      assertEquals(detail.assignedAttendants.size, 1)
+      assertEquals(detail.assignedAttendants.head.lineRef, lineRef)
+      assertEquals(detail.assignedAttendants.head.attendants.map(_.id), List(attendant.id))
+      assertEquals(detail.assignedAttendants.head.attendants.map(_.name), List("Monitor João"))
   }
 
   test("getBookingDetail — raises BookingNotFound for unknown bookingId") {
