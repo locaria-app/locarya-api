@@ -13,49 +13,36 @@ final class ComboRepositoryLive[F[_]: Async] private (xa: Transactor[F])
     extends ComboRepository[F]:
 
   private case class ComboRow(
-    id:                   UUID,
-    providerId:           UUID,
-    name:                 String,
-    description:          String,
-    dailyRate:            BigDecimal,
-    attendantRequirement: String,
-    isActive:             Boolean
+    id:              UUID,
+    providerId:      UUID,
+    name:            String,
+    description:     String,
+    dailyRate:       BigDecimal,
+    requiresMonitor: Boolean,
+    isActive:        Boolean
   ) derives Read
 
   private case class ComboItemRow(comboId: UUID, itemId: UUID, quantity: Int) derives Read
 
   private case class ComboWithItemRow(
-    id:                   UUID,
-    providerId:           UUID,
-    name:                 String,
-    description:          String,
-    dailyRate:            BigDecimal,
-    attendantRequirement: String,
-    isActive:             Boolean,
-    itemId:               Option[UUID],
-    quantity:             Option[Int]
+    id:              UUID,
+    providerId:      UUID,
+    name:            String,
+    description:     String,
+    dailyRate:       BigDecimal,
+    requiresMonitor: Boolean,
+    isActive:        Boolean,
+    itemId:          Option[UUID],
+    quantity:        Option[Int]
   ) derives Read
-
-  private def parseRequirement(s: String): Either[ValidationError, AttendantRequirement] =
-    s match
-      case "REQUIRED"    => Right(AttendantRequirement.Required)
-      case "OPTIONAL"    => Right(AttendantRequirement.Optional)
-      case "NOT_ALLOWED" => Right(AttendantRequirement.NotAllowed)
-      case other         => Left(InvalidAttendantRequirement(s"Unknown attendant_requirement value: $other"))
-
-  private def reqStr(req: AttendantRequirement): String = req match
-    case AttendantRequirement.Required   => "REQUIRED"
-    case AttendantRequirement.Optional   => "OPTIONAL"
-    case AttendantRequirement.NotAllowed => "NOT_ALLOWED"
 
   private def rowToCombo(row: ComboRow, items: List[ComboItemRow]): F[Combo] =
     (for
       id    <- ComboId.fromString(row.id.toString)
       pid   <- ProviderId.fromString(row.providerId.toString)
       money <- Money.fromAmount(row.dailyRate)
-      req   <- parseRequirement(row.attendantRequirement)
       defs  <- items.traverse(r => ItemId.fromString(r.itemId.toString).map(ComboItemDefinition(_, r.quantity)))
-      combo <- Combo.create(id, pid, row.name, row.description, money, defs, req, row.isActive)
+      combo <- Combo.create(id, pid, row.name, row.description, money, defs, row.requiresMonitor, row.isActive)
     yield combo).fold(
       err => Async[F].raiseError(new RuntimeException(s"DB→domain mapping failed: $err")),
       _.pure[F]
@@ -65,11 +52,11 @@ final class ComboRepositoryLive[F[_]: Async] private (xa: Transactor[F])
     val comboUuid = UUID.fromString(combo.id.value)
     val insertCombo =
       sql"""INSERT INTO combos
-              (id, provider_id, name, description, daily_rate, attendant_requirement, is_active)
+              (id, provider_id, name, description, daily_rate, requires_monitor, is_active)
             VALUES
               ($comboUuid, ${UUID.fromString(combo.providerId.value)},
                ${combo.name}, ${combo.description},
-               ${combo.dailyRate.amount}, ${reqStr(combo.attendantRequirement)}, ${combo.isActive})"""
+               ${combo.dailyRate.amount}, ${combo.requiresMonitor}, ${combo.isActive})"""
         .update.run
 
     val insertItems = combo.items.traverse_ { item =>
@@ -83,7 +70,7 @@ final class ComboRepositoryLive[F[_]: Async] private (xa: Transactor[F])
   override def findById(id: ComboId): F[Option[Combo]] =
     val comboUuid = UUID.fromString(id.value)
     val fetchCombo =
-      sql"""SELECT id, provider_id, name, description, daily_rate, attendant_requirement, is_active
+      sql"""SELECT id, provider_id, name, description, daily_rate, requires_monitor, is_active
             FROM combos WHERE id = $comboUuid"""
         .query[ComboRow].option
     val fetchItems =
@@ -113,7 +100,7 @@ final class ComboRepositoryLive[F[_]: Async] private (xa: Transactor[F])
 
   override def findActiveByProviderId(providerId: ProviderId): F[List[Combo]] =
     val providerUuid = UUID.fromString(providerId.value)
-    sql"""SELECT c.id, c.provider_id, c.name, c.description, c.daily_rate, c.attendant_requirement, c.is_active,
+    sql"""SELECT c.id, c.provider_id, c.name, c.description, c.daily_rate, c.requires_monitor, c.is_active,
                  ci.item_id, ci.quantity
           FROM combos c
           LEFT JOIN combo_items ci ON ci.combo_id = c.id
@@ -127,7 +114,7 @@ final class ComboRepositoryLive[F[_]: Async] private (xa: Transactor[F])
           }
           rowToCombo(
             ComboRow(head.id, head.providerId, head.name, head.description,
-              head.dailyRate, head.attendantRequirement, head.isActive),
+              head.dailyRate, head.requiresMonitor, head.isActive),
             itemRows
           )
         }
@@ -137,12 +124,12 @@ final class ComboRepositoryLive[F[_]: Async] private (xa: Transactor[F])
     val comboUuid = UUID.fromString(combo.id.value)
     (for
       _ <- sql"""UPDATE combos SET
-                   name                  = ${combo.name},
-                   description           = ${combo.description},
-                   daily_rate            = ${combo.dailyRate.amount},
-                   attendant_requirement = ${reqStr(combo.attendantRequirement)},
-                   is_active             = ${combo.isActive},
-                   updated_at            = NOW()
+                   name             = ${combo.name},
+                   description      = ${combo.description},
+                   daily_rate       = ${combo.dailyRate.amount},
+                   requires_monitor = ${combo.requiresMonitor},
+                   is_active        = ${combo.isActive},
+                   updated_at       = NOW()
                  WHERE id = $comboUuid""".update.run
       _ <- sql"DELETE FROM combo_items WHERE combo_id = $comboUuid".update.run
       _ <- combo.items.traverse_ { item =>

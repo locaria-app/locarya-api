@@ -109,9 +109,9 @@ class BookingServiceImpl[F[_]: Sync: Logger](
     else
       booking.items.traverse {
         case BookedIndividualItem(itemId, _, _) =>
-          itemRepo.findById(itemId).map(_.exists(_.attendantRequirement == AttendantRequirement.Required))
+          itemRepo.findById(itemId).map(_.exists(_.requiresMonitor))
         case BookedCombo(comboId, _, _) =>
-          comboRepo.findById(comboId).map(_.exists(_.attendantRequirement == AttendantRequirement.Required))
+          comboRepo.findById(comboId).map(_.exists(_.requiresMonitor))
       }.flatMap { checks =>
         if checks.exists(identity) then
           attendantRepo.findByBooking(booking.id).flatMap { attendants =>

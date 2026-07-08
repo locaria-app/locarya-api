@@ -3,26 +3,26 @@ package com.locarya.domain.models
 final case class ComboItemDefinition(itemId: ItemId, quantity: Int)
 
 final case class Combo private (
-  id: ComboId,
-  providerId: ProviderId,
-  name: String,
-  description: String,
-  dailyRate: Money,
-  items: List[ComboItemDefinition],
-  attendantRequirement: AttendantRequirement,
-  isActive: Boolean
+  id:              ComboId,
+  providerId:      ProviderId,
+  name:            String,
+  description:     String,
+  dailyRate:       Money,
+  items:           List[ComboItemDefinition],
+  requiresMonitor: Boolean,
+  isActive:        Boolean
 )
 
 object Combo {
   def create(
-    id: ComboId,
-    providerId: ProviderId,
-    name: String,
-    description: String,
-    dailyRate: Money,
-    items: List[ComboItemDefinition],
-    attendantRequirement: AttendantRequirement,
-    isActive: Boolean = true
+    id:              ComboId,
+    providerId:      ProviderId,
+    name:            String,
+    description:     String,
+    dailyRate:       Money,
+    items:           List[ComboItemDefinition],
+    requiresMonitor: Boolean,
+    isActive:        Boolean = true
   ): Either[ValidationError, Combo] = {
     if (name.trim.isEmpty) {
       Left(InvalidCombo("Name cannot be empty"))
@@ -31,7 +31,7 @@ object Combo {
     } else if (items.exists(_.quantity <= 0)) {
       Left(InvalidCombo("All item quantities must be positive"))
     } else {
-      Right(Combo(id, providerId, name.trim, description.trim, dailyRate, items, attendantRequirement, isActive))
+      Right(Combo(id, providerId, name.trim, description.trim, dailyRate, items, requiresMonitor, isActive))
     }
   }
 

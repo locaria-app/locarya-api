@@ -17,58 +17,50 @@ import sttp.tapir.server.http4s.Http4sServerInterpreter
 object ItemRoutes:
 
   private case class CreateItemBody(
-    name:                 String,
-    description:          String,
-    dailyRate:            BigDecimal,
-    stock:                Int,
-    attendantRequirement: String,
-    imageUrls:            List[String]
+    name:            String,
+    description:     String,
+    dailyRate:       BigDecimal,
+    stock:           Int,
+    requiresMonitor: Boolean,
+    imageUrls:       List[String]
   )
 
   private case class UpdateItemBody(
-    name:                 String,
-    description:          String,
-    dailyRate:            BigDecimal,
-    stock:                Int,
-    attendantRequirement: String,
-    imageUrls:            List[String]
+    name:            String,
+    description:     String,
+    dailyRate:       BigDecimal,
+    stock:           Int,
+    requiresMonitor: Boolean,
+    imageUrls:       List[String]
   )
 
   private case class ItemResponseBody(
-    itemId:               String,
-    providerId:           String,
-    name:                 String,
-    description:          String,
-    dailyRate:            BigDecimal,
-    stock:                Int,
-    attendantRequirement: String,
-    isActive:             Boolean,
-    imageUrls:            List[String]
+    itemId:          String,
+    providerId:      String,
+    name:            String,
+    description:     String,
+    dailyRate:       BigDecimal,
+    stock:           Int,
+    requiresMonitor: Boolean,
+    isActive:        Boolean,
+    imageUrls:       List[String]
   )
 
   private case class CreateItemResponseBody(itemId: String)
 
-  private def parseAttendantRequirement(s: String): Either[String, AttendantRequirement] =
-    s match
-      case "Required"   => Right(AttendantRequirement.Required)
-      case "Optional"   => Right(AttendantRequirement.Optional)
-      case "NotAllowed" => Right(AttendantRequirement.NotAllowed)
-      case other        => Left(s"Unknown attendantRequirement: $other")
-
   private def toResponseBody(item: Item, images: List[ItemImage]): ItemResponseBody =
     ItemResponseBody(
-      itemId               = item.id.value,
-      providerId           = item.providerId.value,
-      name                 = item.name,
-      description          = item.description,
-      dailyRate            = item.dailyRate.amount,
-      stock                = item.stock,
-      attendantRequirement = item.attendantRequirement.toString,
-      isActive             = item.isActive,
-      imageUrls            = images.sortBy(_.displayOrder).map(_.imageUrl.value)
+      itemId          = item.id.value,
+      providerId      = item.providerId.value,
+      name            = item.name,
+      description     = item.description,
+      dailyRate       = item.dailyRate.amount,
+      stock           = item.stock,
+      requiresMonitor = item.requiresMonitor,
+      isActive        = item.isActive,
+      imageUrls       = images.sortBy(_.displayOrder).map(_.imageUrl.value)
     )
 
-  // Endpoint definitions — used both for Swagger docs and for routing
   private val listE = securedBase.get
     .in("dashboard" / "items")
     .out(jsonBody[List[ItemResponseBody]])
@@ -113,14 +105,13 @@ object ItemRoutes:
           dailyRate <- Money.fromAmount(body.dailyRate)
                          .fold(err => ItemError.InvalidInput(err).raiseError[F, Money], _.pure[F])
           req2       = CreateItemRequest(
-                         providerId           = providerId,
-                         name                 = body.name,
-                         description          = body.description,
-                         dailyRate            = dailyRate,
-                         stock                = body.stock,
-                         attendantRequirement = parseAttendantRequirement(body.attendantRequirement)
-                                                  .fold(_ => AttendantRequirement.Optional, identity),
-                         imageUrls            = body.imageUrls
+                         providerId      = providerId,
+                         name            = body.name,
+                         description     = body.description,
+                         dailyRate       = dailyRate,
+                         stock           = body.stock,
+                         requiresMonitor = body.requiresMonitor,
+                         imageUrls       = body.imageUrls
                        )
           itemId    <- itemService.createItem(req2)
         yield Right(CreateItemResponseBody(itemId.value)))
@@ -136,15 +127,14 @@ object ItemRoutes:
           dailyRate <- Money.fromAmount(body.dailyRate)
                          .fold(err => ItemError.InvalidInput(err).raiseError[F, Money], _.pure[F])
           req2       = UpdateItemRequest(
-                         itemId               = itemId,
-                         providerId           = providerId,
-                         name                 = body.name,
-                         description          = body.description,
-                         dailyRate            = dailyRate,
-                         stock                = body.stock,
-                         attendantRequirement = parseAttendantRequirement(body.attendantRequirement)
-                                                  .fold(_ => AttendantRequirement.Optional, identity),
-                         imageUrls            = body.imageUrls
+                         itemId          = itemId,
+                         providerId      = providerId,
+                         name            = body.name,
+                         description     = body.description,
+                         dailyRate       = dailyRate,
+                         stock           = body.stock,
+                         requiresMonitor = body.requiresMonitor,
+                         imageUrls       = body.imageUrls
                        )
           _         <- itemService.updateItem(req2)
         yield Right(()))

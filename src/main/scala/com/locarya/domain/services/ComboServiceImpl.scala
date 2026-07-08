@@ -15,19 +15,18 @@ class ComboServiceImpl[F[_]: Sync: Logger](
 
   def createCombo(request: CreateComboRequest): F[ComboId] =
     for
-      items        <- validateCompositionItems(request.itemCompositions, request.providerId)
-      attendantReq  = inferAttendantRequirement(items)
-      combo        <- liftValidation(
-                        Combo.create(
-                          id                   = ComboId.generate,
-                          providerId           = request.providerId,
-                          name                 = request.name,
-                          description          = request.description,
-                          dailyRate            = request.dailyRate,
-                          items                = request.itemCompositions,
-                          attendantRequirement = attendantReq
-                        )
-                      )
+      items <- validateCompositionItems(request.itemCompositions, request.providerId)
+      combo <- liftValidation(
+                 Combo.create(
+                   id              = ComboId.generate,
+                   providerId      = request.providerId,
+                   name            = request.name,
+                   description     = request.description,
+                   dailyRate       = request.dailyRate,
+                   items           = request.itemCompositions,
+                   requiresMonitor = inferRequiresMonitor(items)
+                 )
+               )
       stored       <- comboRepo.create(combo)
       images       <- liftValidation(ComboImage.create(stored.id, request.imageUrls))
       _            <- images.traverse_(comboImageRepo.create)
@@ -45,34 +44,36 @@ class ComboServiceImpl[F[_]: Sync: Logger](
 
   def updateCombo(request: UpdateComboRequest): F[Unit] =
     for
-      combo    <- requireComboExists(request.comboId)
-      _        <- requireOwner(combo, request.providerId)
-      newItems <- request.itemCompositions match
-                    case Some(compositions) =>
-                      bookingRepo.existsForCombo(request.comboId).flatMap { exists =>
-                        if exists then
-                          Logger[F].warn(
-                            s"""{"event":"ComboEditBlocked","comboId":"${request.comboId.value}","reason":"Has existing bookings"}"""
-                          ) >> ComboError.HasBookings(request.comboId).raiseError[F, List[ComboItemDefinition]]
-                        else
-                          validateCompositionItems(compositions, request.providerId).as(compositions)
-                      }
-                    case None => combo.items.pure[F]
-      updated  <- liftValidation(
-                    Combo.create(
-                      id                   = combo.id,
-                      providerId           = combo.providerId,
-                      name                 = request.name,
-                      description          = request.description,
-                      dailyRate            = request.dailyRate,
-                      items                = newItems,
-                      attendantRequirement = combo.attendantRequirement,
-                      isActive             = combo.isActive
-                    )
-                  )
-      _        <- comboRepo.update(updated)
-      images   <- liftValidation(ComboImage.create(combo.id, request.imageUrls))
-      _        <- comboImageRepo.replaceImages(combo.id, images)
+      combo                      <- requireComboExists(request.comboId)
+      _                          <- requireOwner(combo, request.providerId)
+      newResult <- request.itemCompositions match
+                     case Some(compositions) =>
+                       bookingRepo.existsForCombo(request.comboId).flatMap { exists =>
+                         if exists then
+                           Logger[F].warn(
+                             s"""{"event":"ComboEditBlocked","comboId":"${request.comboId.value}","reason":"Has existing bookings"}"""
+                           ) >> ComboError.HasBookings(request.comboId).raiseError[F, (List[ComboItemDefinition], Boolean)]
+                         else
+                           validateCompositionItems(compositions, request.providerId)
+                             .map(items => (compositions, inferRequiresMonitor(items)))
+                       }
+                     case None => (combo.items, combo.requiresMonitor).pure[F]
+      (newDefs, requiresMonitor) = newResult
+      updated                    <- liftValidation(
+                                      Combo.create(
+                                        id              = combo.id,
+                                        providerId      = combo.providerId,
+                                        name            = request.name,
+                                        description     = request.description,
+                                        dailyRate       = request.dailyRate,
+                                        items           = newDefs,
+                                        requiresMonitor = requiresMonitor,
+                                        isActive        = combo.isActive
+                                      )
+                                    )
+      _                          <- comboRepo.update(updated)
+      images                     <- liftValidation(ComboImage.create(combo.id, request.imageUrls))
+      _                          <- comboImageRepo.replaceImages(combo.id, images)
     yield ()
 
   def listActiveCombos(providerId: ProviderId): F[List[(Combo, List[ComboImage])]] =
@@ -115,13 +116,8 @@ class ComboServiceImpl[F[_]: Sync: Logger](
       }
     }
 
-  private def inferAttendantRequirement(items: List[Item]): AttendantRequirement =
-    if items.exists(_.attendantRequirement == AttendantRequirement.Required) then
-      AttendantRequirement.Required
-    else if items.exists(_.attendantRequirement == AttendantRequirement.Optional) then
-      AttendantRequirement.Optional
-    else
-      AttendantRequirement.NotAllowed
+  private def inferRequiresMonitor(items: List[Item]): Boolean =
+    items.exists(_.requiresMonitor)
 
   private def liftValidation[A](e: Either[ValidationError, A]): F[A] =
     e.fold(err => ComboError.InvalidInput(err).raiseError[F, A], _.pure[F])

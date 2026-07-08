@@ -17,13 +17,13 @@ class ComboRepositorySpec extends CatsEffectSuite:
     items: List[ComboItemDefinition] = List(ComboItemDefinition(ItemId.generate, 2))
   ): Combo =
     Combo.create(
-      id = ComboId.generate,
-      providerId = providerId,
-      name = "Combo Festa",
-      description = "Combo para festas",
-      dailyRate = dailyRate,
-      items = items,
-      attendantRequirement = AttendantRequirement.Optional
+      id              = ComboId.generate,
+      providerId      = providerId,
+      name            = "Combo Festa",
+      description     = "Combo para festas",
+      dailyRate       = dailyRate,
+      items           = items,
+      requiresMonitor = false
     ).toOption.get
 
   test("create stores combo and findById retrieves it") {
@@ -68,7 +68,7 @@ class ComboRepositorySpec extends CatsEffectSuite:
       repo    <- makeRepo
       combo    = makeCombo()
       _       <- repo.create(combo)
-      updated  = Combo.create(combo.id, combo.providerId, "Combo Premium", combo.description, combo.dailyRate, combo.items, combo.attendantRequirement).toOption.get
+      updated  = Combo.create(combo.id, combo.providerId, "Combo Premium", combo.description, combo.dailyRate, combo.items, combo.requiresMonitor).toOption.get
       saved   <- repo.update(updated)
       found   <- repo.findById(combo.id)
     yield
