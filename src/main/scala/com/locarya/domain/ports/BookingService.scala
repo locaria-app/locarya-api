@@ -71,17 +71,18 @@ final case class CreateBookingByProviderRequest(
 final case class BookingLineAttendants(lineRef: BookingLineRef, attendants: List[Attendant])
 
 final case class DashboardBookingDetailView(
-  id:                 BookingId,
-  providerId:         ProviderId,
-  customer:           DashboardCustomerView,
-  items:              List[BookingItem],
-  date:               LocalDate,
-  deliveryAddress:    Option[Address],
-  status:             BookingStatus,
-  totalAmount:        Money,
-  createdBy:          BookingCreator,
-  bookingCode:        BookingCode,
-  assignedAttendants: List[BookingLineAttendants]
+  id:                     BookingId,
+  providerId:             ProviderId,
+  customer:               DashboardCustomerView,
+  items:                  List[BookingItem],
+  date:                   LocalDate,
+  deliveryAddress:        Option[Address],
+  status:                 BookingStatus,
+  totalAmount:            Money,
+  createdBy:              BookingCreator,
+  bookingCode:            BookingCode,
+  assignedAttendants:     List[BookingLineAttendants],
+  confirmedWithoutMonitor: Boolean = false
 )
 
 trait BookingService[F[_]]:

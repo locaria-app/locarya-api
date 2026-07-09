@@ -845,6 +845,26 @@ class BookingServiceSpec extends CatsEffectSuite:
 
   // ── getBookingDetail ──────────────────────────────────────────────────────
 
+  test("getBookingDetail — confirmedWithoutMonitor=true after override confirm") {
+    for
+      ctx     <- makeCtx()
+      item    <- buildRequiredItem(ctx)
+      created <- ctx.svc.createBooking(request(List((item.id, 1))))
+      bid      = created.bookingId
+      _       <- ctx.svc.updateBookingStatus(ctx.provider.id, bid, BookingStatus.Confirmed, None, overrideMonitorCheck = true)
+      detail  <- ctx.svc.getBookingDetail(ctx.provider.id, bid)
+    yield assertEquals(detail.confirmedWithoutMonitor, true)
+  }
+
+  test("getBookingDetail — confirmedWithoutMonitor=false for normally-confirmed booking") {
+    for
+      ctx       <- makeCtx()
+      item      <- seedItem(ctx)
+      bookingId <- createConfirmedBooking(ctx, item)
+      detail    <- ctx.svc.getBookingDetail(ctx.provider.id, bookingId)
+    yield assertEquals(detail.confirmedWithoutMonitor, false)
+  }
+
   test("getBookingDetail — returns DashboardBookingDetailView with no attendants") {
     for
       ctx       <- makeCtx()

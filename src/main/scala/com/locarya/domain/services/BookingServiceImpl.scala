@@ -148,17 +148,18 @@ class BookingServiceImpl[F[_]: Sync: Logger](
                           ids.toList.traverse(attendantRepo.findById).map(_.flatten).map(BookingLineAttendants(lineRef, _))
                         }
     yield DashboardBookingDetailView(
-      id                 = booking.id,
-      providerId         = booking.providerId,
-      customer           = DashboardCustomerView(customer.name, customer.email.value, customer.phone),
-      items              = booking.items,
-      date               = booking.startDate,
-      deliveryAddress    = booking.deliveryAddress,
-      status             = booking.status,
-      totalAmount        = booking.totalAmount,
-      createdBy          = booking.createdBy,
-      bookingCode        = booking.bookingCode,
-      assignedAttendants = lineAttendants
+      id                      = booking.id,
+      providerId              = booking.providerId,
+      customer                = DashboardCustomerView(customer.name, customer.email.value, customer.phone),
+      items                   = booking.items,
+      date                    = booking.startDate,
+      deliveryAddress         = booking.deliveryAddress,
+      status                  = booking.status,
+      totalAmount             = booking.totalAmount,
+      createdBy               = booking.createdBy,
+      bookingCode             = booking.bookingCode,
+      assignedAttendants      = lineAttendants,
+      confirmedWithoutMonitor = booking.confirmedWithoutMonitor
     )
 
   def listBookings(providerId: ProviderId, status: Option[BookingStatus], dateFrom: Option[LocalDate], dateTo: Option[LocalDate]): F[List[DashboardBookingView]] =
