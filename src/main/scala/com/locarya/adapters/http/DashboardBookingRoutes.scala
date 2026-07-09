@@ -44,7 +44,8 @@ object DashboardBookingRoutes:
   )
 
   private case class BookingItemResponse(
-    itemId:    String,
+    itemId:    Option[String],
+    comboId:   Option[String],
     quantity:  Int,
     unitPrice: Option[BigDecimal]
   )
@@ -195,8 +196,8 @@ object DashboardBookingRoutes:
       id              = view.id.value,
       customer        = CustomerResponse(view.customer.name, view.customer.email, view.customer.phone),
       items           = view.items.map {
-        case BookedIndividualItem(itemId, qty, unitPrice) => BookingItemResponse(itemId.value, qty, unitPrice.map(_.amount))
-        case BookedCombo(comboId, qty, unitPrice)         => BookingItemResponse(comboId.value, qty, unitPrice.map(_.amount))
+        case BookedIndividualItem(itemId, qty, unitPrice) => BookingItemResponse(Some(itemId.value), None, qty, unitPrice.map(_.amount))
+        case BookedCombo(comboId, qty, unitPrice)         => BookingItemResponse(None, Some(comboId.value), qty, unitPrice.map(_.amount))
       },
       date            = view.date.toString,
       deliveryAddress = view.deliveryAddress.map { addr =>
