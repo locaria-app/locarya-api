@@ -88,5 +88,5 @@ trait BookingService[F[_]]:
   def createBooking(request: CreateBookingRequest): F[BookingCreated]
   def createBookingByProvider(providerId: ProviderId, request: CreateBookingByProviderRequest): F[BookingCreated]
   def listBookings(providerId: ProviderId, status: Option[BookingStatus], dateFrom: Option[LocalDate], dateTo: Option[LocalDate]): F[List[DashboardBookingView]]
-  def updateBookingStatus(providerId: ProviderId, bookingId: BookingId, newStatus: BookingStatus, reason: Option[String]): F[Booking]
+  def updateBookingStatus(providerId: ProviderId, bookingId: BookingId, newStatus: BookingStatus, reason: Option[String], overrideMonitorCheck: Boolean = false): F[Booking]
   def getBookingDetail(providerId: ProviderId, bookingId: BookingId): F[DashboardBookingDetailView]

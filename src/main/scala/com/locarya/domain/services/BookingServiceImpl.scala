@@ -80,10 +80,11 @@ class BookingServiceImpl[F[_]: Sync: Logger](
     yield BookingCreated(stored.id, stored.status, stored.totalAmount, stored.bookingCode)
 
   def updateBookingStatus(
-    providerId: ProviderId,
-    bookingId:  BookingId,
-    newStatus:  BookingStatus,
-    reason:     Option[String]
+    providerId:           ProviderId,
+    bookingId:            BookingId,
+    newStatus:            BookingStatus,
+    reason:               Option[String],
+    overrideMonitorCheck: Boolean = false
   ): F[Booking] =
     for
       booking <- bookingRepo.findById(bookingId).flatMap {
@@ -91,7 +92,7 @@ class BookingServiceImpl[F[_]: Sync: Logger](
                    case _                                     => BookingError.BookingNotFound(bookingId).raiseError[F, Booking]
                  }
       updated <- liftValidation(booking.transitionStatus(newStatus))
-      _       <- requireAttendantsWhenConfirming(booking, newStatus)
+      _       <- checkMonitorRequirements(booking, newStatus, overrideMonitorCheck)
       stored  <- bookingRepo.update(updated)
       _       <- Logger[F].info(bookingStatusChangedLog(stored, booking.status, reason))
       _       <- enqueueStatusChangedIfNeeded(booking.status, stored)
@@ -106,29 +107,28 @@ class BookingServiceImpl[F[_]: Sync: Logger](
       }
     else ().pure[F]
 
-  private def requireAttendantsWhenConfirming(booking: Booking, newStatus: BookingStatus): F[Unit] =
+  private def missingMonitorLines(booking: Booking): F[List[BookingLineRef]] =
+    for
+      grouped <- attendantRepo.findByBookingGrouped(booking.id)
+      checks  <- booking.items.traverse {
+                   case BookedIndividualItem(itemId, _, _) =>
+                     itemRepo.findById(itemId).map(_.exists(_.requiresMonitor)).map {
+                       requiresMonitor => (requiresMonitor, BookingLineRef.IndividualLine(itemId))
+                     }
+                   case BookedCombo(comboId, _, _) =>
+                     comboRepo.findById(comboId).map(_.exists(_.requiresMonitor)).map {
+                       requiresMonitor => (requiresMonitor, BookingLineRef.ComboLine(comboId))
+                     }
+                 }
+    yield checks.collect { case (true, lineRef) if grouped.get(lineRef).forall(_.isEmpty) => lineRef }
+
+  private def checkMonitorRequirements(booking: Booking, newStatus: BookingStatus, overrideMonitorCheck: Boolean): F[Unit] =
     if newStatus != BookingStatus.Confirmed then ().pure[F]
     else
-      for
-        grouped <- attendantRepo.findByBookingGrouped(booking.id)
-        checks  <- booking.items.traverse {
-                     case BookedIndividualItem(itemId, _, _) =>
-                       itemRepo.findById(itemId).map(_.exists(_.requiresMonitor)).map {
-                         requiresMonitor => (requiresMonitor, BookingLineRef.IndividualLine(itemId))
-                       }
-                     case BookedCombo(comboId, _, _) =>
-                       comboRepo.findById(comboId).map(_.exists(_.requiresMonitor)).map {
-                         requiresMonitor => (requiresMonitor, BookingLineRef.ComboLine(comboId))
-                       }
-                   }
-        _ <- checks.traverse_ { case (requiresMonitor, lineRef) =>
-               if requiresMonitor && grouped.get(lineRef).forall(_.isEmpty) then
-                 BookingError.InvalidInput(
-                   InvalidBooking("Booking with required-attendant items must have an attendant assigned before confirmation")
-                 ).raiseError[F, Unit]
-               else ().pure[F]
-             }
-      yield ()
+      missingMonitorLines(booking).flatMap { missing =>
+        if missing.isEmpty || overrideMonitorCheck then ().pure[F]
+        else BookingError.MonitorRequiredWithoutOverride(missing).raiseError[F, Unit]
+      }
 
   def getBookingDetail(providerId: ProviderId, bookingId: BookingId): F[DashboardBookingDetailView] =
     for

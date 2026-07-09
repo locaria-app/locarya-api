@@ -725,19 +725,25 @@ class BookingServiceSpec extends CatsEffectSuite:
     yield assertEquals(updated.status, BookingStatus.Confirmed)
   }
 
-  test("updateBookingStatus — Pending to Confirmed raises InvalidInput when Required-item booking has no attendant") {
+  test("updateBookingStatus — Pending to Confirmed without override raises MonitorRequiredWithoutOverride listing the affected line") {
     for
       ctx     <- makeCtx()
       item    <- buildRequiredItem(ctx)
       created <- ctx.svc.createBooking(request(List((item.id, 1))))
       bid      = created.bookingId
       result  <- ctx.svc.updateBookingStatus(ctx.provider.id, bid, BookingStatus.Confirmed, None).attempt
+      stored  <- ctx.bookingRepo.findById(bid)
     yield
       assert(result.isLeft)
       result.left.foreach {
-        case _: BookingError.InvalidInput => ()
-        case other                        => fail(s"Expected InvalidInput for missing required attendant, got $other")
+        case e: BookingError.MonitorRequiredWithoutOverride =>
+          assert(
+            e.lines.contains(BookingLineRef.IndividualLine(item.id)),
+            s"Expected item ${item.id.value} in affected lines, got: ${e.lines}"
+          )
+        case other => fail(s"Expected MonitorRequiredWithoutOverride, got $other")
       }
+      assertEquals(stored.map(_.status), Some(BookingStatus.Pending), "Status must stay Pending when override is absent")
   }
 
   test("updateBookingStatus — Pending to Confirmed with Optional-item does not require attendant") {
