@@ -725,19 +725,38 @@ class BookingServiceSpec extends CatsEffectSuite:
     yield assertEquals(updated.status, BookingStatus.Confirmed)
   }
 
-  test("updateBookingStatus — Pending to Confirmed raises InvalidInput when Required-item booking has no attendant") {
+  test("updateBookingStatus — Pending to Confirmed without override raises MonitorRequiredWithoutOverride listing the affected line") {
     for
       ctx     <- makeCtx()
       item    <- buildRequiredItem(ctx)
       created <- ctx.svc.createBooking(request(List((item.id, 1))))
       bid      = created.bookingId
       result  <- ctx.svc.updateBookingStatus(ctx.provider.id, bid, BookingStatus.Confirmed, None).attempt
+      stored  <- ctx.bookingRepo.findById(bid)
     yield
       assert(result.isLeft)
       result.left.foreach {
-        case _: BookingError.InvalidInput => ()
-        case other                        => fail(s"Expected InvalidInput for missing required attendant, got $other")
+        case e: BookingError.MonitorRequiredWithoutOverride =>
+          assert(
+            e.lines.contains(BookingLineRef.IndividualLine(item.id)),
+            s"Expected item ${item.id.value} in affected lines, got: ${e.lines}"
+          )
+        case other => fail(s"Expected MonitorRequiredWithoutOverride, got $other")
       }
+      assertEquals(stored.map(_.status), Some(BookingStatus.Pending), "Status must stay Pending when override is absent")
+  }
+
+  test("updateBookingStatus — with overrideMonitorCheck=true confirms and sets confirmedWithoutMonitor=true") {
+    for
+      ctx     <- makeCtx()
+      item    <- buildRequiredItem(ctx)
+      created <- ctx.svc.createBooking(request(List((item.id, 1))))
+      bid      = created.bookingId
+      updated <- ctx.svc.updateBookingStatus(ctx.provider.id, bid, BookingStatus.Confirmed, None, overrideMonitorCheck = true)
+      stored  <- ctx.bookingRepo.findById(bid)
+    yield
+      assertEquals(updated.status, BookingStatus.Confirmed)
+      assertEquals(stored.map(_.confirmedWithoutMonitor), Some(true))
   }
 
   test("updateBookingStatus — Pending to Confirmed with Optional-item does not require attendant") {
@@ -747,7 +766,10 @@ class BookingServiceSpec extends CatsEffectSuite:
       created <- ctx.svc.createBooking(request(List((item.id, 1))))
       bid      = created.bookingId
       updated <- ctx.svc.updateBookingStatus(ctx.provider.id, bid, BookingStatus.Confirmed, None)
-    yield assertEquals(updated.status, BookingStatus.Confirmed)
+      stored  <- ctx.bookingRepo.findById(bid)
+    yield
+      assertEquals(updated.status, BookingStatus.Confirmed)
+      assertEquals(stored.map(_.confirmedWithoutMonitor), Some(false), "Normal confirm must not set audit trail")
   }
 
   test("integration: Required-item booking fails confirm without attendant, succeeds after assignment") {
@@ -764,6 +786,49 @@ class BookingServiceSpec extends CatsEffectSuite:
     yield
       assert(failed.isLeft, "Expected confirmation to fail without attendant")
       assertEquals(updated.status, BookingStatus.Confirmed)
+  }
+
+  test("updateBookingStatus — non-Confirmed transitions succeed even when required-monitor item has no attendant") {
+    for
+      ctx       <- makeCtx()
+      item      <- buildRequiredItem(ctx)
+      bookingId <- createConfirmedBooking(ctx, item)
+      // Move Confirmed→InProgress without an attendant — should succeed
+      ip        <- ctx.svc.updateBookingStatus(ctx.provider.id, bookingId, BookingStatus.InProgress, None)
+    yield assertEquals(ip.status, BookingStatus.InProgress)
+  }
+
+  test("updateBookingStatus — mixed lines: MonitorRequiredWithoutOverride lists only the required line") {
+    for
+      ctx          <- makeCtx()
+      required     <- buildRequiredItem(ctx)
+      optional     <- seedItem(ctx)
+      created      <- ctx.svc.createBooking(request(List((required.id, 1), (optional.id, 1))))
+      bid           = created.bookingId
+      result       <- ctx.svc.updateBookingStatus(ctx.provider.id, bid, BookingStatus.Confirmed, None).attempt
+    yield
+      result.left.foreach {
+        case e: BookingError.MonitorRequiredWithoutOverride =>
+          assertEquals(e.lines.size, 1, "Only the required-monitor line should be listed")
+          assert(e.lines.contains(BookingLineRef.IndividualLine(required.id)))
+          assert(!e.lines.contains(BookingLineRef.IndividualLine(optional.id)))
+        case other => fail(s"Expected MonitorRequiredWithoutOverride, got $other")
+      }
+      assert(result.isLeft)
+  }
+
+  test("updateBookingStatus — mixed lines with override: confirms all lines and sets audit trail") {
+    for
+      ctx       <- makeCtx()
+      required  <- buildRequiredItem(ctx)
+      optional  <- seedItem(ctx)
+      created   <- ctx.svc.createBooking(request(List((required.id, 1), (optional.id, 1))))
+      bid        = created.bookingId
+      updated   <- ctx.svc.updateBookingStatus(ctx.provider.id, bid, BookingStatus.Confirmed, None, overrideMonitorCheck = true)
+      stored    <- ctx.bookingRepo.findById(bid)
+    yield
+      assertEquals(updated.status, BookingStatus.Confirmed)
+      assertEquals(stored.map(_.confirmedWithoutMonitor), Some(true))
   }
 
   // ── BookingStatusChanged notification events ──────────────────────────────
@@ -822,6 +887,26 @@ class BookingServiceSpec extends CatsEffectSuite:
   }
 
   // ── getBookingDetail ──────────────────────────────────────────────────────
+
+  test("getBookingDetail — confirmedWithoutMonitor=true after override confirm") {
+    for
+      ctx     <- makeCtx()
+      item    <- buildRequiredItem(ctx)
+      created <- ctx.svc.createBooking(request(List((item.id, 1))))
+      bid      = created.bookingId
+      _       <- ctx.svc.updateBookingStatus(ctx.provider.id, bid, BookingStatus.Confirmed, None, overrideMonitorCheck = true)
+      detail  <- ctx.svc.getBookingDetail(ctx.provider.id, bid)
+    yield assertEquals(detail.confirmedWithoutMonitor, true)
+  }
+
+  test("getBookingDetail — confirmedWithoutMonitor=false for normally-confirmed booking") {
+    for
+      ctx       <- makeCtx()
+      item      <- seedItem(ctx)
+      bookingId <- createConfirmedBooking(ctx, item)
+      detail    <- ctx.svc.getBookingDetail(ctx.provider.id, bookingId)
+    yield assertEquals(detail.confirmedWithoutMonitor, false)
+  }
 
   test("getBookingDetail — returns DashboardBookingDetailView with no attendants") {
     for

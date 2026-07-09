@@ -71,22 +71,23 @@ final case class CreateBookingByProviderRequest(
 final case class BookingLineAttendants(lineRef: BookingLineRef, attendants: List[Attendant])
 
 final case class DashboardBookingDetailView(
-  id:                 BookingId,
-  providerId:         ProviderId,
-  customer:           DashboardCustomerView,
-  items:              List[BookingItem],
-  date:               LocalDate,
-  deliveryAddress:    Option[Address],
-  status:             BookingStatus,
-  totalAmount:        Money,
-  createdBy:          BookingCreator,
-  bookingCode:        BookingCode,
-  assignedAttendants: List[BookingLineAttendants]
+  id:                     BookingId,
+  providerId:             ProviderId,
+  customer:               DashboardCustomerView,
+  items:                  List[BookingItem],
+  date:                   LocalDate,
+  deliveryAddress:        Option[Address],
+  status:                 BookingStatus,
+  totalAmount:            Money,
+  createdBy:              BookingCreator,
+  bookingCode:            BookingCode,
+  assignedAttendants:     List[BookingLineAttendants],
+  confirmedWithoutMonitor: Boolean = false
 )
 
 trait BookingService[F[_]]:
   def createBooking(request: CreateBookingRequest): F[BookingCreated]
   def createBookingByProvider(providerId: ProviderId, request: CreateBookingByProviderRequest): F[BookingCreated]
   def listBookings(providerId: ProviderId, status: Option[BookingStatus], dateFrom: Option[LocalDate], dateTo: Option[LocalDate]): F[List[DashboardBookingView]]
-  def updateBookingStatus(providerId: ProviderId, bookingId: BookingId, newStatus: BookingStatus, reason: Option[String]): F[Booking]
+  def updateBookingStatus(providerId: ProviderId, bookingId: BookingId, newStatus: BookingStatus, reason: Option[String], overrideMonitorCheck: Boolean = false): F[Booking]
   def getBookingDetail(providerId: ProviderId, bookingId: BookingId): F[DashboardBookingDetailView]

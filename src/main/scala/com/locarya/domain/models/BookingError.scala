@@ -19,3 +19,11 @@ object BookingError:
 
   final case class BookingNotFound(id: BookingId)
       extends BookingError(s"Booking '${id.value}' not found")
+
+  final case class MonitorRequiredWithoutOverride(lines: List[BookingLineRef])
+      extends BookingError(
+        s"Monitor required but not assigned for lines: ${lines.map {
+          case BookingLineRef.IndividualLine(id) => id.value
+          case BookingLineRef.ComboLine(id)      => id.value
+        }.mkString(", ")}. Resend with overrideMonitorCheck=true to confirm anyway."
+      )

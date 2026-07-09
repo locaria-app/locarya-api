@@ -36,7 +36,8 @@ final case class Booking private (
   deliveryAddress: Option[Address],
   createdBy: BookingCreator,
   bookingCode: BookingCode,
-  partyProfile: Option[PartyProfile] = None
+  partyProfile: Option[PartyProfile] = None,
+  confirmedWithoutMonitor: Boolean = false
 )
 
 object Booking {
@@ -74,5 +75,7 @@ object Booking {
         booking.copy(status = validatedStatus)
       }
     }
+
+    def markConfirmedWithoutMonitor: Booking = booking.copy(confirmedWithoutMonitor = true)
   }
 }

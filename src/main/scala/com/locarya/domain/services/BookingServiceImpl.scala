@@ -80,21 +80,23 @@ class BookingServiceImpl[F[_]: Sync: Logger](
     yield BookingCreated(stored.id, stored.status, stored.totalAmount, stored.bookingCode)
 
   def updateBookingStatus(
-    providerId: ProviderId,
-    bookingId:  BookingId,
-    newStatus:  BookingStatus,
-    reason:     Option[String]
+    providerId:           ProviderId,
+    bookingId:            BookingId,
+    newStatus:            BookingStatus,
+    reason:               Option[String],
+    overrideMonitorCheck: Boolean = false
   ): F[Booking] =
     for
-      booking <- bookingRepo.findById(bookingId).flatMap {
-                   case Some(b) if b.providerId == providerId => b.pure[F]
-                   case _                                     => BookingError.BookingNotFound(bookingId).raiseError[F, Booking]
-                 }
-      updated <- liftValidation(booking.transitionStatus(newStatus))
-      _       <- requireAttendantsWhenConfirming(booking, newStatus)
-      stored  <- bookingRepo.update(updated)
-      _       <- Logger[F].info(bookingStatusChangedLog(stored, booking.status, reason))
-      _       <- enqueueStatusChangedIfNeeded(booking.status, stored)
+      booking    <- bookingRepo.findById(bookingId).flatMap {
+                      case Some(b) if b.providerId == providerId => b.pure[F]
+                      case _                                     => BookingError.BookingNotFound(bookingId).raiseError[F, Booking]
+                    }
+      didOverride <- checkMonitorRequirements(booking, newStatus, overrideMonitorCheck)
+      updated     <- liftValidation(booking.transitionStatus(newStatus))
+      withTrail    = if didOverride then updated.markConfirmedWithoutMonitor else updated
+      stored      <- bookingRepo.update(withTrail)
+      _           <- Logger[F].info(bookingStatusChangedLog(stored, booking.status, reason))
+      _           <- enqueueStatusChangedIfNeeded(booking.status, stored)
     yield stored
 
   private def enqueueStatusChangedIfNeeded(previousStatus: BookingStatus, stored: Booking): F[Unit] =
@@ -106,29 +108,30 @@ class BookingServiceImpl[F[_]: Sync: Logger](
       }
     else ().pure[F]
 
-  private def requireAttendantsWhenConfirming(booking: Booking, newStatus: BookingStatus): F[Unit] =
-    if newStatus != BookingStatus.Confirmed then ().pure[F]
+  private def missingMonitorLines(booking: Booking): F[List[BookingLineRef]] =
+    for
+      grouped <- attendantRepo.findByBookingGrouped(booking.id)
+      checks  <- booking.items.traverse {
+                   case BookedIndividualItem(itemId, _, _) =>
+                     itemRepo.findById(itemId).map(_.exists(_.requiresMonitor)).map {
+                       requiresMonitor => (requiresMonitor, BookingLineRef.IndividualLine(itemId))
+                     }
+                   case BookedCombo(comboId, _, _) =>
+                     comboRepo.findById(comboId).map(_.exists(_.requiresMonitor)).map {
+                       requiresMonitor => (requiresMonitor, BookingLineRef.ComboLine(comboId))
+                     }
+                 }
+    yield checks.collect { case (true, lineRef) if grouped.get(lineRef).forall(_.isEmpty) => lineRef }
+
+  /** Returns true if there were missing-monitor lines and the override was accepted (audit trail needed). */
+  private def checkMonitorRequirements(booking: Booking, newStatus: BookingStatus, overrideMonitorCheck: Boolean): F[Boolean] =
+    if newStatus != BookingStatus.Confirmed then false.pure[F]
     else
-      for
-        grouped <- attendantRepo.findByBookingGrouped(booking.id)
-        checks  <- booking.items.traverse {
-                     case BookedIndividualItem(itemId, _, _) =>
-                       itemRepo.findById(itemId).map(_.exists(_.requiresMonitor)).map {
-                         requiresMonitor => (requiresMonitor, BookingLineRef.IndividualLine(itemId))
-                       }
-                     case BookedCombo(comboId, _, _) =>
-                       comboRepo.findById(comboId).map(_.exists(_.requiresMonitor)).map {
-                         requiresMonitor => (requiresMonitor, BookingLineRef.ComboLine(comboId))
-                       }
-                   }
-        _ <- checks.traverse_ { case (requiresMonitor, lineRef) =>
-               if requiresMonitor && grouped.get(lineRef).forall(_.isEmpty) then
-                 BookingError.InvalidInput(
-                   InvalidBooking("Booking with required-attendant items must have an attendant assigned before confirmation")
-                 ).raiseError[F, Unit]
-               else ().pure[F]
-             }
-      yield ()
+      missingMonitorLines(booking).flatMap { missing =>
+        if missing.isEmpty then false.pure[F]
+        else if overrideMonitorCheck then true.pure[F]
+        else BookingError.MonitorRequiredWithoutOverride(missing).raiseError[F, Boolean]
+      }
 
   def getBookingDetail(providerId: ProviderId, bookingId: BookingId): F[DashboardBookingDetailView] =
     for
@@ -145,17 +148,18 @@ class BookingServiceImpl[F[_]: Sync: Logger](
                           ids.toList.traverse(attendantRepo.findById).map(_.flatten).map(BookingLineAttendants(lineRef, _))
                         }
     yield DashboardBookingDetailView(
-      id                 = booking.id,
-      providerId         = booking.providerId,
-      customer           = DashboardCustomerView(customer.name, customer.email.value, customer.phone),
-      items              = booking.items,
-      date               = booking.startDate,
-      deliveryAddress    = booking.deliveryAddress,
-      status             = booking.status,
-      totalAmount        = booking.totalAmount,
-      createdBy          = booking.createdBy,
-      bookingCode        = booking.bookingCode,
-      assignedAttendants = lineAttendants
+      id                      = booking.id,
+      providerId              = booking.providerId,
+      customer                = DashboardCustomerView(customer.name, customer.email.value, customer.phone),
+      items                   = booking.items,
+      date                    = booking.startDate,
+      deliveryAddress         = booking.deliveryAddress,
+      status                  = booking.status,
+      totalAmount             = booking.totalAmount,
+      createdBy               = booking.createdBy,
+      bookingCode             = booking.bookingCode,
+      assignedAttendants      = lineAttendants,
+      confirmedWithoutMonitor = booking.confirmedWithoutMonitor
     )
 
   def listBookings(providerId: ProviderId, status: Option[BookingStatus], dateFrom: Option[LocalDate], dateTo: Option[LocalDate]): F[List[DashboardBookingView]] =

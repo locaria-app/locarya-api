@@ -549,6 +549,126 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
     yield assertEquals(resp.status, Status.NotFound)
   }
 
+  test("PUT /dashboard/bookings/:id/status to confirmed without override returns 409 with missingMonitorLines when monitor is required") {
+    for
+      ctx    <- makeCtx
+      auth   <- signupAndLogin(ctx)
+      itemId <- createItem(ctx, auth.token)
+      // patch the item to require a monitor
+      item   <- ctx.itemRepo.findById(ItemId.fromString(itemId).toOption.get).map(_.get)
+      requiredItem = Item.create(
+                       id              = item.id,
+                       providerId      = item.providerId,
+                       name            = item.name,
+                       description     = item.description,
+                       dailyRate       = item.dailyRate,
+                       stock           = item.stock,
+                       requiresMonitor = true
+                     ).toOption.get
+      _      <- ctx.itemRepo.update(requiredItem)
+      // create a Pending booking (customer-flow)
+      customer = Customer.create(CustomerId.generate, Email.fromString("c@test.com").toOption.get, name = "Cliente").toOption.get
+      _      <- ctx.customerRepo.create(customer)
+      pending = Booking.create(
+                  id          = BookingId.generate,
+                  providerId  = item.providerId,
+                  customerId  = customer.id,
+                  items       = List(BookedIndividualItem(item.id, 1)),
+                  startDate   = date,
+                  endDate     = date,
+                  totalAmount = item.dailyRate,
+                  status      = BookingStatus.Pending
+                ).toOption.get
+      _      <- ctx.bookingRepo.create(pending)
+      bookingId = pending.id.value
+      resp   <- putBookingStatus(ctx, bookingId, """{"newStatus":"confirmed"}""", auth.token)
+      body   <- resp.as[String]
+      json    = parse(body).toOption.get
+    yield
+      assertEquals(resp.status, Status.Conflict)
+      assert(json.hcursor.downField("missingMonitorLines").focus.isDefined, s"Expected missingMonitorLines in 409 body: $body")
+      val lines = json.hcursor.downField("missingMonitorLines").as[List[io.circe.Json]].toOption.get
+      assertEquals(lines.size, 1)
+      assertEquals(lines.head.hcursor.downField("itemId").as[String].toOption, Some(itemId))
+  }
+
+  test("PUT /dashboard/bookings/:id/status to confirmed with overrideMonitorCheck=true returns 200") {
+    for
+      ctx    <- makeCtx
+      auth   <- signupAndLogin(ctx)
+      itemId <- createItem(ctx, auth.token)
+      item   <- ctx.itemRepo.findById(ItemId.fromString(itemId).toOption.get).map(_.get)
+      requiredItem = Item.create(
+                       id              = item.id,
+                       providerId      = item.providerId,
+                       name            = item.name,
+                       description     = item.description,
+                       dailyRate       = item.dailyRate,
+                       stock           = item.stock,
+                       requiresMonitor = true
+                     ).toOption.get
+      _      <- ctx.itemRepo.update(requiredItem)
+      customer = Customer.create(CustomerId.generate, Email.fromString("c2@test.com").toOption.get, name = "Cliente").toOption.get
+      _      <- ctx.customerRepo.create(customer)
+      pending = Booking.create(
+                  id          = BookingId.generate,
+                  providerId  = item.providerId,
+                  customerId  = customer.id,
+                  items       = List(BookedIndividualItem(item.id, 1)),
+                  startDate   = date,
+                  endDate     = date,
+                  totalAmount = item.dailyRate,
+                  status      = BookingStatus.Pending
+                ).toOption.get
+      _      <- ctx.bookingRepo.create(pending)
+      bookingId = pending.id.value
+      resp   <- putBookingStatus(ctx, bookingId, """{"newStatus":"confirmed","overrideMonitorCheck":true}""", auth.token)
+      body   <- resp.as[String]
+      json    = parse(body).toOption.get
+    yield
+      assertEquals(resp.status, Status.Ok)
+      assertEquals(json.hcursor.downField("status").as[String].toOption, Some("confirmed"))
+  }
+
+  test("GET /dashboard/bookings/:id includes confirmedWithoutMonitor after override-confirm") {
+    for
+      ctx    <- makeCtx
+      auth   <- signupAndLogin(ctx)
+      itemId <- createItem(ctx, auth.token)
+      item   <- ctx.itemRepo.findById(ItemId.fromString(itemId).toOption.get).map(_.get)
+      requiredItem = Item.create(
+                       id              = item.id,
+                       providerId      = item.providerId,
+                       name            = item.name,
+                       description     = item.description,
+                       dailyRate       = item.dailyRate,
+                       stock           = item.stock,
+                       requiresMonitor = true
+                     ).toOption.get
+      _      <- ctx.itemRepo.update(requiredItem)
+      customer = Customer.create(CustomerId.generate, Email.fromString("c3@test.com").toOption.get, name = "Cliente").toOption.get
+      _      <- ctx.customerRepo.create(customer)
+      pending = Booking.create(
+                  id          = BookingId.generate,
+                  providerId  = item.providerId,
+                  customerId  = customer.id,
+                  items       = List(BookedIndividualItem(item.id, 1)),
+                  startDate   = date,
+                  endDate     = date,
+                  totalAmount = item.dailyRate,
+                  status      = BookingStatus.Pending
+                ).toOption.get
+      _      <- ctx.bookingRepo.create(pending)
+      bookingId = pending.id.value
+      _      <- putBookingStatus(ctx, bookingId, """{"newStatus":"confirmed","overrideMonitorCheck":true}""", auth.token)
+      resp   <- getDashboardBooking(ctx, bookingId, auth.token)
+      body   <- resp.as[String]
+      json    = parse(body).toOption.get
+    yield
+      assertEquals(resp.status, Status.Ok)
+      assertEquals(json.hcursor.downField("confirmedWithoutMonitor").as[Boolean].toOption, Some(true))
+  }
+
   test("GET /dashboard/bookings/:id returns 404 when booking belongs to different provider") {
     for
       ctx       <- makeCtx
