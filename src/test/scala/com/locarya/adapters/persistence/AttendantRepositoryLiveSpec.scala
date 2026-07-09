@@ -2,6 +2,7 @@ package com.locarya.adapters.persistence
 
 import cats.effect.IO
 import com.locarya.domain.models.*
+import com.locarya.domain.models.BookingLineRef
 import com.locarya.domain.ports.AttendantRepository
 import doobie.Transactor
 import munit.CatsEffectSuite
@@ -28,15 +29,16 @@ class AttendantRepositoryLiveSpec extends CatsEffectSuite:
     }
   }
 
-  test("assignToBooking and removeFromBooking reference booking_attendants table".ignore) {
+  test("assignToBookingLine and removeFromBookingLine reference booking_attendants table".ignore) {
     // Requires Docker Compose: docker-compose up -d. Deferred per ADR 0007.
     Database.transactor[IO](testDbUrl, testDbUser, testDbPassword).use { xa =>
       val repo        = AttendantRepositoryLive.make[IO](xa)
       val bookingId   = BookingId.generate
       val attendantId = AttendantId.generate
+      val lineRef     = BookingLineRef.IndividualLine(ItemId.generate)
       for
-        _ <- repo.assignToBooking(bookingId, attendantId)
-        _ <- repo.removeFromBooking(bookingId, attendantId)
+        _ <- repo.assignToBookingLine(bookingId, lineRef, attendantId)
+        _ <- repo.removeFromBookingLine(bookingId, lineRef, attendantId)
       yield ()
     }
   }

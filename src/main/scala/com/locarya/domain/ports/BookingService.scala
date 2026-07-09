@@ -2,6 +2,7 @@ package com.locarya.domain.ports
 
 import com.locarya.domain.models.*
 import java.time.LocalDate
+import com.locarya.domain.models.BookingLineRef
 
 /** A customer's contact details as collected by the Storefront booking form. The
   * Storefront does not collect a CPF, so `cpf` is absent here.
@@ -67,6 +68,8 @@ final case class CreateBookingByProviderRequest(
   customer:        CustomerInput
 )
 
+final case class BookingLineAttendants(lineRef: BookingLineRef, attendants: List[Attendant])
+
 final case class DashboardBookingDetailView(
   id:                 BookingId,
   providerId:         ProviderId,
@@ -78,7 +81,7 @@ final case class DashboardBookingDetailView(
   totalAmount:        Money,
   createdBy:          BookingCreator,
   bookingCode:        BookingCode,
-  assignedAttendants: List[Attendant]
+  assignedAttendants: List[BookingLineAttendants]
 )
 
 trait BookingService[F[_]]:

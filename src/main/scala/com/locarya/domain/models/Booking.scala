@@ -33,7 +33,6 @@ final case class Booking private (
   endDate: LocalDate,
   totalAmount: Money,
   status: BookingStatus,
-  attendantId: Option[AttendantId],
   deliveryAddress: Option[Address],
   createdBy: BookingCreator,
   bookingCode: BookingCode,
@@ -50,7 +49,6 @@ object Booking {
     endDate: LocalDate,
     totalAmount: Money,
     status: BookingStatus = BookingStatus.Pending,
-    attendantId: Option[AttendantId] = None,
     deliveryAddress: Option[Address] = None,
     createdBy: BookingCreator = BookingCreator.Provider,
     bookingCode: BookingCode = BookingCode.generate,
@@ -66,7 +64,7 @@ object Booking {
     }) {
       Left(InvalidBooking("All item quantities must be positive"))
     } else {
-      Right(Booking(id, providerId, customerId, items, startDate, endDate, totalAmount, status, attendantId, deliveryAddress, createdBy, bookingCode, partyProfile))
+      Right(Booking(id, providerId, customerId, items, startDate, endDate, totalAmount, status, deliveryAddress, createdBy, bookingCode, partyProfile))
     }
   }
 
@@ -75,10 +73,6 @@ object Booking {
       booking.status.transitionTo(newStatus).map { validatedStatus =>
         booking.copy(status = validatedStatus)
       }
-    }
-
-    def assignAttendant(attendantId: AttendantId): Booking = {
-      booking.copy(attendantId = Some(attendantId))
     }
   }
 }

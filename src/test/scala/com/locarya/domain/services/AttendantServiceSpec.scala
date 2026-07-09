@@ -2,6 +2,7 @@ package com.locarya.domain.services
 
 import cats.effect.IO
 import com.locarya.domain.models.*
+import com.locarya.domain.models.BookingLineRef
 import com.locarya.domain.ports.*
 import com.locarya.helpers.{InMemoryAttendantRepository, InMemoryBookingRepository, InMemoryItemRepository, InMemoryProviderRepository}
 import munit.CatsEffectSuite
@@ -150,39 +151,70 @@ class AttendantServiceSpec extends CatsEffectSuite:
 
   // ── assignAttendants ──────────────────────────────────────────────────────
 
-  test("assignAttendants stores join and findByBooking returns assigned attendants") {
+  test("assignAttendants stores join under line ref and findByBookingGrouped returns it") {
+    val bookingId = BookingId.generate
+    val lineRef   = BookingLineRef.IndividualLine(ItemId.generate)
     for
-      ctx       <- makeCtx
-      bookingId  = BookingId.generate
-      id        <- ctx.svc.createAttendant(createRequest())
-      _         <- ctx.svc.assignAttendants(AssignAttendantsRequest(bookingId, providerId, List(id)))
-      assigned  <- ctx.attendantRepo.findByBooking(bookingId)
+      ctx      <- makeCtx
+      id       <- ctx.svc.createAttendant(createRequest())
+      _        <- ctx.svc.assignAttendants(AssignAttendantsRequest(bookingId, providerId, lineRef, List(id)))
+      grouped  <- ctx.attendantRepo.findByBookingGrouped(bookingId)
     yield
-      assertEquals(assigned.size, 1)
-      assertEquals(assigned.head.id, id)
+      assertEquals(grouped.get(lineRef).map(_.size), Some(1))
+      assertEquals(grouped.get(lineRef).flatMap(_.headOption), Some(id))
   }
 
-  test("assignAttendants — same attendant can be assigned to two bookings on different dates") {
+  test("assignAttendants to combo line stores under combo key") {
+    val bookingId = BookingId.generate
+    val lineRef   = BookingLineRef.ComboLine(ComboId.generate)
+    for
+      ctx      <- makeCtx
+      id       <- ctx.svc.createAttendant(createRequest())
+      _        <- ctx.svc.assignAttendants(AssignAttendantsRequest(bookingId, providerId, lineRef, List(id)))
+      grouped  <- ctx.attendantRepo.findByBookingGrouped(bookingId)
+    yield
+      assertEquals(grouped.get(lineRef).map(_.size), Some(1))
+  }
+
+  test("assignAttendants to two lines on same booking tracks them independently") {
+    val bookingId = BookingId.generate
+    val line1     = BookingLineRef.IndividualLine(ItemId.generate)
+    val line2     = BookingLineRef.ComboLine(ComboId.generate)
+    for
+      ctx      <- makeCtx
+      id1      <- ctx.svc.createAttendant(createRequest(name = "Monitor A"))
+      id2      <- ctx.svc.createAttendant(createRequest(name = "Monitor B"))
+      _        <- ctx.svc.assignAttendants(AssignAttendantsRequest(bookingId, providerId, line1, List(id1)))
+      _        <- ctx.svc.assignAttendants(AssignAttendantsRequest(bookingId, providerId, line2, List(id2)))
+      grouped  <- ctx.attendantRepo.findByBookingGrouped(bookingId)
+    yield
+      assertEquals(grouped.get(line1).flatMap(_.headOption), Some(id1))
+      assertEquals(grouped.get(line2).flatMap(_.headOption), Some(id2))
+  }
+
+  test("assignAttendants — same attendant can be assigned to two bookings") {
+    val line = BookingLineRef.IndividualLine(ItemId.generate)
     for
       ctx        <- makeCtx
       bookingId1  = BookingId.generate
       bookingId2  = BookingId.generate
       id         <- ctx.svc.createAttendant(createRequest())
-      _          <- ctx.svc.assignAttendants(AssignAttendantsRequest(bookingId1, providerId, List(id)))
-      _          <- ctx.svc.assignAttendants(AssignAttendantsRequest(bookingId2, providerId, List(id)))
-      assigned1  <- ctx.attendantRepo.findByBooking(bookingId1)
-      assigned2  <- ctx.attendantRepo.findByBooking(bookingId2)
+      _          <- ctx.svc.assignAttendants(AssignAttendantsRequest(bookingId1, providerId, line, List(id)))
+      _          <- ctx.svc.assignAttendants(AssignAttendantsRequest(bookingId2, providerId, line, List(id)))
+      grouped1   <- ctx.attendantRepo.findByBookingGrouped(bookingId1)
+      grouped2   <- ctx.attendantRepo.findByBookingGrouped(bookingId2)
     yield
-      assertEquals(assigned1.size, 1)
-      assertEquals(assigned2.size, 1)
+      assertEquals(grouped1.get(line).map(_.size), Some(1))
+      assertEquals(grouped2.get(line).map(_.size), Some(1))
   }
 
   test("assignAttendants raises AttendantNotFound for unknown attendant id") {
     for
       ctx       <- makeCtx
       bookingId  = BookingId.generate
+      lineRef    = BookingLineRef.IndividualLine(ItemId.generate)
       bogus      = AttendantId.generate
-      result    <- ctx.svc.assignAttendants(AssignAttendantsRequest(bookingId, providerId, List(bogus))).attempt
+      result    <- ctx.svc.assignAttendants(AssignAttendantsRequest(bookingId, providerId, lineRef, List(bogus))).attempt
     yield
       assert(result.isLeft)
       result.left.foreach {
@@ -195,9 +227,10 @@ class AttendantServiceSpec extends CatsEffectSuite:
     for
       ctx       <- makeCtx
       bookingId  = BookingId.generate
+      lineRef    = BookingLineRef.IndividualLine(ItemId.generate)
       id        <- ctx.svc.createAttendant(createRequest())
       _         <- ctx.svc.deactivateAttendant(id, providerId)
-      result    <- ctx.svc.assignAttendants(AssignAttendantsRequest(bookingId, providerId, List(id))).attempt
+      result    <- ctx.svc.assignAttendants(AssignAttendantsRequest(bookingId, providerId, lineRef, List(id))).attempt
     yield
       assert(result.isLeft)
       result.left.foreach {
@@ -210,8 +243,58 @@ class AttendantServiceSpec extends CatsEffectSuite:
     for
       ctx       <- makeCtx
       bookingId  = BookingId.generate
+      lineRef    = BookingLineRef.IndividualLine(ItemId.generate)
       id        <- ctx.svc.createAttendant(createRequest(providerId = providerId))
-      result    <- ctx.svc.assignAttendants(AssignAttendantsRequest(bookingId, providerId2, List(id))).attempt
+      result    <- ctx.svc.assignAttendants(AssignAttendantsRequest(bookingId, providerId2, lineRef, List(id))).attempt
+    yield
+      assert(result.isLeft)
+      result.left.foreach {
+        case _: AttendantError.Forbidden => ()
+        case other                       => fail(s"Expected Forbidden, got $other")
+      }
+  }
+
+  // ── removeAttendantFromLine ───────────────────────────────────────────────
+
+  test("removeAttendantFromLine clears the attendant from that line only") {
+    val bookingId = BookingId.generate
+    val line1     = BookingLineRef.IndividualLine(ItemId.generate)
+    val line2     = BookingLineRef.IndividualLine(ItemId.generate)
+    for
+      ctx  <- makeCtx
+      id1  <- ctx.svc.createAttendant(createRequest(name = "Monitor A"))
+      id2  <- ctx.svc.createAttendant(createRequest(name = "Monitor B"))
+      _    <- ctx.svc.assignAttendants(AssignAttendantsRequest(bookingId, providerId, line1, List(id1)))
+      _    <- ctx.svc.assignAttendants(AssignAttendantsRequest(bookingId, providerId, line2, List(id2)))
+      _    <- ctx.svc.removeAttendantFromLine(RemoveAttendantFromLineRequest(bookingId, providerId, line1, id1))
+      g    <- ctx.attendantRepo.findByBookingGrouped(bookingId)
+    yield
+      assert(g.get(line1).forall(_.isEmpty), "line1 should be empty after removal")
+      assertEquals(g.get(line2).flatMap(_.headOption), Some(id2))
+  }
+
+  test("removeAttendantFromLine raises AttendantNotFound for unknown attendant") {
+    for
+      ctx       <- makeCtx
+      bookingId  = BookingId.generate
+      lineRef    = BookingLineRef.IndividualLine(ItemId.generate)
+      bogus      = AttendantId.generate
+      result    <- ctx.svc.removeAttendantFromLine(RemoveAttendantFromLineRequest(bookingId, providerId, lineRef, bogus)).attempt
+    yield
+      assert(result.isLeft)
+      result.left.foreach {
+        case _: AttendantError.AttendantNotFound => ()
+        case other                               => fail(s"Expected AttendantNotFound, got $other")
+      }
+  }
+
+  test("removeAttendantFromLine raises Forbidden when provider does not own the attendant") {
+    for
+      ctx       <- makeCtx
+      bookingId  = BookingId.generate
+      lineRef    = BookingLineRef.IndividualLine(ItemId.generate)
+      id        <- ctx.svc.createAttendant(createRequest(providerId = providerId))
+      result    <- ctx.svc.removeAttendantFromLine(RemoveAttendantFromLineRequest(bookingId, providerId2, lineRef, id)).attempt
     yield
       assert(result.isLeft)
       result.left.foreach {

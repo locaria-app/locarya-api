@@ -109,9 +109,8 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
         Left(InvalidBooking(s"Unknown item_type: $other"))
 
   private def rowToBooking(
-    row:          BookingRow,
-    items:        List[BookingItemRow],
-    attendantUuid: Option[UUID]
+    row:   BookingRow,
+    items: List[BookingItemRow]
   ): F[Booking] =
     val partyProfileOpt = row.partyProfile.flatMap(json => circeDecoder[PartyProfile](json).toOption)
     (for
@@ -121,12 +120,11 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
       bookingItems <- items.traverse(rowToBookingItem)
       totalAmt     <- Money.fromAmount(row.totalAmount)
       status       <- parseStatus(row.status)
-      aidOpt       <- attendantUuid.traverse(aid => AttendantId.fromString(aid.toString))
       deliverAddr  <- parseDeliveryAddress(row)
       creator      <- parseCreator(row.createdBy)
       code         <- BookingCode.fromString(row.bookingCode)
       booking      <- Booking.create(id, pid, cid, bookingItems, row.startDate, row.endDate,
-                        totalAmt, status, aidOpt, deliverAddr, creator, code, partyProfileOpt)
+                        totalAmt, status, deliverAddr, creator, code, partyProfileOpt)
     yield booking).fold(
       err => Async[F].raiseError(new RuntimeException(s"DB→domain mapping failed: $err")),
       _.pure[F]
@@ -149,20 +147,12 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
       if rows.isEmpty then List.empty[Booking].pure[F]
       else
         val uuids = rows.map(_.id).toArray
-        (for
-          allItems <- sql"""SELECT booking_id, item_type, item_id, combo_id, quantity, unit_price
-                            FROM booking_items WHERE booking_id = ANY($uuids)"""
-                       .query[BookingItemRow].to[List]
-          allAttend <- sql"""SELECT booking_id, attendant_id FROM booking_attendants
-                             WHERE booking_id = ANY($uuids)"""
-                        .query[(UUID, UUID)].to[List]
-        yield (allItems, allAttend)).transact(xa).flatMap { (allItems, allAttend) =>
-          val itemsByBooking    = allItems.groupBy(_.bookingId)
-          val attendantByBk    = allAttend.groupBy(_._1).view.mapValues(_.head._2).toMap
-          rows.traverse(row =>
-            rowToBooking(row, itemsByBooking.getOrElse(row.id, Nil), attendantByBk.get(row.id))
-          )
-        }
+        sql"""SELECT booking_id, item_type, item_id, combo_id, quantity, unit_price
+              FROM booking_items WHERE booking_id = ANY($uuids)"""
+          .query[BookingItemRow].to[List].transact(xa).flatMap { allItems =>
+            val itemsByBooking = allItems.groupBy(_.bookingId)
+            rows.traverse(row => rowToBooking(row, itemsByBooking.getOrElse(row.id, Nil)))
+          }
     }
 
   override def create(booking: Booking): F[Booking] =
@@ -193,26 +183,18 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
                     ${booking.bookingCode.value},""" ++ partyProfileFr ++ fr")")
               .update.run
       _ <- insertItemRows(bookingUuid, booking.items)
-      _ <- booking.attendantId.traverse_ { aid =>
-             sql"""INSERT INTO booking_attendants (id, booking_id, attendant_id)
-                   VALUES (${UUID.randomUUID()}, $bookingUuid, ${UUID.fromString(aid.value)})"""
-               .update.run
-           }
     yield ()).transact(xa) >> booking.pure[F]
 
   override def findById(id: BookingId): F[Option[Booking]] =
     val bookingUuid = UUID.fromString(id.value)
     (for
-      rowOpt    <- (selectBase ++ fr"WHERE id = $bookingUuid").query[BookingRow].option
-      items     <- sql"""SELECT booking_id, item_type, item_id, combo_id, quantity, unit_price
-                         FROM booking_items WHERE booking_id = $bookingUuid"""
-                    .query[BookingItemRow].to[List]
-      attendant <- sql"""SELECT attendant_id FROM booking_attendants
-                         WHERE booking_id = $bookingUuid LIMIT 1"""
-                    .query[UUID].option
-    yield (rowOpt, items, attendant)).transact(xa).flatMap {
-      case (Some(row), items, attendant) => rowToBooking(row, items, attendant).map(Some(_))
-      case (None, _, _)                  => (None: Option[Booking]).pure[F]
+      rowOpt <- (selectBase ++ fr"WHERE id = $bookingUuid").query[BookingRow].option
+      items  <- sql"""SELECT booking_id, item_type, item_id, combo_id, quantity, unit_price
+                      FROM booking_items WHERE booking_id = $bookingUuid"""
+                  .query[BookingItemRow].to[List]
+    yield (rowOpt, items)).transact(xa).flatMap {
+      case (Some(row), items) => rowToBooking(row, items).map(Some(_))
+      case (None, _)          => (None: Option[Booking]).pure[F]
     }
 
   override def update(booking: Booking): F[Booking] =
@@ -239,12 +221,6 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
                  WHERE id = $bookingUuid""").update.run
       _ <- sql"DELETE FROM booking_items WHERE booking_id = $bookingUuid".update.run
       _ <- insertItemRows(bookingUuid, booking.items)
-      _ <- sql"DELETE FROM booking_attendants WHERE booking_id = $bookingUuid".update.run
-      _ <- booking.attendantId.traverse_ { aid =>
-             sql"""INSERT INTO booking_attendants (id, booking_id, attendant_id)
-                   VALUES (${UUID.randomUUID()}, $bookingUuid, ${UUID.fromString(aid.value)})"""
-               .update.run
-           }
     yield ()).transact(xa) >> booking.pure[F]
 
   override def findByProvider(

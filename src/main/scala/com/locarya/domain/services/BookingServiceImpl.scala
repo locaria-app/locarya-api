@@ -3,7 +3,9 @@ package com.locarya.domain.services
 import cats.effect.Sync
 import cats.syntax.all.*
 import com.locarya.domain.models.*
+import com.locarya.domain.models.BookingLineRef
 import com.locarya.domain.ports.*
+import com.locarya.domain.ports.BookingLineAttendants
 import java.time.{Instant, LocalDate}
 import org.typelevel.log4cats.Logger
 
@@ -107,22 +109,26 @@ class BookingServiceImpl[F[_]: Sync: Logger](
   private def requireAttendantsWhenConfirming(booking: Booking, newStatus: BookingStatus): F[Unit] =
     if newStatus != BookingStatus.Confirmed then ().pure[F]
     else
-      booking.items.traverse {
-        case BookedIndividualItem(itemId, _, _) =>
-          itemRepo.findById(itemId).map(_.exists(_.requiresMonitor))
-        case BookedCombo(comboId, _, _) =>
-          comboRepo.findById(comboId).map(_.exists(_.requiresMonitor))
-      }.flatMap { checks =>
-        if checks.exists(identity) then
-          attendantRepo.findByBooking(booking.id).flatMap { attendants =>
-            if attendants.isEmpty then
-              BookingError.InvalidInput(
-                InvalidBooking("Booking with required-attendant items must have an attendant assigned before confirmation")
-              ).raiseError[F, Unit]
-            else ().pure[F]
-          }
-        else ().pure[F]
-      }
+      for
+        grouped <- attendantRepo.findByBookingGrouped(booking.id)
+        checks  <- booking.items.traverse {
+                     case BookedIndividualItem(itemId, _, _) =>
+                       itemRepo.findById(itemId).map(_.exists(_.requiresMonitor)).map {
+                         requiresMonitor => (requiresMonitor, BookingLineRef.IndividualLine(itemId))
+                       }
+                     case BookedCombo(comboId, _, _) =>
+                       comboRepo.findById(comboId).map(_.exists(_.requiresMonitor)).map {
+                         requiresMonitor => (requiresMonitor, BookingLineRef.ComboLine(comboId))
+                       }
+                   }
+        _ <- checks.traverse_ { case (requiresMonitor, lineRef) =>
+               if requiresMonitor && grouped.get(lineRef).forall(_.isEmpty) then
+                 BookingError.InvalidInput(
+                   InvalidBooking("Booking with required-attendant items must have an attendant assigned before confirmation")
+                 ).raiseError[F, Unit]
+               else ().pure[F]
+             }
+      yield ()
 
   def getBookingDetail(providerId: ProviderId, bookingId: BookingId): F[DashboardBookingDetailView] =
     for
@@ -134,7 +140,10 @@ class BookingServiceImpl[F[_]: Sync: Logger](
                      case Some(c) => c.pure[F]
                      case None    => BookingError.InvalidInput(InvalidBooking("Customer not found")).raiseError[F, Customer]
                    }
-      attendants <- attendantRepo.findByBooking(bookingId)
+      grouped    <- attendantRepo.findByBookingGrouped(bookingId)
+      lineAttendants <- grouped.toList.traverse { case (lineRef, ids) =>
+                          ids.toList.traverse(attendantRepo.findById).map(_.flatten).map(BookingLineAttendants(lineRef, _))
+                        }
     yield DashboardBookingDetailView(
       id                 = booking.id,
       providerId         = booking.providerId,
@@ -146,7 +155,7 @@ class BookingServiceImpl[F[_]: Sync: Logger](
       totalAmount        = booking.totalAmount,
       createdBy          = booking.createdBy,
       bookingCode        = booking.bookingCode,
-      assignedAttendants = attendants
+      assignedAttendants = lineAttendants
     )
 
   def listBookings(providerId: ProviderId, status: Option[BookingStatus], dateFrom: Option[LocalDate], dateTo: Option[LocalDate]): F[List[DashboardBookingView]] =

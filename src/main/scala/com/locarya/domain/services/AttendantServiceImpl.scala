@@ -47,9 +47,16 @@ class AttendantServiceImpl[F[_]: Sync: Logger](
         _         <- requireOwner(attendant, request.providerId)
         _         <- if !attendant.isActive then AttendantError.AttendantInactive(attendantId).raiseError[F, Unit]
                      else ().pure[F]
-        _         <- attendantRepo.assignToBooking(request.bookingId, attendantId)
+        _         <- attendantRepo.assignToBookingLine(request.bookingId, request.lineRef, attendantId)
       yield ()
     }
+
+  def removeAttendantFromLine(request: RemoveAttendantFromLineRequest): F[Unit] =
+    for
+      attendant <- requireAttendantExists(request.attendantId)
+      _         <- requireOwner(attendant, request.providerId)
+      _         <- attendantRepo.removeFromBookingLine(request.bookingId, request.lineRef, request.attendantId)
+    yield ()
 
   private def requireAttendantExists(id: AttendantId): F[Attendant] =
     attendantRepo.findById(id).flatMap {

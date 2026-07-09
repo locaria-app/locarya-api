@@ -18,7 +18,15 @@ final case class UpdateAttendantRequest(
 final case class AssignAttendantsRequest(
   bookingId:    BookingId,
   providerId:   ProviderId,
+  lineRef:      BookingLineRef,
   attendantIds: List[AttendantId]
+)
+
+final case class RemoveAttendantFromLineRequest(
+  bookingId:   BookingId,
+  providerId:  ProviderId,
+  lineRef:     BookingLineRef,
+  attendantId: AttendantId
 )
 
 trait AttendantService[F[_]]:
@@ -27,3 +35,4 @@ trait AttendantService[F[_]]:
   def deactivateAttendant(attendantId: AttendantId, providerId: ProviderId): F[Unit]
   def listActiveAttendants(providerId: ProviderId): F[List[Attendant]]
   def assignAttendants(request: AssignAttendantsRequest): F[Unit]
+  def removeAttendantFromLine(request: RemoveAttendantFromLineRequest): F[Unit]

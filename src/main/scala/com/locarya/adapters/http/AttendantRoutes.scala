@@ -4,7 +4,7 @@ import cats.effect.Async
 import cats.syntax.all.*
 import com.locarya.adapters.http.TapirSupport.{ErrorBody, securedBase, validateBearer}
 import com.locarya.domain.models.*
-import com.locarya.domain.ports.{AssignAttendantsRequest, AttendantService, CreateAttendantRequest, UpdateAttendantRequest}
+import com.locarya.domain.ports.{AssignAttendantsRequest, AttendantService, CreateAttendantRequest, RemoveAttendantFromLineRequest, UpdateAttendantRequest}
 import io.circe.generic.auto.*
 import org.http4s.HttpRoutes
 import sttp.model.StatusCode
@@ -18,7 +18,11 @@ object AttendantRoutes:
 
   private case class CreateAttendantBody(name: String, phone: String)
   private case class UpdateAttendantBody(name: String, phone: String)
-  private case class AssignAttendantsBody(attendantIds: List[String])
+  private case class AssignAttendantsBody(
+    attendantIds: List[String],
+    itemId:       Option[String] = None,
+    comboId:      Option[String] = None
+  )
 
   private case class AttendantResponse(
     attendantId: String,
@@ -53,8 +57,13 @@ object AttendantRoutes:
     .in("dashboard" / "bookings" / path[String]("bookingId") / "attendants")
     .in(jsonBody[AssignAttendantsBody])
 
+  private val removeAttendantFromLineE = securedBase.delete
+    .in("dashboard" / "bookings" / path[String]("bookingId") / "attendants" / path[String]("attendantId"))
+    .in(query[Option[String]]("itemId"))
+    .in(query[Option[String]]("comboId"))
+
   val allEndpoints: List[AnyEndpoint] =
-    List(listAttendantsE, createAttendantE, updateAttendantE, deleteAttendantE, assignAttendantsE)
+    List(listAttendantsE, createAttendantE, updateAttendantE, deleteAttendantE, assignAttendantsE, removeAttendantFromLineE)
 
   def routes[F[_]: Async](
     attendantService: AttendantService[F],
@@ -69,6 +78,19 @@ object AttendantRoutes:
     def notFound(msg: String): Err   = (StatusCode.NotFound, ErrorBody(msg))
     def badRequest(msg: String): Err = (StatusCode.BadRequest, ErrorBody(msg))
     def forbidden(msg: String): Err  = (StatusCode.Forbidden, ErrorBody(msg))
+
+    def parseLineRef(itemIdOpt: Option[String], comboIdOpt: Option[String]): F[BookingLineRef] =
+      (itemIdOpt, comboIdOpt) match
+        case (Some(iStr), None) =>
+          ItemId.fromString(iStr)
+            .fold(err => AttendantError.InvalidInput(err).raiseError[F, BookingLineRef],
+                  id  => BookingLineRef.IndividualLine(id).pure[F])
+        case (None, Some(cStr)) =>
+          ComboId.fromString(cStr)
+            .fold(err => AttendantError.InvalidInput(err).raiseError[F, BookingLineRef],
+                  id  => BookingLineRef.ComboLine(id).pure[F])
+        case _ =>
+          AttendantError.InvalidInput(InvalidEntityId("Exactly one of itemId or comboId must be provided")).raiseError[F, BookingLineRef]
 
     val listServer = listAttendantsE.serverSecurityLogic[ProviderId, F](security)
       .serverLogic { providerId => _ =>
@@ -126,22 +148,44 @@ object AttendantRoutes:
         (for
           bookingId    <- BookingId.fromString(bookingIdStr)
                             .fold(err => AttendantError.InvalidInput(err).raiseError[F, BookingId], _.pure[F])
+          lineRef      <- parseLineRef(body.itemId, body.comboId)
           attendantIds <- body.attendantIds.traverse { idStr =>
                             AttendantId.fromString(idStr)
                               .fold(err => AttendantError.InvalidInput(err).raiseError[F, AttendantId], _.pure[F])
                           }
-          req2          = AssignAttendantsRequest(bookingId, providerId, attendantIds)
+          req2          = AssignAttendantsRequest(bookingId, providerId, lineRef, attendantIds)
           _            <- attendantService.assignAttendants(req2)
         yield Right(()))
           .handleErrorWith {
-            case _: AttendantError.AttendantNotFound => Left(notFound("Attendant not found")).pure[F]
-            case _: AttendantError.BookingNotFound   => Left(notFound("Booking not found")).pure[F]
-            case _: AttendantError.Forbidden         => Left(forbidden("Access denied")).pure[F]
-            case _: AttendantError.AttendantInactive => Left(badRequest("Attendant is inactive")).pure[F]
-            case e: AttendantError                   => Left(badRequest(e.getMessage)).pure[F]
+            case _: AttendantError.AttendantNotFound    => Left(notFound("Attendant not found")).pure[F]
+            case _: AttendantError.BookingNotFound      => Left(notFound("Booking not found")).pure[F]
+            case _: AttendantError.BookingLineNotFound  => Left(notFound("Booking line not found")).pure[F]
+            case _: AttendantError.Forbidden            => Left(forbidden("Access denied")).pure[F]
+            case _: AttendantError.AttendantInactive    => Left(badRequest("Attendant is inactive")).pure[F]
+            case e: AttendantError                      => Left(badRequest(e.getMessage)).pure[F]
+          }
+      }
+
+    val removeServer = removeAttendantFromLineE.serverSecurityLogic[ProviderId, F](security)
+      .serverLogic { providerId => input =>
+        val (bookingIdStr, attendantIdStr, itemIdOpt, comboIdOpt) = input
+        (for
+          bookingId   <- BookingId.fromString(bookingIdStr)
+                           .fold(err => AttendantError.InvalidInput(err).raiseError[F, BookingId], _.pure[F])
+          attendantId <- AttendantId.fromString(attendantIdStr)
+                           .fold(err => AttendantError.InvalidInput(err).raiseError[F, AttendantId], _.pure[F])
+          lineRef     <- parseLineRef(itemIdOpt, comboIdOpt)
+          req2         = RemoveAttendantFromLineRequest(bookingId, providerId, lineRef, attendantId)
+          _           <- attendantService.removeAttendantFromLine(req2)
+        yield Right(()))
+          .handleErrorWith {
+            case _: AttendantError.AttendantNotFound   => Left(notFound("Attendant not found")).pure[F]
+            case _: AttendantError.BookingLineNotFound => Left(notFound("Booking line not found")).pure[F]
+            case _: AttendantError.Forbidden           => Left(forbidden("Access denied")).pure[F]
+            case e: AttendantError                     => Left(badRequest(e.getMessage)).pure[F]
           }
       }
 
     Http4sServerInterpreter[F]().toRoutes(
-      List(listServer, createServer, updateServer, deleteServer, assignServer)
+      List(listServer, createServer, updateServer, deleteServer, assignServer, removeServer)
     )

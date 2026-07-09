@@ -5,6 +5,6 @@ import com.locarya.domain.models.*
 trait AttendantRepository[F[_]] extends Repository[F, Attendant, AttendantId]:
   def findByProvider(providerId: ProviderId): F[List[Attendant]]
   def findActiveByProvider(providerId: ProviderId): F[List[Attendant]]
-  def findByBooking(bookingId: BookingId): F[List[Attendant]]
-  def assignToBooking(bookingId: BookingId, attendantId: AttendantId): F[Unit]
-  def removeFromBooking(bookingId: BookingId, attendantId: AttendantId): F[Unit]
+  def assignToBookingLine(bookingId: BookingId, lineRef: BookingLineRef, attendantId: AttendantId): F[Unit]
+  def removeFromBookingLine(bookingId: BookingId, lineRef: BookingLineRef, attendantId: AttendantId): F[Unit]
+  def findByBookingGrouped(bookingId: BookingId): F[Map[BookingLineRef, Set[AttendantId]]]
