@@ -788,6 +788,16 @@ class BookingServiceSpec extends CatsEffectSuite:
       assertEquals(updated.status, BookingStatus.Confirmed)
   }
 
+  test("updateBookingStatus — non-Confirmed transitions succeed even when required-monitor item has no attendant") {
+    for
+      ctx       <- makeCtx()
+      item      <- buildRequiredItem(ctx)
+      bookingId <- createConfirmedBooking(ctx, item)
+      // Move Confirmed→InProgress without an attendant — should succeed
+      ip        <- ctx.svc.updateBookingStatus(ctx.provider.id, bookingId, BookingStatus.InProgress, None)
+    yield assertEquals(ip.status, BookingStatus.InProgress)
+  }
+
   // ── BookingStatusChanged notification events ──────────────────────────────
 
   test("updateBookingStatus — Pending→Confirmed enqueues a BookingStatusChanged notification event") {
