@@ -7,8 +7,9 @@ import com.locarya.domain.models.ValidationError
 import com.locarya.domain.models.*
 import com.locarya.domain.models.BookingLineRef
 import com.locarya.domain.ports.{BookingLineAttendants, BookingLineInput, BookingService, CreateBookingByProviderRequest, CustomerInput, DashboardBookingDetailView, DashboardBookingView}
+import io.circe.Codec
 import io.circe.generic.auto.*
-import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
+import io.circe.generic.semiauto.{deriveCodec, deriveDecoder, deriveEncoder}
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 import org.http4s.HttpRoutes
@@ -74,7 +75,7 @@ object DashboardBookingRoutes:
 
   private case class BookingCreateResponse(bookingId: String, status: String)
 
-  private case class UpdateBookingStatusBody(newStatus: String, reason: Option[String])
+  private case class UpdateBookingStatusBody(newStatus: String, reason: Option[String], overrideMonitorCheck: Option[Boolean] = None)
 
   private case class BookingStatusResponse(id: String, status: String)
 
@@ -90,17 +91,37 @@ object DashboardBookingRoutes:
   private given io.circe.Encoder[LineAttendantsResponse] = deriveEncoder
   private given io.circe.Decoder[LineAttendantsResponse] = deriveDecoder
 
+  private case class MissingMonitorLineResponse(itemId: Option[String], comboId: Option[String])
+  private given Codec[MissingMonitorLineResponse]  = deriveCodec
+  private given Schema[MissingMonitorLineResponse] = Schema.derived
+
+  private sealed trait UpdateStatusApiError
+  private object UpdateStatusApiError:
+    final case class Unauthorized(error: String) extends UpdateStatusApiError
+    final case class NotFound(error: String)     extends UpdateStatusApiError
+    final case class BadRequest(error: String)   extends UpdateStatusApiError
+    final case class MonitorRequired(message: String, missingMonitorLines: List[MissingMonitorLineResponse]) extends UpdateStatusApiError
+  private given Codec[UpdateStatusApiError.Unauthorized]   = deriveCodec
+  private given Schema[UpdateStatusApiError.Unauthorized]  = Schema.derived
+  private given Codec[UpdateStatusApiError.NotFound]       = deriveCodec
+  private given Schema[UpdateStatusApiError.NotFound]      = Schema.derived
+  private given Codec[UpdateStatusApiError.BadRequest]     = deriveCodec
+  private given Schema[UpdateStatusApiError.BadRequest]    = Schema.derived
+  private given Codec[UpdateStatusApiError.MonitorRequired]   = deriveCodec
+  private given Schema[UpdateStatusApiError.MonitorRequired]  = Schema.derived
+
   private case class BookingDetailResponse(
-    id:                 String,
-    customer:           CustomerResponse,
-    items:              List[BookingItemResponse],
-    date:               String,
-    deliveryAddress:    Option[AddressResponse],
-    status:             String,
-    totalAmount:        BigDecimal,
-    createdBy:          String,
-    bookingCode:        String,
-    assignedAttendants: List[LineAttendantsResponse]
+    id:                      String,
+    customer:                CustomerResponse,
+    items:                   List[BookingItemResponse],
+    date:                    String,
+    deliveryAddress:         Option[AddressResponse],
+    status:                  String,
+    totalAmount:             BigDecimal,
+    createdBy:               String,
+    bookingCode:             String,
+    assignedAttendants:      List[LineAttendantsResponse],
+    confirmedWithoutMonitor: Boolean
   )
 
   private def toKebab(s: String): String =
@@ -151,21 +172,22 @@ object DashboardBookingRoutes:
       bookingCode     = view.bookingCode
     ))
     BookingDetailResponse(
-      id                 = base.id,
-      customer           = base.customer,
-      items              = base.items,
-      date               = base.date,
-      deliveryAddress    = base.deliveryAddress,
-      status             = base.status,
-      totalAmount        = base.totalAmount,
-      createdBy          = base.createdBy,
-      bookingCode        = base.bookingCode,
-      assignedAttendants = view.assignedAttendants.map { la =>
+      id                      = base.id,
+      customer                = base.customer,
+      items                   = base.items,
+      date                    = base.date,
+      deliveryAddress         = base.deliveryAddress,
+      status                  = base.status,
+      totalAmount             = base.totalAmount,
+      createdBy               = base.createdBy,
+      bookingCode             = base.bookingCode,
+      assignedAttendants      = view.assignedAttendants.map { la =>
         val (itemIdOpt, comboIdOpt) = la.lineRef match
           case BookingLineRef.IndividualLine(iid) => (Some(iid.value), None)
           case BookingLineRef.ComboLine(cid)      => (None, Some(cid.value))
         LineAttendantsResponse(itemIdOpt, comboIdOpt, la.attendants.map(a => AttendantResponse(a.id.value, a.name, a.phone)))
-      }
+      },
+      confirmedWithoutMonitor = view.confirmedWithoutMonitor
     )
 
   private def toBookingListResponse(view: DashboardBookingView): BookingListResponse =
@@ -198,10 +220,21 @@ object DashboardBookingRoutes:
     .in(jsonBody[CreateBookingBody])
     .out(statusCode(StatusCode.Created).and(jsonBody[BookingCreateResponse]))
 
-  private val updateStatusE = securedBase.put
-    .in("dashboard" / "bookings" / path[String]("bookingId") / "status")
-    .in(jsonBody[UpdateBookingStatusBody])
-    .out(jsonBody[BookingStatusResponse])
+  private val updateStatusE =
+    endpoint
+      .in("api" / "v1" / "dashboard" / "bookings" / path[String]("bookingId") / "status")
+      .put
+      .securityIn(auth.bearer[String]())
+      .in(jsonBody[UpdateBookingStatusBody])
+      .out(jsonBody[BookingStatusResponse])
+      .errorOut(
+        oneOf[UpdateStatusApiError](
+          oneOfVariant(StatusCode.Unauthorized, jsonBody[UpdateStatusApiError.Unauthorized]),
+          oneOfVariant(StatusCode.NotFound,     jsonBody[UpdateStatusApiError.NotFound]),
+          oneOfVariant(StatusCode.BadRequest,   jsonBody[UpdateStatusApiError.BadRequest]),
+          oneOfVariant(StatusCode.Conflict,     jsonBody[UpdateStatusApiError.MonitorRequired])
+        )
+      )
 
   private val getDetailE = securedBase.get
     .in("dashboard" / "bookings" / path[String]("bookingId"))
@@ -278,21 +311,32 @@ object DashboardBookingRoutes:
           }
       }
 
-    val updateStatusServer = updateStatusE.serverSecurityLogic[ProviderId, F](security)
-      .serverLogic { providerId => input =>
-        val (bookingIdStr, body) = input
-        (for
-          bookingId <- BookingId.fromString(bookingIdStr)
-                         .fold(err => BookingError.InvalidInput(err).raiseError[F, BookingId], _.pure[F])
-          newStatus <- parseBookingStatus(body.newStatus)
-                         .fold(err => BookingError.InvalidInput(InvalidBooking(err)).raiseError[F, BookingStatus], _.pure[F])
-          updated   <- bookingService.updateBookingStatus(providerId, bookingId, newStatus, body.reason)
-        yield Right(BookingStatusResponse(id = updated.id.value, status = toKebab(updated.status.toString))))
-          .handleErrorWith {
-            case _: BookingError.BookingNotFound => Left(notFound("Booking not found")).pure[F]
-            case e: BookingError.InvalidInput    => Left(badRequest(e.getMessage)).pure[F]
-          }
-      }
+    val updateStatusServer = updateStatusE.serverSecurityLogic[ProviderId, F] { token =>
+      validateBearer(token, jwtSecret)
+        .leftMap { case (_, eb) => UpdateStatusApiError.Unauthorized(eb.error): UpdateStatusApiError }
+        .pure[F]
+    }
+    .serverLogic { providerId => input =>
+      val (bookingIdStr, body) = input
+      type E = UpdateStatusApiError
+      (for
+        bookingId <- BookingId.fromString(bookingIdStr)
+                       .fold(err => BookingError.InvalidInput(err).raiseError[F, BookingId], _.pure[F])
+        newStatus <- parseBookingStatus(body.newStatus)
+                       .fold(err => BookingError.InvalidInput(InvalidBooking(err)).raiseError[F, BookingStatus], _.pure[F])
+        updated   <- bookingService.updateBookingStatus(providerId, bookingId, newStatus, body.reason, body.overrideMonitorCheck.getOrElse(false))
+      yield Right(BookingStatusResponse(id = updated.id.value, status = toKebab(updated.status.toString))))
+        .handleErrorWith {
+          case _: BookingError.BookingNotFound => Left(UpdateStatusApiError.NotFound("Booking not found"): E).pure[F]
+          case e: BookingError.InvalidInput    => Left(UpdateStatusApiError.BadRequest(e.getMessage): E).pure[F]
+          case e: BookingError.MonitorRequiredWithoutOverride =>
+            val linesList = e.lines.map {
+              case BookingLineRef.IndividualLine(iid) => MissingMonitorLineResponse(Some(iid.value), None)
+              case BookingLineRef.ComboLine(cid)      => MissingMonitorLineResponse(None, Some(cid.value))
+            }
+            Left(UpdateStatusApiError.MonitorRequired(e.getMessage, linesList): E).pure[F]
+        }
+    }
 
     val getDetailServer = getDetailE.serverSecurityLogic[ProviderId, F](security)
       .serverLogic { providerId => bookingIdStr =>
