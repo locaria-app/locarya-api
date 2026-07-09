@@ -692,3 +692,65 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
       resp      <- getDashboardBooking(ctx, bookingId, token2)
     yield assertEquals(resp.status, Status.NotFound)
   }
+
+  // ── BookedCombo discriminator ─────────────────────────────────────────────
+
+  test("GET /dashboard/bookings items[0] has comboId set and itemId null for a BookedCombo booking line") {
+    for
+      ctx        <- makeCtx
+      auth       <- signupAndLogin(ctx)
+      comboId     = ComboId.generate
+      customer    = Customer.create(CustomerId.generate, Email.fromString("combo@test.com").toOption.get, name = "Cliente Combo").toOption.get
+      _          <- ctx.customerRepo.create(customer)
+      providerId  = ProviderId.fromString(auth.id).toOption.get
+      booking     = Booking.create(
+                      id          = BookingId.generate,
+                      providerId  = providerId,
+                      customerId  = customer.id,
+                      items       = List(BookedCombo(comboId, 1, None)),
+                      startDate   = date,
+                      endDate     = date,
+                      totalAmount = Money.fromAmount(BigDecimal(100)).toOption.get,
+                      status      = BookingStatus.Confirmed
+                    ).toOption.get
+      _          <- ctx.bookingRepo.create(booking)
+      resp       <- getDashboardBookings(ctx, auth.token)
+      body       <- resp.as[String]
+      json        = parse(body).toOption.get
+    yield
+      assertEquals(resp.status, Status.Ok)
+      val bookings = json.asArray.get
+      assertEquals(bookings.size, 1)
+      val firstItem = bookings.head.hcursor.downField("items").as[List[io.circe.Json]].toOption.get.head
+      assertEquals(firstItem.hcursor.downField("comboId").as[String].toOption, Some(comboId.value), body)
+      assertEquals(firstItem.hcursor.downField("itemId").as[Option[String]].toOption, Some(None), body)
+  }
+
+  test("GET /dashboard/bookings/:id items[0] has comboId set and itemId null for a BookedCombo booking line") {
+    for
+      ctx        <- makeCtx
+      auth       <- signupAndLogin(ctx)
+      comboId     = ComboId.generate
+      customer    = Customer.create(CustomerId.generate, Email.fromString("combo2@test.com").toOption.get, name = "Cliente Combo 2").toOption.get
+      _          <- ctx.customerRepo.create(customer)
+      providerId  = ProviderId.fromString(auth.id).toOption.get
+      booking     = Booking.create(
+                      id          = BookingId.generate,
+                      providerId  = providerId,
+                      customerId  = customer.id,
+                      items       = List(BookedCombo(comboId, 1, None)),
+                      startDate   = date,
+                      endDate     = date,
+                      totalAmount = Money.fromAmount(BigDecimal(100)).toOption.get,
+                      status      = BookingStatus.Confirmed
+                    ).toOption.get
+      _          <- ctx.bookingRepo.create(booking)
+      resp       <- getDashboardBooking(ctx, booking.id.value, auth.token)
+      body       <- resp.as[String]
+      json        = parse(body).toOption.get
+    yield
+      assertEquals(resp.status, Status.Ok)
+      val firstItem = json.hcursor.downField("items").as[List[io.circe.Json]].toOption.get.head
+      assertEquals(firstItem.hcursor.downField("comboId").as[String].toOption, Some(comboId.value), body)
+      assertEquals(firstItem.hcursor.downField("itemId").as[Option[String]].toOption, Some(None), body)
+  }
