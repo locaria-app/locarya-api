@@ -746,6 +746,19 @@ class BookingServiceSpec extends CatsEffectSuite:
       assertEquals(stored.map(_.status), Some(BookingStatus.Pending), "Status must stay Pending when override is absent")
   }
 
+  test("updateBookingStatus — with overrideMonitorCheck=true confirms and sets confirmedWithoutMonitor=true") {
+    for
+      ctx     <- makeCtx()
+      item    <- buildRequiredItem(ctx)
+      created <- ctx.svc.createBooking(request(List((item.id, 1))))
+      bid      = created.bookingId
+      updated <- ctx.svc.updateBookingStatus(ctx.provider.id, bid, BookingStatus.Confirmed, None, overrideMonitorCheck = true)
+      stored  <- ctx.bookingRepo.findById(bid)
+    yield
+      assertEquals(updated.status, BookingStatus.Confirmed)
+      assertEquals(stored.map(_.confirmedWithoutMonitor), Some(true))
+  }
+
   test("updateBookingStatus — Pending to Confirmed with Optional-item does not require attendant") {
     for
       ctx     <- makeCtx()

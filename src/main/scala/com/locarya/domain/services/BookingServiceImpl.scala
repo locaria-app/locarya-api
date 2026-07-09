@@ -87,15 +87,16 @@ class BookingServiceImpl[F[_]: Sync: Logger](
     overrideMonitorCheck: Boolean = false
   ): F[Booking] =
     for
-      booking <- bookingRepo.findById(bookingId).flatMap {
-                   case Some(b) if b.providerId == providerId => b.pure[F]
-                   case _                                     => BookingError.BookingNotFound(bookingId).raiseError[F, Booking]
-                 }
-      updated <- liftValidation(booking.transitionStatus(newStatus))
-      _       <- checkMonitorRequirements(booking, newStatus, overrideMonitorCheck)
-      stored  <- bookingRepo.update(updated)
-      _       <- Logger[F].info(bookingStatusChangedLog(stored, booking.status, reason))
-      _       <- enqueueStatusChangedIfNeeded(booking.status, stored)
+      booking    <- bookingRepo.findById(bookingId).flatMap {
+                      case Some(b) if b.providerId == providerId => b.pure[F]
+                      case _                                     => BookingError.BookingNotFound(bookingId).raiseError[F, Booking]
+                    }
+      didOverride <- checkMonitorRequirements(booking, newStatus, overrideMonitorCheck)
+      updated     <- liftValidation(booking.transitionStatus(newStatus))
+      withTrail    = if didOverride then updated.markConfirmedWithoutMonitor else updated
+      stored      <- bookingRepo.update(withTrail)
+      _           <- Logger[F].info(bookingStatusChangedLog(stored, booking.status, reason))
+      _           <- enqueueStatusChangedIfNeeded(booking.status, stored)
     yield stored
 
   private def enqueueStatusChangedIfNeeded(previousStatus: BookingStatus, stored: Booking): F[Unit] =
@@ -122,12 +123,14 @@ class BookingServiceImpl[F[_]: Sync: Logger](
                  }
     yield checks.collect { case (true, lineRef) if grouped.get(lineRef).forall(_.isEmpty) => lineRef }
 
-  private def checkMonitorRequirements(booking: Booking, newStatus: BookingStatus, overrideMonitorCheck: Boolean): F[Unit] =
-    if newStatus != BookingStatus.Confirmed then ().pure[F]
+  /** Returns true if there were missing-monitor lines and the override was accepted (audit trail needed). */
+  private def checkMonitorRequirements(booking: Booking, newStatus: BookingStatus, overrideMonitorCheck: Boolean): F[Boolean] =
+    if newStatus != BookingStatus.Confirmed then false.pure[F]
     else
       missingMonitorLines(booking).flatMap { missing =>
-        if missing.isEmpty || overrideMonitorCheck then ().pure[F]
-        else BookingError.MonitorRequiredWithoutOverride(missing).raiseError[F, Unit]
+        if missing.isEmpty then false.pure[F]
+        else if overrideMonitorCheck then true.pure[F]
+        else BookingError.MonitorRequiredWithoutOverride(missing).raiseError[F, Boolean]
       }
 
   def getBookingDetail(providerId: ProviderId, bookingId: BookingId): F[DashboardBookingDetailView] =
