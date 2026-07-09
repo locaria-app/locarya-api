@@ -766,7 +766,10 @@ class BookingServiceSpec extends CatsEffectSuite:
       created <- ctx.svc.createBooking(request(List((item.id, 1))))
       bid      = created.bookingId
       updated <- ctx.svc.updateBookingStatus(ctx.provider.id, bid, BookingStatus.Confirmed, None)
-    yield assertEquals(updated.status, BookingStatus.Confirmed)
+      stored  <- ctx.bookingRepo.findById(bid)
+    yield
+      assertEquals(updated.status, BookingStatus.Confirmed)
+      assertEquals(stored.map(_.confirmedWithoutMonitor), Some(false), "Normal confirm must not set audit trail")
   }
 
   test("integration: Required-item booking fails confirm without attendant, succeeds after assignment") {
