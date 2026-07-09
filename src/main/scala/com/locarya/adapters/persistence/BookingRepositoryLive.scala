@@ -22,23 +22,24 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
   private given Encoder[PartyProfile] = deriveEncoder
 
   private case class BookingRow(
-    id:                   UUID,
-    providerId:           UUID,
-    customerId:           UUID,
-    startDate:            LocalDate,
-    endDate:              LocalDate,
-    totalAmount:          BigDecimal,
-    status:               String,
-    createdBy:            String,
-    deliveryStreet:       Option[String],
-    deliveryNumber:       Option[String],
-    deliveryNeighborhood: Option[String],
-    deliveryCity:         Option[String],
-    deliveryState:        Option[String],
-    deliveryCep:          Option[String],
-    deliveryComplement:   Option[String],
-    bookingCode:          String,
-    partyProfile:         Option[String]
+    id:                     UUID,
+    providerId:             UUID,
+    customerId:             UUID,
+    startDate:              LocalDate,
+    endDate:                LocalDate,
+    totalAmount:            BigDecimal,
+    status:                 String,
+    createdBy:              String,
+    deliveryStreet:         Option[String],
+    deliveryNumber:         Option[String],
+    deliveryNeighborhood:   Option[String],
+    deliveryCity:           Option[String],
+    deliveryState:          Option[String],
+    deliveryCep:            Option[String],
+    deliveryComplement:     Option[String],
+    bookingCode:            String,
+    partyProfile:           Option[String],
+    confirmedWithoutMonitor: Boolean
   ) derives Read
 
   private case class BookingItemRow(
@@ -53,7 +54,7 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
   private val selectBase = fr"""
     SELECT id, provider_id, customer_id, start_date, end_date, total_amount, status, created_by,
            delivery_street, delivery_number, delivery_neighborhood, delivery_city, delivery_state,
-           delivery_cep, delivery_complement, booking_code, party_profile::text
+           delivery_cep, delivery_complement, booking_code, party_profile::text, confirmed_without_monitor
     FROM bookings
   """
 
@@ -123,8 +124,9 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
       deliverAddr  <- parseDeliveryAddress(row)
       creator      <- parseCreator(row.createdBy)
       code         <- BookingCode.fromString(row.bookingCode)
-      booking      <- Booking.create(id, pid, cid, bookingItems, row.startDate, row.endDate,
+      b            <- Booking.create(id, pid, cid, bookingItems, row.startDate, row.endDate,
                         totalAmt, status, deliverAddr, creator, code, partyProfileOpt)
+      booking       = if row.confirmedWithoutMonitor then b.markConfirmedWithoutMonitor else b
     yield booking).fold(
       err => Async[F].raiseError(new RuntimeException(s"DB→domain mapping failed: $err")),
       _.pure[F]
@@ -164,7 +166,8 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
       _ <- (fr"""INSERT INTO bookings
                    (id, provider_id, customer_id, start_date, end_date, total_amount, status, created_by,
                     delivery_street, delivery_number, delivery_neighborhood, delivery_city,
-                    delivery_state, delivery_cep, delivery_complement, booking_code, party_profile)
+                    delivery_state, delivery_cep, delivery_complement, booking_code, party_profile,
+                    confirmed_without_monitor)
                  VALUES
                    ($bookingUuid,
                     ${UUID.fromString(booking.providerId.value)},
@@ -180,7 +183,7 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
                     ${booking.deliveryAddress.map(_.state)},
                     ${booking.deliveryAddress.map(_.cep)},
                     ${booking.deliveryAddress.flatMap(_.complement)},
-                    ${booking.bookingCode.value},""" ++ partyProfileFr ++ fr")")
+                    ${booking.bookingCode.value},""" ++ partyProfileFr ++ fr", ${booking.confirmedWithoutMonitor})")
               .update.run
       _ <- insertItemRows(bookingUuid, booking.items)
     yield ()).transact(xa) >> booking.pure[F]
@@ -204,20 +207,21 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
       .getOrElse(fr"NULL")
     (for
       _ <- (fr"""UPDATE bookings SET
-                   status                = ${statusStr(booking.status)},
-                   start_date            = ${booking.startDate},
-                   end_date              = ${booking.endDate},
-                   total_amount          = ${booking.totalAmount.amount},
-                   created_by            = ${creatorStr(booking.createdBy)},
-                   delivery_street       = ${booking.deliveryAddress.map(_.street)},
-                   delivery_number       = ${booking.deliveryAddress.map(_.number)},
-                   delivery_neighborhood = ${booking.deliveryAddress.map(_.neighborhood)},
-                   delivery_city         = ${booking.deliveryAddress.map(_.city)},
-                   delivery_state        = ${booking.deliveryAddress.map(_.state)},
-                   delivery_cep          = ${booking.deliveryAddress.map(_.cep)},
-                   delivery_complement   = ${booking.deliveryAddress.flatMap(_.complement)},
-                   party_profile         = """ ++ partyProfileFr ++ fr""",
-                   updated_at            = NOW()
+                   status                    = ${statusStr(booking.status)},
+                   start_date                = ${booking.startDate},
+                   end_date                  = ${booking.endDate},
+                   total_amount              = ${booking.totalAmount.amount},
+                   created_by                = ${creatorStr(booking.createdBy)},
+                   delivery_street           = ${booking.deliveryAddress.map(_.street)},
+                   delivery_number           = ${booking.deliveryAddress.map(_.number)},
+                   delivery_neighborhood     = ${booking.deliveryAddress.map(_.neighborhood)},
+                   delivery_city             = ${booking.deliveryAddress.map(_.city)},
+                   delivery_state            = ${booking.deliveryAddress.map(_.state)},
+                   delivery_cep              = ${booking.deliveryAddress.map(_.cep)},
+                   delivery_complement       = ${booking.deliveryAddress.flatMap(_.complement)},
+                   confirmed_without_monitor = ${booking.confirmedWithoutMonitor},
+                   party_profile             = """ ++ partyProfileFr ++ fr""",
+                   updated_at                = NOW()
                  WHERE id = $bookingUuid""").update.run
       _ <- sql"DELETE FROM booking_items WHERE booking_id = $bookingUuid".update.run
       _ <- insertItemRows(bookingUuid, booking.items)
