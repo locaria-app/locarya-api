@@ -798,6 +798,39 @@ class BookingServiceSpec extends CatsEffectSuite:
     yield assertEquals(ip.status, BookingStatus.InProgress)
   }
 
+  test("updateBookingStatus — mixed lines: MonitorRequiredWithoutOverride lists only the required line") {
+    for
+      ctx          <- makeCtx()
+      required     <- buildRequiredItem(ctx)
+      optional     <- seedItem(ctx)
+      created      <- ctx.svc.createBooking(request(List((required.id, 1), (optional.id, 1))))
+      bid           = created.bookingId
+      result       <- ctx.svc.updateBookingStatus(ctx.provider.id, bid, BookingStatus.Confirmed, None).attempt
+    yield
+      result.left.foreach {
+        case e: BookingError.MonitorRequiredWithoutOverride =>
+          assertEquals(e.lines.size, 1, "Only the required-monitor line should be listed")
+          assert(e.lines.contains(BookingLineRef.IndividualLine(required.id)))
+          assert(!e.lines.contains(BookingLineRef.IndividualLine(optional.id)))
+        case other => fail(s"Expected MonitorRequiredWithoutOverride, got $other")
+      }
+      assert(result.isLeft)
+  }
+
+  test("updateBookingStatus — mixed lines with override: confirms all lines and sets audit trail") {
+    for
+      ctx       <- makeCtx()
+      required  <- buildRequiredItem(ctx)
+      optional  <- seedItem(ctx)
+      created   <- ctx.svc.createBooking(request(List((required.id, 1), (optional.id, 1))))
+      bid        = created.bookingId
+      updated   <- ctx.svc.updateBookingStatus(ctx.provider.id, bid, BookingStatus.Confirmed, None, overrideMonitorCheck = true)
+      stored    <- ctx.bookingRepo.findById(bid)
+    yield
+      assertEquals(updated.status, BookingStatus.Confirmed)
+      assertEquals(stored.map(_.confirmedWithoutMonitor), Some(true))
+  }
+
   // ── BookingStatusChanged notification events ──────────────────────────────
 
   test("updateBookingStatus — Pending→Confirmed enqueues a BookingStatusChanged notification event") {
