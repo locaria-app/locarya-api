@@ -453,7 +453,7 @@ class ComboRoutesSpec extends CatsEffectSuite:
       assertEquals(json.asArray.map(_.size), Some(0))
   }
 
-  test("GET /dashboard/combos does not return soft-deleted combos") {
+  test("GET /dashboard/combos still returns soft-deleted combos, marked isActive=false") {
     for
       ctx      <- makeCtx
       auth     <- signupAndLogin(ctx)
@@ -470,7 +470,74 @@ class ComboRoutesSpec extends CatsEffectSuite:
       json      = io.circe.parser.parse(body).toOption.get
     yield
       assertEquals(response.status, Status.Ok)
-      assertEquals(json.asArray.map(_.size), Some(0))
+      val combos = json.asArray.getOrElse(Vector.empty)
+      val found = combos.find(_.hcursor.downField("comboId").as[String].toOption.contains(comboId))
+      assert(found.isDefined, s"Soft-deleted combo should still appear in list: $body")
+      assertEquals(found.flatMap(_.hcursor.downField("isActive").as[Boolean].toOption), Some(false))
+  }
+
+  // ── POST /dashboard/combos/:id/activate ──────────────────────────────────────
+
+  test("POST /dashboard/combos/:id/activate without token returns 401") {
+    for
+      ctx      <- makeCtx
+      request   = Request[IO](Method.POST, uri"/api/v1/dashboard/combos/some-id/activate")
+      response <- ctx.allRoutes.orNotFound(request)
+    yield assertEquals(response.status, Status.Unauthorized)
+  }
+
+  test("POST /dashboard/combos/:id/activate reactivates combo and returns 200") {
+    for
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      itemId   <- createItem(ctx, auth.token)
+      comboId  <- createCombo(ctx, auth.token, itemId)
+      _        <- ctx.allRoutes.orNotFound(
+                    Request[IO](Method.DELETE, Uri.unsafeFromString(s"/api/v1/dashboard/combos/$comboId"))
+                      .withHeaders(authHeader(auth.token))
+                  )
+      actResp  <- ctx.allRoutes.orNotFound(
+                    Request[IO](Method.POST, Uri.unsafeFromString(s"/api/v1/dashboard/combos/$comboId/activate"))
+                      .withHeaders(authHeader(auth.token))
+                  )
+      stored   <- ctx.comboRepo.findById(ComboId.fromString(comboId).toOption.get)
+    yield
+      assertEquals(actResp.status, Status.Ok)
+      assertEquals(stored.map(_.isActive), Some(true))
+  }
+
+  test("POST /dashboard/combos/:id/activate by another provider returns 403") {
+    for
+      ctx           <- makeCtx
+      auth1         <- signupAndLogin(ctx)
+      itemId        <- createItem(ctx, auth1.token)
+      comboId       <- createCombo(ctx, auth1.token, itemId)
+      providerRepo2 <- InMemoryProviderRepository.make[IO]
+      providerSvc2   = ProviderServiceImpl[IO](providerRepo2)
+      authSvc2       = AuthServiceImpl[IO](providerRepo2, testJwtSecret)
+      auth2Routes    = AuthRoutes.routes[IO](providerSvc2, authSvc2)
+      signup2Body    = """{
+                           "email":"outro3@combos.com","password":"Securepass123",
+                           "name":"Outro3","city":"SP","state":"SP","cpf":"111.444.777-35"
+                         }"""
+      login2Body     = """{"email":"outro3@combos.com","password":"Securepass123"}"""
+      _             <- (auth2Routes <+> ctx.comboRoutes).orNotFound(
+                         Request[IO](Method.POST, uri"/api/v1/auth/signup")
+                           .withEntity(signup2Body)
+                           .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
+                       )
+      loginResp2    <- (auth2Routes <+> ctx.comboRoutes).orNotFound(
+                         Request[IO](Method.POST, uri"/api/v1/auth/login")
+                           .withEntity(login2Body)
+                           .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
+                       )
+      loginBody2    <- loginResp2.as[String]
+      token2         = parse(loginBody2).toOption.get.hcursor.downField("token").as[String].toOption.get
+      actResp       <- (auth2Routes <+> ctx.comboRoutes).orNotFound(
+                         Request[IO](Method.POST, Uri.unsafeFromString(s"/api/v1/dashboard/combos/$comboId/activate"))
+                           .withHeaders(authHeader(token2))
+                       )
+    yield assertEquals(actResp.status, Status.Forbidden)
   }
 
   test("DELETE /dashboard/combos/:id by another provider returns 403") {

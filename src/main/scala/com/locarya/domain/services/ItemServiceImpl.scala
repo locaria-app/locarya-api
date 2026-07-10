@@ -68,9 +68,19 @@ class ItemServiceImpl[F[_]: Sync: Logger](
                      )
     yield ()
 
-  def listActiveItems(providerId: ProviderId): F[List[(Item, List[ItemImage])]] =
+  def activateItem(itemId: ItemId, providerId: ProviderId): F[Unit] =
     for
-      items    <- itemRepo.findActiveByProviderId(providerId)
+      existing <- requireItemExists(itemId)
+      _        <- requireOwner(existing, providerId)
+      _        <- itemRepo.update(existing.activate)
+      _        <- Logger[F].info(
+                    s"""{"event":"ItemActivated","itemId":"${itemId.value}","providerId":"${providerId.value}"}"""
+                  )
+    yield ()
+
+  def listItems(providerId: ProviderId): F[List[(Item, List[ItemImage])]] =
+    for
+      items    <- itemRepo.findByProviderId(providerId)
       itemIds   = items.map(_.id)
       imageMap <- imageRepo.findByItemIds(itemIds)
     yield items.map(item => (item, imageMap.getOrElse(item.id, Nil)))

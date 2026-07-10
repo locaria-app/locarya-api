@@ -81,7 +81,11 @@ object ComboRoutes:
     .in("dashboard" / "combos")
     .out(jsonBody[List[ComboResponseBody]])
 
-  val allEndpoints: List[AnyEndpoint] = List(createComboE, getComboE, updateComboE, deleteComboE, listCombosE)
+  private val activateComboE = securedBase.post
+    .in("dashboard" / "combos" / path[String]("comboId") / "activate")
+
+  val allEndpoints: List[AnyEndpoint] =
+    List(createComboE, getComboE, updateComboE, deleteComboE, listCombosE, activateComboE)
 
   def routes[F[_]: Async](
     comboService: ComboService[F],
@@ -189,9 +193,25 @@ object ComboRoutes:
 
     val listServer = listCombosE.serverSecurityLogic[ProviderId, F](security)
       .serverLogic { providerId => _ =>
-        comboService.listActiveCombos(providerId)
+        comboService.listCombos(providerId)
           .map(pairs => Right(pairs.map { case (combo, images) => toResponseBody(combo, images) }))
           .handleError(e => Left(badRequest(e.getMessage)))
       }
 
-    Http4sServerInterpreter[F]().toRoutes(List(createServer, getServer, updateServer, deleteServer, listServer))
+    val activateServer = activateComboE.serverSecurityLogic[ProviderId, F](security)
+      .serverLogic { providerId => comboIdStr =>
+        (for
+          comboId <- ComboId.fromString(comboIdStr)
+                       .fold(err => ComboError.InvalidInput(err).raiseError[F, ComboId], _.pure[F])
+          _       <- comboService.activateCombo(comboId, providerId)
+        yield Right(()))
+          .handleErrorWith {
+            case _: ComboError.NotFound  => Left(notFound("Combo not found")).pure[F]
+            case _: ComboError.Forbidden => Left(forbidden("Access denied")).pure[F]
+            case e: ComboError           => Left(badRequest(e.getMessage)).pure[F]
+          }
+      }
+
+    Http4sServerInterpreter[F]().toRoutes(
+      List(createServer, getServer, updateServer, deleteServer, listServer, activateServer)
+    )

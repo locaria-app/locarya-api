@@ -98,13 +98,14 @@ final class ComboRepositoryLive[F[_]: Async] private (xa: Transactor[F])
         }
       }
 
-  override def findActiveByProviderId(providerId: ProviderId): F[List[Combo]] =
+  private def fetchByProviderId(providerId: ProviderId, activeOnly: Boolean): F[List[Combo]] =
     val providerUuid = UUID.fromString(providerId.value)
-    sql"""SELECT c.id, c.provider_id, c.name, c.description, c.daily_rate, c.requires_monitor, c.is_active,
+    val activeFilter = if activeOnly then fr"AND c.is_active = TRUE" else fr""
+    (fr"""SELECT c.id, c.provider_id, c.name, c.description, c.daily_rate, c.requires_monitor, c.is_active,
                  ci.item_id, ci.quantity
           FROM combos c
           LEFT JOIN combo_items ci ON ci.combo_id = c.id
-          WHERE c.provider_id = $providerUuid AND c.is_active = TRUE"""
+          WHERE c.provider_id = $providerUuid""" ++ activeFilter)
       .query[ComboWithItemRow].to[List].transact(xa).flatMap { rows =>
         rows.groupBy(_.id).toList.traverse { case (_, comboRows) =>
           val head = comboRows.head
@@ -119,6 +120,12 @@ final class ComboRepositoryLive[F[_]: Async] private (xa: Transactor[F])
           )
         }
       }
+
+  override def findByProviderId(providerId: ProviderId): F[List[Combo]] =
+    fetchByProviderId(providerId, activeOnly = false)
+
+  override def findActiveByProviderId(providerId: ProviderId): F[List[Combo]] =
+    fetchByProviderId(providerId, activeOnly = true)
 
   override def update(combo: Combo): F[Combo] =
     val comboUuid = UUID.fromString(combo.id.value)

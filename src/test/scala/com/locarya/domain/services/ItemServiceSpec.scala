@@ -161,13 +161,16 @@ class ItemServiceSpec extends CatsEffectSuite:
 
   // ── deactivateItem ───────────────────────────────────────────────────────────
 
-  test("deactivateItem soft-deletes item — it no longer appears in listActiveItems") {
+  test("deactivateItem soft-deletes item — it still appears in listItems but marked inactive") {
     for
       ctx    <- makeCtx
       itemId <- ctx.svc.createItem(validRequest)
       _      <- ctx.svc.deactivateItem(itemId, providerId)
-      pairs  <- ctx.svc.listActiveItems(providerId)
-    yield assert(!pairs.exists(_._1.id == itemId), "Deactivated item should not appear in active list")
+      pairs  <- ctx.svc.listItems(providerId)
+    yield
+      val found = pairs.find(_._1.id == itemId)
+      assert(found.isDefined, "Deactivated item should still appear in listItems")
+      assertEquals(found.map(_._1.isActive), Some(false))
   }
 
   test("deactivateItem emits ItemDeactivated structured log") {
@@ -214,35 +217,85 @@ class ItemServiceSpec extends CatsEffectSuite:
     yield assert(result.isLeft, "Expected failure for wrong provider")
   }
 
-  // ── listActiveItems ──────────────────────────────────────────────────────────
+  // ── activateItem ─────────────────────────────────────────────────────────────
 
-  test("listActiveItems returns only active items for the provider") {
+  test("activateItem reactivates item — it appears in listItems marked active again") {
+    for
+      ctx    <- makeCtx
+      itemId <- ctx.svc.createItem(validRequest)
+      _      <- ctx.svc.deactivateItem(itemId, providerId)
+      _      <- ctx.svc.activateItem(itemId, providerId)
+      pairs  <- ctx.svc.listItems(providerId)
+    yield assert(pairs.exists(p => p._1.id == itemId && p._1.isActive), "Reactivated item should be marked active")
+  }
+
+  test("activateItem emits ItemActivated structured log") {
+    for
+      loggerAndGet <- CapturingLogger.make
+      itemRepo     <- InMemoryItemRepository.make[IO]
+      imageRepo    <- InMemoryItemImageRepository.make[IO]
+      bookingRepo  <- InMemoryBookingRepository.make[IO]
+      svc           = ItemServiceImpl[IO](itemRepo, imageRepo, bookingRepo)(using implicitly, loggerAndGet._1)
+      itemId       <- svc.createItem(validRequest)
+      _            <- svc.deactivateItem(itemId, providerId)
+      _            <- svc.activateItem(itemId, providerId)
+      logs         <- loggerAndGet._2
+    yield
+      assert(logs.exists(l => l.contains("ItemActivated") && l.contains(itemId.value)),
+        s"Expected ItemActivated log. Got: $logs")
+  }
+
+  test("activateItem on nonexistent item raises ItemError.NotFound") {
+    for
+      ctx    <- makeCtx
+      badId   = ItemId.generate
+      result <- ctx.svc.activateItem(badId, providerId).attempt
+    yield result match
+      case Left(ItemError.NotFound(_)) => ()
+      case other => fail(s"Expected ItemError.NotFound but got: $other")
+  }
+
+  test("activateItem by a different provider raises ItemError.Forbidden") {
+    val otherId = ProviderId.generate
+    for
+      ctx    <- makeCtx
+      itemId <- ctx.svc.createItem(validRequest)
+      _      <- ctx.svc.deactivateItem(itemId, providerId)
+      result <- ctx.svc.activateItem(itemId, otherId).attempt
+    yield result match
+      case Left(ItemError.Forbidden(_)) => ()
+      case other => fail(s"Expected ItemError.Forbidden but got: $other")
+  }
+
+  // ── listItems ────────────────────────────────────────────────────────────────
+
+  test("listItems returns both active and inactive items for the provider") {
     for
       ctx   <- makeCtx
       id1   <- ctx.svc.createItem(validRequest)
       id2   <- ctx.svc.createItem(validRequest.copy(name = "Item 2"))
       _     <- ctx.svc.deactivateItem(id2, providerId)
-      pairs <- ctx.svc.listActiveItems(providerId)
+      pairs <- ctx.svc.listItems(providerId)
     yield
       assert(pairs.exists(_._1.id == id1), "Active item should be listed")
-      assert(!pairs.exists(_._1.id == id2), "Deactivated item should not be listed")
+      assert(pairs.exists(p => p._1.id == id2 && !p._1.isActive), "Deactivated item should still be listed, marked inactive")
   }
 
-  test("listActiveItems does not return items from another provider") {
+  test("listItems does not return items from another provider") {
     val otherProvider = ProviderId.generate
     for
       ctx   <- makeCtx
       _     <- ctx.svc.createItem(validRequest)
       _     <- ctx.svc.createItem(validRequest.copy(providerId = otherProvider))
-      pairs <- ctx.svc.listActiveItems(providerId)
+      pairs <- ctx.svc.listItems(providerId)
     yield assert(pairs.forall(_._1.providerId == providerId))
   }
 
-  test("listActiveItems returns item paired with its two images ordered by displayOrder") {
+  test("listItems returns item paired with its two images ordered by displayOrder") {
     for
       ctx   <- makeCtx
       itemId <- ctx.svc.createItem(validRequest)
-      pairs  <- ctx.svc.listActiveItems(providerId)
+      pairs  <- ctx.svc.listItems(providerId)
     yield
       val (item, images) = pairs.find(_._1.id == itemId).get
       assertEquals(item.id, itemId)
@@ -250,7 +303,7 @@ class ItemServiceSpec extends CatsEffectSuite:
       assertEquals(images.map(_.displayOrder), images.sortBy(_.displayOrder).map(_.displayOrder))
   }
 
-  test("listActiveItems returns Nil images for an item seeded without images") {
+  test("listItems returns Nil images for an item seeded without images") {
     for
       ctx    <- makeCtx
       item   <- cats.effect.IO.fromEither(
@@ -265,18 +318,18 @@ class ItemServiceSpec extends CatsEffectSuite:
                   ).left.map(e => new RuntimeException(e.toString))
                 )
       _      <- ctx.itemRepo.create(item)
-      pairs  <- ctx.svc.listActiveItems(providerId)
+      pairs  <- ctx.svc.listItems(providerId)
     yield
       val (_, images) = pairs.find(_._1.id == item.id).get
       assertEquals(images, Nil)
   }
 
-  test("listActiveItems does not mix images across items") {
+  test("listItems does not mix images across items") {
     for
       ctx    <- makeCtx
       itemId1 <- ctx.svc.createItem(validRequest.copy(imageUrls = List(url1)))
       itemId2 <- ctx.svc.createItem(validRequest.copy(name = "Item 2", imageUrls = List(url2)))
-      pairs   <- ctx.svc.listActiveItems(providerId)
+      pairs   <- ctx.svc.listItems(providerId)
     yield
       val (_, imgs1) = pairs.find(_._1.id == itemId1).get
       val (_, imgs2) = pairs.find(_._1.id == itemId2).get

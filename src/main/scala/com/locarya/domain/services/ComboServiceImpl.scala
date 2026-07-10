@@ -76,9 +76,9 @@ class ComboServiceImpl[F[_]: Sync: Logger](
       _                          <- comboImageRepo.replaceImages(combo.id, images)
     yield ()
 
-  def listActiveCombos(providerId: ProviderId): F[List[(Combo, List[ComboImage])]] =
+  def listCombos(providerId: ProviderId): F[List[(Combo, List[ComboImage])]] =
     for
-      combos <- comboRepo.findActiveByProviderId(providerId)
+      combos <- comboRepo.findByProviderId(providerId)
       pairs  <- combos.traverse { combo =>
                   comboImageRepo.findByComboId(combo.id).map(imgs => (combo, imgs))
                 }
@@ -91,6 +91,16 @@ class ComboServiceImpl[F[_]: Sync: Logger](
       _     <- comboRepo.update(combo.deactivate)
       _     <- Logger[F].info(
                  s"""{"event":"ComboDeactivated","comboId":"${comboId.value}","providerId":"${providerId.value}"}"""
+               )
+    yield ()
+
+  def activateCombo(comboId: ComboId, providerId: ProviderId): F[Unit] =
+    for
+      combo <- requireComboExists(comboId)
+      _     <- requireOwner(combo, providerId)
+      _     <- comboRepo.update(combo.activate)
+      _     <- Logger[F].info(
+                 s"""{"event":"ComboActivated","comboId":"${comboId.value}","providerId":"${providerId.value}"}"""
                )
     yield ()
 
