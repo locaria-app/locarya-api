@@ -26,4 +26,5 @@ trait ComboService[F[_]]:
   def getCombo(comboId: ComboId, providerId: ProviderId): F[(Combo, List[ComboImage])]
   def updateCombo(request: UpdateComboRequest): F[Unit]
   def softDeleteCombo(comboId: ComboId, providerId: ProviderId): F[Unit]
-  def listActiveCombos(providerId: ProviderId): F[List[(Combo, List[ComboImage])]]
+  def activateCombo(comboId: ComboId, providerId: ProviderId): F[Unit]
+  def listCombos(providerId: ProviderId): F[List[(Combo, List[ComboImage])]]

@@ -37,5 +37,6 @@ object Combo {
 
   extension (combo: Combo) {
     def deactivate: Combo = combo.copy(isActive = false)
+    def activate: Combo = combo.copy(isActive = true)
   }
 }

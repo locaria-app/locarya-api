@@ -77,7 +77,10 @@ object ItemRoutes:
   private val deactivateE = securedBase.delete
     .in("dashboard" / "items" / path[String]("itemId"))
 
-  val allEndpoints: List[AnyEndpoint] = List(listE, createE, updateE, deactivateE)
+  private val activateE = securedBase.post
+    .in("dashboard" / "items" / path[String]("itemId") / "activate")
+
+  val allEndpoints: List[AnyEndpoint] = List(listE, createE, updateE, deactivateE, activateE)
 
   def routes[F[_]: Async](
     itemService: ItemService[F],
@@ -94,7 +97,7 @@ object ItemRoutes:
 
     val listServer = listE.serverSecurityLogic[ProviderId, F](security)
       .serverLogic { providerId => _ =>
-        itemService.listActiveItems(providerId)
+        itemService.listItems(providerId)
           .map(pairs => Right(pairs.map { case (item, images) => toResponseBody(item, images) }))
           .handleError(e => Left(badRequest(e)))
       }
@@ -160,6 +163,20 @@ object ItemRoutes:
           }
       }
 
+    val activateServer = activateE.serverSecurityLogic[ProviderId, F](security)
+      .serverLogic { providerId => itemIdStr =>
+        (for
+          itemId <- ItemId.fromString(itemIdStr)
+                      .fold(err => ItemError.InvalidInput(err).raiseError[F, ItemId], _.pure[F])
+          _      <- itemService.activateItem(itemId, providerId)
+        yield Right(()))
+          .handleErrorWith {
+            case _: ItemError.NotFound  => Left((StatusCode.NotFound, ErrorBody("Item not found"))).pure[F]
+            case _: ItemError.Forbidden => Left((StatusCode.Forbidden, ErrorBody("Access denied"))).pure[F]
+            case e: ItemError           => Left(badRequest(e)).pure[F]
+          }
+      }
+
     Http4sServerInterpreter[F]().toRoutes(
-      List(listServer, createServer, updateServer, deactivateServer)
+      List(listServer, createServer, updateServer, deactivateServer, activateServer)
     )

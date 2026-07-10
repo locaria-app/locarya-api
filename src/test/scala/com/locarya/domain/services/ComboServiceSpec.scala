@@ -536,36 +536,95 @@ class ComboServiceSpec extends CatsEffectSuite:
       case other => fail(s"Expected NotFound but got: $other")
   }
 
-  // ── listActiveCombos ─────────────────────────────────────────────────────────
+  // ── activateCombo ────────────────────────────────────────────────────────────
 
-  test("listActiveCombos returns empty list when no combos exist for the provider") {
-    for
-      ctx    <- makeCtx
-      result <- ctx.svc.listActiveCombos(providerId)
-    yield assertEquals(result, List.empty)
-  }
-
-  test("listActiveCombos returns only the provider's own active combos") {
-    for
-      ctx     <- makeCtx
-      req     <- validRequest(ctx)
-      _       <- ctx.svc.createCombo(req)
-      _       <- ctx.svc.createCombo(req)
-      result  <- ctx.svc.listActiveCombos(providerId)
-    yield assertEquals(result.size, 2)
-  }
-
-  test("listActiveCombos does not return inactive (soft-deleted) combos") {
+  test("activateCombo sets isActive=true on a deactivated combo") {
     for
       ctx     <- makeCtx
       req     <- validRequest(ctx)
       comboId <- ctx.svc.createCombo(req)
       _       <- ctx.svc.softDeleteCombo(comboId, providerId)
-      result  <- ctx.svc.listActiveCombos(providerId)
+      _       <- ctx.svc.activateCombo(comboId, providerId)
+      stored  <- ctx.comboRepo.findById(comboId)
+    yield assertEquals(stored.map(_.isActive), Some(true))
+  }
+
+  test("activateCombo emits ComboActivated structured log") {
+    for
+      loggerAndGet   <- CapturingLogger.make
+      itemRepo       <- InMemoryItemRepository.make[IO]
+      comboRepo      <- InMemoryComboRepository.make[IO]
+      bookingRepo    <- InMemoryBookingRepository.make[IO]
+      comboImageRepo <- InMemoryComboImageRepository.make[IO]
+      svc             = ComboServiceImpl[IO](comboRepo, itemRepo, bookingRepo, comboImageRepo)(using implicitly, loggerAndGet._1)
+      item           <- {
+                         val i = Item.create(ItemId.generate, providerId, "X", "", Money.fromAmount(BigDecimal("10")).toOption.get, 1, false).toOption.get
+                         itemRepo.create(i).map(_ => i)
+                       }
+      req             = CreateComboRequest(providerId, "K", "D", price, List(ComboItemDefinition(item.id, 1)), List(imageUrl1))
+      comboId        <- svc.createCombo(req)
+      _              <- svc.softDeleteCombo(comboId, providerId)
+      _              <- svc.activateCombo(comboId, providerId)
+      logs           <- loggerAndGet._2
+    yield
+      assert(logs.exists(l => l.contains("ComboActivated") && l.contains(comboId.value)),
+        s"Expected ComboActivated log. Got: $logs")
+  }
+
+  test("activateCombo for nonexistent combo raises NotFound") {
+    for
+      ctx    <- makeCtx
+      result <- ctx.svc.activateCombo(ComboId.generate, providerId).attempt
+    yield result match
+      case Left(_: ComboError.NotFound) => ()
+      case other => fail(s"Expected NotFound but got: $other")
+  }
+
+  test("activateCombo by wrong provider raises Forbidden") {
+    val otherId = ProviderId.generate
+    for
+      ctx     <- makeCtx
+      req     <- validRequest(ctx)
+      comboId <- ctx.svc.createCombo(req)
+      _       <- ctx.svc.softDeleteCombo(comboId, providerId)
+      result  <- ctx.svc.activateCombo(comboId, otherId).attempt
+    yield result match
+      case Left(_: ComboError.Forbidden) => ()
+      case other => fail(s"Expected Forbidden but got: $other")
+  }
+
+  // ── listCombos ───────────────────────────────────────────────────────────────
+
+  test("listCombos returns empty list when no combos exist for the provider") {
+    for
+      ctx    <- makeCtx
+      result <- ctx.svc.listCombos(providerId)
     yield assertEquals(result, List.empty)
   }
 
-  test("listActiveCombos does not return combos belonging to a different provider") {
+  test("listCombos returns only the provider's own combos") {
+    for
+      ctx     <- makeCtx
+      req     <- validRequest(ctx)
+      _       <- ctx.svc.createCombo(req)
+      _       <- ctx.svc.createCombo(req)
+      result  <- ctx.svc.listCombos(providerId)
+    yield assertEquals(result.size, 2)
+  }
+
+  test("listCombos returns inactive (soft-deleted) combos, marked isActive=false") {
+    for
+      ctx     <- makeCtx
+      req     <- validRequest(ctx)
+      comboId <- ctx.svc.createCombo(req)
+      _       <- ctx.svc.softDeleteCombo(comboId, providerId)
+      result  <- ctx.svc.listCombos(providerId)
+    yield
+      assertEquals(result.size, 1)
+      assertEquals(result.head._1.isActive, false)
+  }
+
+  test("listCombos does not return combos belonging to a different provider") {
     val otherProvider = ProviderId.generate
     for
       ctx    <- makeCtx
@@ -579,11 +638,11 @@ class ComboServiceSpec extends CatsEffectSuite:
                   imageUrls        = List(imageUrl1)
                 )
       _      <- ctx.svc.createCombo(req)
-      result <- ctx.svc.listActiveCombos(providerId)
+      result <- ctx.svc.listCombos(providerId)
     yield assertEquals(result, List.empty)
   }
 
-  test("listActiveCombos returns combos with their images") {
+  test("listCombos returns combos with their images") {
     for
       ctx    <- makeCtx
       item   <- makeItem(ctx)
@@ -596,7 +655,7 @@ class ComboServiceSpec extends CatsEffectSuite:
                   imageUrls        = List(imageUrl1, imageUrl2)
                 )
       _      <- ctx.svc.createCombo(req)
-      result <- ctx.svc.listActiveCombos(providerId)
+      result <- ctx.svc.listCombos(providerId)
     yield
       assertEquals(result.size, 1)
       val (_, images) = result.head

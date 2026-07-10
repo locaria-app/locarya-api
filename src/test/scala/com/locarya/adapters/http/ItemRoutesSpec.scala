@@ -288,6 +288,72 @@ class ItemRoutesSpec extends CatsEffectSuite:
     yield assertEquals(delResp.status, Status.Conflict)
   }
 
+  // ── POST /api/v1/dashboard/items/:id/activate ────────────────────────────────
+
+  test("POST /api/v1/dashboard/items/:id/activate without token returns 401") {
+    for
+      ctx      <- makeCtx
+      request   = Request[IO](Method.POST, uri"/api/v1/dashboard/items/some-id/activate")
+      response <- ctx.allRoutes.orNotFound(request)
+    yield assertEquals(response.status, Status.Unauthorized)
+  }
+
+  test("POST /api/v1/dashboard/items/:id/activate reactivates item and returns 200") {
+    for
+      ctx      <- makeCtx
+      auth     <- signupAndLogin(ctx)
+      itemId   <- createItem(ctx, auth.token)
+      delReq    = Request[IO](Method.DELETE, Uri.unsafeFromString(s"/api/v1/dashboard/items/$itemId"))
+                    .withHeaders(authHeader(auth.token))
+      _        <- ctx.allRoutes.orNotFound(delReq)
+      actReq    = Request[IO](Method.POST, Uri.unsafeFromString(s"/api/v1/dashboard/items/$itemId/activate"))
+                    .withHeaders(authHeader(auth.token))
+      actResp  <- ctx.allRoutes.orNotFound(actReq)
+      getResp  <- ctx.allRoutes.orNotFound(
+                    Request[IO](Method.GET, uri"/api/v1/dashboard/items").withHeaders(authHeader(auth.token))
+                  )
+      getBody  <- getResp.as[String]
+      json      = parse(getBody).toOption.get
+    yield
+      assertEquals(actResp.status, Status.Ok)
+      val items = json.asArray.getOrElse(Vector.empty)
+      assert(items.exists(_.hcursor.downField("itemId").as[String].toOption.contains(itemId)),
+        s"Reactivated item should appear in list: $getBody")
+  }
+
+  test("POST /api/v1/dashboard/items/:id/activate by another provider returns 403") {
+    for
+      ctx           <- makeCtx
+      auth1         <- signupAndLogin(ctx)
+      providerRepo2 <- InMemoryProviderRepository.make[IO]
+      providerSvc2   = ProviderServiceImpl[IO](providerRepo2)
+      authSvc2       = AuthServiceImpl[IO](providerRepo2, testJwtSecret)
+      auth2Routes    = AuthRoutes.routes[IO](providerSvc2, authSvc2)
+      signup2Body    = """{
+                           "email":"outro2@example.com","password":"Securepass123",
+                           "name":"Outro","city":"SP","state":"SP","cpf":"123.456.789-09"
+                         }"""
+      login2Body     = """{"email":"outro2@example.com","password":"Securepass123"}"""
+      _             <- (auth2Routes <+> ctx.itemRoutes).orNotFound(
+                         Request[IO](Method.POST, uri"/api/v1/auth/signup")
+                           .withEntity(signup2Body)
+                           .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
+                       )
+      loginResp2    <- (auth2Routes <+> ctx.itemRoutes).orNotFound(
+                         Request[IO](Method.POST, uri"/api/v1/auth/login")
+                           .withEntity(login2Body)
+                           .withHeaders(Header.Raw(ci"Content-Type", "application/json"))
+                       )
+      loginBody2    <- loginResp2.as[String]
+      token2         = parse(loginBody2).toOption.get.hcursor.downField("token").as[String].toOption.get
+      itemId        <- createItem(ctx, auth1.token)
+      actResp       <- (auth2Routes <+> ctx.itemRoutes).orNotFound(
+                         Request[IO](Method.POST, Uri.unsafeFromString(s"/api/v1/dashboard/items/$itemId/activate"))
+                           .withHeaders(authHeader(token2))
+                       )
+    yield assertEquals(actResp.status, Status.Forbidden)
+  }
+
   // ── GET /api/v1/dashboard/items list behaviour ────────────────────────────────
 
   test("GET /api/v1/dashboard/items returns created item in list") {
@@ -306,7 +372,7 @@ class ItemRoutesSpec extends CatsEffectSuite:
         s"Expected item $itemId in response: $getBody")
   }
 
-  test("GET /api/v1/dashboard/items does not return deactivated items") {
+  test("GET /api/v1/dashboard/items still returns deactivated items, marked isActive=false") {
     for
       ctx      <- makeCtx
       auth     <- signupAndLogin(ctx)
@@ -321,8 +387,9 @@ class ItemRoutesSpec extends CatsEffectSuite:
       json      = parse(getBody).toOption.get
     yield
       val items = json.asArray.getOrElse(Vector.empty)
-      assert(!items.exists(_.hcursor.downField("itemId").as[String].toOption.contains(itemId)),
-        "Deactivated item should not appear in list")
+      val found = items.find(_.hcursor.downField("itemId").as[String].toOption.contains(itemId))
+      assert(found.isDefined, s"Deactivated item should still appear in list: $getBody")
+      assertEquals(found.flatMap(_.hcursor.downField("isActive").as[Boolean].toOption), Some(false))
   }
 
   // ── Old path (without /api/v1 prefix) must not match ─────────────────────────

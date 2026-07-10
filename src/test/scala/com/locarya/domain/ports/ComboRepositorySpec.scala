@@ -84,3 +84,28 @@ class ComboRepositorySpec extends CatsEffectSuite:
       result <- repo.create(combo).attempt
     yield assert(result.isLeft, "Expected duplicate create to fail")
   }
+
+  test("findByProviderId returns only combos belonging to that provider, active and inactive") {
+    val pid1 = ProviderId.generate
+    val pid2 = ProviderId.generate
+    for
+      repo    <- makeRepo
+      active   = makeCombo(pid1)
+      inactive = Combo.create(
+                   ComboId.generate, pid1, "Inativo", "desc", dailyRate,
+                   List(ComboItemDefinition(ItemId.generate, 1)), false, isActive = false
+                 ).toOption.get
+      other    = makeCombo(pid2)
+      _       <- repo.create(active)
+      _       <- repo.create(inactive)
+      _       <- repo.create(other)
+      items   <- repo.findByProviderId(pid1)
+    yield assertEquals(items.map(_.id).toSet, Set(active.id, inactive.id))
+  }
+
+  test("findByProviderId returns empty list for unknown provider") {
+    for
+      repo  <- makeRepo
+      items <- repo.findByProviderId(ProviderId.generate)
+    yield assertEquals(items, Nil)
+  }

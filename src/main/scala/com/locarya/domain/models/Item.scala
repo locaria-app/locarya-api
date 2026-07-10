@@ -33,5 +33,6 @@ object Item {
 
   extension (item: Item) {
     def deactivate: Item = item.copy(isActive = false)
+    def activate: Item = item.copy(isActive = true)
   }
 }
