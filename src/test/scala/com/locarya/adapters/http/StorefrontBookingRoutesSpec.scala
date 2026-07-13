@@ -207,6 +207,7 @@ class StorefrontBookingRoutesSpec extends CatsEffectSuite:
                     startDate   = date,
                     endDate     = date,
                     totalAmount = item.dailyRate,
+                    createdAt   = java.time.Instant.EPOCH,
                     status      = BookingStatus.Confirmed
                   ).toOption.get
       _        <- ctx.bookingRepo.create(blocker)

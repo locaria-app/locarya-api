@@ -1,9 +1,37 @@
 package com.locarya.domain.models
 
 import munit.FunSuite
-import java.time.LocalDate
+import java.time.{Instant, LocalDate}
 
 class BookingSpec extends FunSuite {
+
+  private val testCreatedAt = Instant.parse("2026-06-01T10:00:00Z")
+
+  test("create Booking preserves createdAt") {
+    val bookingId  = BookingId.generate
+    val providerId = ProviderId.generate
+    val customerId = CustomerId.generate
+    val itemId     = ItemId.generate
+    val total      = Money.fromAmount(BigDecimal("100.00")).toOption.get
+    val date       = LocalDate.of(2026, 6, 1)
+    val instant    = Instant.parse("2026-03-15T08:30:00Z")
+
+    val result = Booking.create(
+      id          = bookingId,
+      providerId  = providerId,
+      customerId  = customerId,
+      items       = List(BookedIndividualItem(itemId, 1)),
+      startDate   = date,
+      endDate     = date,
+      totalAmount = total,
+      createdAt   = instant
+    )
+
+    assert(result.isRight)
+    result.foreach { booking =>
+      assertEquals(booking.createdAt, instant)
+    }
+  }
 
   test("create Booking with valid date range succeeds") {
     val bookingId = BookingId.generate
@@ -21,7 +49,8 @@ class BookingSpec extends FunSuite {
       items = List(BookedIndividualItem(itemId, 2)),
       startDate = startDate,
       endDate = endDate,
-      totalAmount = totalAmount
+      totalAmount = totalAmount,
+      createdAt = testCreatedAt
     )
 
     assert(result.isRight, "Should create Booking with valid date range")
@@ -48,7 +77,8 @@ class BookingSpec extends FunSuite {
       items = List(BookedIndividualItem(itemId, 1)),
       startDate = sameDate,
       endDate = sameDate,
-      totalAmount = totalAmount
+      totalAmount = totalAmount,
+      createdAt = testCreatedAt
     )
 
     assert(result.isRight, "Should create Booking with same-day rental (startDate == endDate)")
@@ -74,7 +104,8 @@ class BookingSpec extends FunSuite {
       items = List(BookedIndividualItem(itemId, 1)),
       startDate = startDate,
       endDate = endDate,
-      totalAmount = totalAmount
+      totalAmount = totalAmount,
+      createdAt = testCreatedAt
     )
 
     assert(result.isLeft, "Should fail when end date is before start date")
@@ -98,7 +129,8 @@ class BookingSpec extends FunSuite {
       items = List.empty,
       startDate = startDate,
       endDate = endDate,
-      totalAmount = totalAmount
+      totalAmount = totalAmount,
+      createdAt = testCreatedAt
     )
 
     assert(result.isLeft, "Should fail with empty items list")
@@ -123,7 +155,8 @@ class BookingSpec extends FunSuite {
       items = List(BookedIndividualItem(itemId, 0)),
       startDate = startDate,
       endDate = endDate,
-      totalAmount = totalAmount
+      totalAmount = totalAmount,
+      createdAt = testCreatedAt
     )
 
     assert(result.isLeft, "Should fail with zero quantity item")
@@ -148,7 +181,8 @@ class BookingSpec extends FunSuite {
       items = List(BookedCombo(comboId, -1)),
       startDate = startDate,
       endDate = endDate,
-      totalAmount = totalAmount
+      totalAmount = totalAmount,
+      createdAt = testCreatedAt
     )
 
     assert(result.isLeft, "Should fail with negative quantity combo")
@@ -177,7 +211,8 @@ class BookingSpec extends FunSuite {
       ),
       startDate = startDate,
       endDate = endDate,
-      totalAmount = totalAmount
+      totalAmount = totalAmount,
+      createdAt = testCreatedAt
     )
 
     assert(result.isRight, "Should create Booking with mixed items")
@@ -202,7 +237,8 @@ class BookingSpec extends FunSuite {
       items = List(BookedIndividualItem(itemId, 1)),
       startDate = startDate,
       endDate = endDate,
-      totalAmount = totalAmount
+      totalAmount = totalAmount,
+      createdAt = testCreatedAt
     ).toOption.get
 
     val result = booking.transitionStatus(BookingStatus.Confirmed)
@@ -240,7 +276,8 @@ class BookingSpec extends FunSuite {
       startDate = startDate,
       endDate = endDate,
       totalAmount = totalAmount,
-      deliveryAddress = Some(deliveryAddress)
+      deliveryAddress = Some(deliveryAddress),
+      createdAt = testCreatedAt
     )
 
     assert(result.isRight, "Should create Booking with delivery address")
@@ -265,7 +302,8 @@ class BookingSpec extends FunSuite {
       items = List(BookedIndividualItem(itemId, 1)),
       startDate = startDate,
       endDate = endDate,
-      totalAmount = totalAmount
+      totalAmount = totalAmount,
+      createdAt = testCreatedAt
     )
 
     assert(result.isRight, "Should create Booking without delivery address for pickup")
@@ -292,7 +330,8 @@ class BookingSpec extends FunSuite {
       startDate    = startDate,
       endDate      = endDate,
       totalAmount  = totalAmount,
-      partyProfile = Some(partyProfile)
+      partyProfile = Some(partyProfile),
+      createdAt    = testCreatedAt
     )
 
     assert(result.isRight, "Should create Booking with partyProfile")
@@ -317,7 +356,8 @@ class BookingSpec extends FunSuite {
       items       = List(BookedIndividualItem(itemId, 1)),
       startDate   = startDate,
       endDate     = endDate,
-      totalAmount = totalAmount
+      totalAmount = totalAmount,
+      createdAt   = testCreatedAt
     )
 
     assert(result.isRight)

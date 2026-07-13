@@ -217,7 +217,8 @@ class StorefrontChargeRoutesSpec extends CatsEffectSuite:
                      items       = List(BookedIndividualItem(ItemId.generate, 1)),
                      startDate   = date,
                      endDate     = date,
-                     totalAmount = totalMoney
+                     totalAmount = totalMoney,
+                     createdAt   = java.time.Instant.EPOCH,
                    ).toOption.get
       _         <- ctx.bookingRepo.create(booking)
       resp      <- postCharge(ctx, slug, booking.id.value)

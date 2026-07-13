@@ -199,7 +199,8 @@ class ItemServiceSpec extends CatsEffectSuite:
                    items = List(BookedIndividualItem(itemId, 1)),
                    startDate = java.time.LocalDate.of(2026, 8, 1),
                    endDate = java.time.LocalDate.of(2026, 8, 3),
-                   totalAmount = price
+                   totalAmount = price,
+                   createdAt   = java.time.Instant.EPOCH,
                  ).toOption.get
       _       <- ctx.bookingRepo.create(booking)
       result  <- ctx.svc.deactivateItem(itemId, providerId).attempt

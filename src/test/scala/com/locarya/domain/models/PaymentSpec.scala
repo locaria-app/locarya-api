@@ -35,8 +35,8 @@ class PaymentSpec extends FunSuite:
     assert(result.isLeft)
   }
 
-  test("PaymentMethod.encode returns pix_manual") {
-    assertEquals(PaymentMethod.encode(PaymentMethod.PixManual), "pix_manual")
+  test("PaymentMethod.encode returns PIX_MANUAL") {
+    assertEquals(PaymentMethod.encode(PaymentMethod.PixManual), "PIX_MANUAL")
   }
 
   test("PaymentStatus.Confirmed is the only status for manual payments") {

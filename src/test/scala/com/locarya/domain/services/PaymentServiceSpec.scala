@@ -58,6 +58,7 @@ class PaymentServiceSpec extends CatsEffectSuite:
                         startDate   = date,
                         endDate     = date,
                         totalAmount = totalMoney,
+                        createdAt   = java.time.Instant.EPOCH,
                         status      = BookingStatus.Confirmed
                       ).toOption.get
       _            <- bookingRepo.create(booking)
@@ -149,7 +150,7 @@ class PaymentServiceSpec extends CatsEffectSuite:
       assert(logs.head.contains(ctx.booking.id.value),             logs.head)
       assert(logs.head.contains(payment.id.value),                 logs.head)
       assert(logs.head.contains("150"),                            logs.head)
-      assert(logs.head.contains("pix_manual"),                     logs.head)
+      assert(logs.head.contains("PIX_MANUAL"),                     logs.head)
   }
 
   // ── getPaymentSummary ─────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 package com.locarya.domain.models
 
-import java.time.LocalDate
+import java.time.{Instant, LocalDate}
 
 final case class PartyProfile(
   kidsCount:  Option[Int]          = None,
@@ -37,7 +37,8 @@ final case class Booking private (
   createdBy: BookingCreator,
   bookingCode: BookingCode,
   partyProfile: Option[PartyProfile] = None,
-  confirmedWithoutMonitor: Boolean = false
+  confirmedWithoutMonitor: Boolean = false,
+  createdAt: Instant
 )
 
 object Booking {
@@ -49,6 +50,7 @@ object Booking {
     startDate: LocalDate,
     endDate: LocalDate,
     totalAmount: Money,
+    createdAt: Instant,
     status: BookingStatus = BookingStatus.Pending,
     deliveryAddress: Option[Address] = None,
     createdBy: BookingCreator = BookingCreator.Provider,
@@ -65,7 +67,7 @@ object Booking {
     }) {
       Left(InvalidBooking("All item quantities must be positive"))
     } else {
-      Right(Booking(id, providerId, customerId, items, startDate, endDate, totalAmount, status, deliveryAddress, createdBy, bookingCode, partyProfile))
+      Right(Booking(id, providerId, customerId, items, startDate, endDate, totalAmount, status, deliveryAddress, createdBy, bookingCode, partyProfile, confirmedWithoutMonitor = false, createdAt = createdAt))
     }
   }
 

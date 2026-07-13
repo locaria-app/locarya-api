@@ -427,7 +427,8 @@ class ComboServiceSpec extends CatsEffectSuite:
                    items       = List(BookedCombo(comboId, 1)),
                    startDate   = java.time.LocalDate.of(2026, 9, 1),
                    endDate     = java.time.LocalDate.of(2026, 9, 3),
-                   totalAmount = price
+                   totalAmount = price,
+                   createdAt   = java.time.Instant.EPOCH,
                  ).toOption.get
       _       <- ctx.bookingRepo.create(booking)
       result  <- ctx.svc.updateCombo(UpdateComboRequest(
@@ -457,7 +458,8 @@ class ComboServiceSpec extends CatsEffectSuite:
                    items       = List(BookedCombo(comboId, 1)),
                    startDate   = java.time.LocalDate.of(2026, 9, 1),
                    endDate     = java.time.LocalDate.of(2026, 9, 3),
-                   totalAmount = price
+                   totalAmount = price,
+                   createdAt   = java.time.Instant.EPOCH,
                  ).toOption.get
       _       <- ctx.bookingRepo.create(booking)
       result  <- ctx.svc.updateCombo(UpdateComboRequest(
@@ -493,7 +495,8 @@ class ComboServiceSpec extends CatsEffectSuite:
                           items       = List(BookedCombo(comboId, 1)),
                           startDate   = java.time.LocalDate.of(2026, 9, 1),
                           endDate     = java.time.LocalDate.of(2026, 9, 3),
-                          totalAmount = price
+                          totalAmount = price,
+                          createdAt   = java.time.Instant.EPOCH,
                         ).toOption.get
       _              <- bookingRepo.create(booking)
       _              <- svc.updateCombo(UpdateComboRequest(comboId, providerId, "K", "D", price, Some(List(ComboItemDefinition(item.id, 2))), List(imageUrl1))).attempt

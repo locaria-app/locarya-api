@@ -77,6 +77,7 @@ class AvailabilityServiceSpec extends CatsEffectSuite:
       startDate   = on,
       endDate     = on,
       totalAmount = price,
+      createdAt   = java.time.Instant.EPOCH,
       status      = status
     ).toOption.get
     ctx.bookingRepo.create(booking).as(booking)

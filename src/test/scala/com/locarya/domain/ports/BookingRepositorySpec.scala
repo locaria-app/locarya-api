@@ -27,6 +27,7 @@ class BookingRepositorySpec extends CatsEffectSuite:
       startDate = startDate,
       endDate = endDate,
       totalAmount = amount,
+      createdAt   = java.time.Instant.EPOCH,
       status = status
     ).toOption.get
 
@@ -123,7 +124,7 @@ class BookingRepositorySpec extends CatsEffectSuite:
       repo    <- makeRepo
       b        = makeBooking()
       _       <- repo.create(b)
-      updated  = Booking.create(b.id, b.providerId, b.customerId, b.items, b.startDate, b.endDate, b.totalAmount, BookingStatus.Confirmed).toOption.get
+      updated  = Booking.create(b.id, b.providerId, b.customerId, b.items, b.startDate, b.endDate, b.totalAmount, java.time.Instant.EPOCH, BookingStatus.Confirmed).toOption.get
       saved   <- repo.update(updated)
       found   <- repo.findById(b.id)
     yield
@@ -158,7 +159,8 @@ class BookingRepositorySpec extends CatsEffectSuite:
                    items = List(BookedIndividualItem(itemId, 1)),
                    startDate = LocalDate.of(2026, 6, 1),
                    endDate = LocalDate.of(2026, 6, 5),
-                   totalAmount = amount
+                   totalAmount = amount,
+                   createdAt   = java.time.Instant.EPOCH,
                  ).toOption.get
       _       <- repo.create(booking)
       result  <- repo.existsForItem(itemId)
@@ -177,7 +179,8 @@ class BookingRepositorySpec extends CatsEffectSuite:
                    items = List(BookedIndividualItem(otherId, 1)),
                    startDate = LocalDate.of(2026, 6, 1),
                    endDate = LocalDate.of(2026, 6, 5),
-                   totalAmount = amount
+                   totalAmount = amount,
+                   createdAt   = java.time.Instant.EPOCH,
                  ).toOption.get
       _       <- repo.create(booking)
       result  <- repo.existsForItem(targetId)
