@@ -279,7 +279,8 @@ class ItemRoutesSpec extends CatsEffectSuite:
                    items = List(BookedIndividualItem(iid, 1)),
                    startDate = java.time.LocalDate.of(2026, 9, 1),
                    endDate = java.time.LocalDate.of(2026, 9, 3),
-                   totalAmount = Money.fromAmount(BigDecimal("100")).toOption.get
+                   totalAmount = Money.fromAmount(BigDecimal("100")).toOption.get,
+                   createdAt   = java.time.Instant.EPOCH,
                  ).toOption.get
       _       <- ctx.bookingRepo.create(booking)
       delReq   = Request[IO](Method.DELETE, Uri.unsafeFromString(s"/api/v1/dashboard/items/$itemId"))

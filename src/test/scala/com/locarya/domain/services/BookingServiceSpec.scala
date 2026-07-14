@@ -966,3 +966,32 @@ class BookingServiceSpec extends CatsEffectSuite:
         case other                           => fail(s"Expected BookingNotFound for cross-provider access, got $other")
       }
   }
+
+  // ── createdAt propagation ─────────────────────────────────────────────────
+
+  test("listBookings view carries a non-null createdAt") {
+    for
+      ctx     <- makeCtx()
+      item    <- seedItem(ctx)
+      req      = CreateBookingByProviderRequest(
+                   items           = List(BookingLineInput(item.id, 1)),
+                   date            = date,
+                   deliveryAddress = deliveryAddress,
+                   customer        = customerInput
+                 )
+      _       <- ctx.svc.createBookingByProvider(ctx.provider.id, req)
+      list    <- ctx.svc.listBookings(ctx.provider.id, None, None, None)
+    yield
+      assertEquals(list.size, 1)
+      assert(list.head.createdAt != null, "Expected non-null createdAt in DashboardBookingView")
+  }
+
+  test("getBookingDetail view carries a non-null createdAt") {
+    for
+      ctx       <- makeCtx()
+      item      <- seedItem(ctx)
+      bookingId <- createConfirmedBooking(ctx, item)
+      detail    <- ctx.svc.getBookingDetail(ctx.provider.id, bookingId)
+    yield
+      assert(detail.createdAt != null, "Expected non-null createdAt in DashboardBookingDetailView")
+  }

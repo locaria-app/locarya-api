@@ -91,6 +91,7 @@ class PaymentRoutesSpec extends CatsEffectSuite:
       startDate   = date,
       endDate     = date,
       totalAmount = totalMoney,
+      createdAt   = java.time.Instant.EPOCH,
       status      = BookingStatus.Confirmed
     ).toOption.get
     ctx.bookingRepo.create(booking).as(booking.id)
@@ -109,7 +110,7 @@ class PaymentRoutesSpec extends CatsEffectSuite:
     )
 
   private val validPaymentBody =
-    """{"amount":200.00,"method":"pix_manual"}"""
+    """{"amount":200.00,"method":"PIX_MANUAL"}"""
 
   // ── Auth guard ────────────────────────────────────────────────────────────
 
@@ -152,7 +153,7 @@ class PaymentRoutesSpec extends CatsEffectSuite:
       assertEquals(json.hcursor.downField("status").as[String].toOption, Some("confirmed"))
   }
 
-  test("POST /api/v1/dashboard/bookings/:id/payments persists payment with method=pix_manual") {
+  test("POST /api/v1/dashboard/bookings/:id/payments persists payment with method=PIX_MANUAL") {
     for
       ctx       <- makeCtx
       auth      <- signupAndLogin(ctx)
@@ -174,7 +175,7 @@ class PaymentRoutesSpec extends CatsEffectSuite:
       auth      <- signupAndLogin(ctx)
       pid        = ProviderId.fromString(auth.id).toOption.get
       bookingId <- seedBooking(ctx, pid)
-      body       = """{"amount":100.00,"method":"pix_manual","note":"entrada"}"""
+      body       = """{"amount":100.00,"method":"PIX_MANUAL","note":"entrada"}"""
       resp      <- postPayment(ctx, bookingId.value, body, auth.token)
       found     <- ctx.paymentRepo.findByBooking(bookingId)
     yield
@@ -223,7 +224,7 @@ class PaymentRoutesSpec extends CatsEffectSuite:
       auth      <- signupAndLogin(ctx)
       pid        = ProviderId.fromString(auth.id).toOption.get
       bookingId <- seedBooking(ctx, pid)
-      resp      <- postPayment(ctx, bookingId.value, """{"amount":0,"method":"pix_manual"}""", auth.token)
+      resp      <- postPayment(ctx, bookingId.value, """{"amount":0,"method":"PIX_MANUAL"}""", auth.token)
     yield assertEquals(resp.status, Status.BadRequest)
   }
 
@@ -245,8 +246,8 @@ class PaymentRoutesSpec extends CatsEffectSuite:
       auth      <- signupAndLogin(ctx)
       pid        = ProviderId.fromString(auth.id).toOption.get
       bookingId <- seedBooking(ctx, pid)
-      _         <- postPayment(ctx, bookingId.value, """{"amount":100.00,"method":"pix_manual"}""", auth.token)
-      _         <- postPayment(ctx, bookingId.value, """{"amount":200.00,"method":"pix_manual"}""", auth.token)
+      _         <- postPayment(ctx, bookingId.value, """{"amount":100.00,"method":"PIX_MANUAL"}""", auth.token)
+      _         <- postPayment(ctx, bookingId.value, """{"amount":200.00,"method":"PIX_MANUAL"}""", auth.token)
       resp      <- getPayments(ctx, bookingId.value, auth.token)
       body      <- resp.as[String]
       json       = parse(body).toOption.get
@@ -264,7 +265,7 @@ class PaymentRoutesSpec extends CatsEffectSuite:
       auth      <- signupAndLogin(ctx)
       pid        = ProviderId.fromString(auth.id).toOption.get
       bookingId <- seedBooking(ctx, pid)
-      _         <- postPayment(ctx, bookingId.value, """{"amount":200.00,"method":"pix_manual"}""", auth.token)
+      _         <- postPayment(ctx, bookingId.value, """{"amount":200.00,"method":"PIX_MANUAL"}""", auth.token)
       resp      <- getPayments(ctx, bookingId.value, auth.token)
       body      <- resp.as[String]
       json       = parse(body).toOption.get

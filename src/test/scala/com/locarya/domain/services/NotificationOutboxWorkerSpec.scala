@@ -47,6 +47,7 @@ class NotificationOutboxWorkerSpec extends CatsEffectSuite:
     startDate   = date,
     endDate     = date,
     totalAmount = Money.fromAmount(BigDecimal("500.00")).toOption.get,
+    createdAt   = java.time.Instant.EPOCH,
     status      = BookingStatus.Pending
   ).toOption.get
 

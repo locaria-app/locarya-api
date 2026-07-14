@@ -16,7 +16,7 @@ import com.locarya.helpers.{
   InMemoryProviderRepository
 }
 import io.circe.parser.parse
-import java.time.LocalDate
+import java.time.{Instant, LocalDate}
 import munit.CatsEffectSuite
 import org.http4s.*
 import org.http4s.circe.*
@@ -31,8 +31,9 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
 
   given Logger[IO] = NoOpLogger[IO]
 
-  private val testJwtSecret = "test-jwt-secret-dashboard"
-  private val date          = LocalDate.of(2026, 9, 1)
+  private val testJwtSecret  = "test-jwt-secret-dashboard"
+  private val date           = LocalDate.of(2026, 9, 1)
+  private val testCreatedAt  = Instant.parse("2026-09-01T00:00:00Z")
 
   private case class Ctx(
     authRoutes:    HttpRoutes[IO],
@@ -210,6 +211,7 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
                     startDate   = date,
                     endDate     = date,
                     totalAmount = item.dailyRate,
+                    createdAt   = testCreatedAt,
                     status      = BookingStatus.Confirmed
                   ).toOption.get
       _        <- ctx.bookingRepo.create(blocker)
@@ -449,6 +451,7 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
                      startDate   = date,
                      endDate     = date,
                      totalAmount = item.dailyRate,
+                     createdAt   = testCreatedAt,
                      status      = BookingStatus.Pending
                    ).toOption.get
       _         <- ctx.bookingRepo.create(pending)
@@ -577,6 +580,7 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
                   startDate   = date,
                   endDate     = date,
                   totalAmount = item.dailyRate,
+                  createdAt   = testCreatedAt,
                   status      = BookingStatus.Pending
                 ).toOption.get
       _      <- ctx.bookingRepo.create(pending)
@@ -618,6 +622,7 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
                   startDate   = date,
                   endDate     = date,
                   totalAmount = item.dailyRate,
+                  createdAt   = testCreatedAt,
                   status      = BookingStatus.Pending
                 ).toOption.get
       _      <- ctx.bookingRepo.create(pending)
@@ -656,6 +661,7 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
                   startDate   = date,
                   endDate     = date,
                   totalAmount = item.dailyRate,
+                  createdAt   = testCreatedAt,
                   status      = BookingStatus.Pending
                 ).toOption.get
       _      <- ctx.bookingRepo.create(pending)
@@ -711,6 +717,7 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
                       startDate   = date,
                       endDate     = date,
                       totalAmount = Money.fromAmount(BigDecimal(100)).toOption.get,
+                      createdAt   = testCreatedAt,
                       status      = BookingStatus.Confirmed
                     ).toOption.get
       _          <- ctx.bookingRepo.create(booking)
@@ -742,6 +749,7 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
                       startDate   = date,
                       endDate     = date,
                       totalAmount = Money.fromAmount(BigDecimal(100)).toOption.get,
+                      createdAt   = testCreatedAt,
                       status      = BookingStatus.Confirmed
                     ).toOption.get
       _          <- ctx.bookingRepo.create(booking)
@@ -753,4 +761,43 @@ class DashboardBookingRoutesSpec extends CatsEffectSuite:
       val firstItem = json.hcursor.downField("items").as[List[io.circe.Json]].toOption.get.head
       assertEquals(firstItem.hcursor.downField("comboId").as[String].toOption, Some(comboId.value), body)
       assertEquals(firstItem.hcursor.downField("itemId").as[Option[String]].toOption, Some(None), body)
+  }
+
+  // ── createdAt field ───────────────────────────────────────────────────────
+
+  private val iso8601Pattern = """\d{4}-\d{2}-\d{2}T.*""".r
+
+  test("GET /dashboard/bookings response includes non-empty ISO-8601 createdAt per booking") {
+    for
+      ctx    <- makeCtx
+      auth   <- signupAndLogin(ctx)
+      itemId <- createItem(ctx, auth.token)
+      _      <- postDashboardBooking(ctx, bookingBody(itemId), auth.token)
+      resp   <- getDashboardBookings(ctx, auth.token)
+      body   <- resp.as[String]
+      json    = parse(body).toOption.get
+    yield
+      assertEquals(resp.status, Status.Ok)
+      val bookings = json.asArray.get
+      assertEquals(bookings.size, 1)
+      val createdAt = bookings.head.hcursor.downField("createdAt").as[String].toOption
+      assert(createdAt.isDefined, s"Expected 'createdAt' field in list response: $body")
+      assert(createdAt.get.nonEmpty, "Expected non-empty createdAt")
+      assert(iso8601Pattern.matches(createdAt.get), s"Expected ISO-8601 createdAt, got '${createdAt.get}'")
+  }
+
+  test("GET /dashboard/bookings/:id response includes non-empty ISO-8601 createdAt") {
+    for
+      ctx       <- makeCtx
+      auth      <- signupAndLogin(ctx)
+      bookingId <- createAndGetBookingId(ctx, auth)
+      resp      <- getDashboardBooking(ctx, bookingId, auth.token)
+      body      <- resp.as[String]
+      json       = parse(body).toOption.get
+    yield
+      assertEquals(resp.status, Status.Ok)
+      val createdAt = json.hcursor.downField("createdAt").as[String].toOption
+      assert(createdAt.isDefined, s"Expected 'createdAt' field in detail response: $body")
+      assert(createdAt.get.nonEmpty, "Expected non-empty createdAt")
+      assert(iso8601Pattern.matches(createdAt.get), s"Expected ISO-8601 createdAt, got '${createdAt.get}'")
   }

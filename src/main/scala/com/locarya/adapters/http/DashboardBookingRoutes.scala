@@ -71,7 +71,8 @@ object DashboardBookingRoutes:
     status:          String,
     totalAmount:     BigDecimal,
     createdBy:       String,
-    bookingCode:     String
+    bookingCode:     String,
+    createdAt:       String
   )
 
   private case class BookingCreateResponse(bookingId: String, status: String)
@@ -122,7 +123,8 @@ object DashboardBookingRoutes:
     createdBy:               String,
     bookingCode:             String,
     assignedAttendants:      List[LineAttendantsResponse],
-    confirmedWithoutMonitor: Boolean
+    confirmedWithoutMonitor: Boolean,
+    createdAt:               String
   )
 
   private def toKebab(s: String): String =
@@ -170,7 +172,8 @@ object DashboardBookingRoutes:
       status          = view.status,
       totalAmount     = view.totalAmount,
       createdBy       = view.createdBy,
-      bookingCode     = view.bookingCode
+      bookingCode     = view.bookingCode,
+      createdAt       = view.createdAt
     ))
     BookingDetailResponse(
       id                      = base.id,
@@ -188,7 +191,8 @@ object DashboardBookingRoutes:
           case BookingLineRef.ComboLine(cid)      => (None, Some(cid.value))
         LineAttendantsResponse(itemIdOpt, comboIdOpt, la.attendants.map(a => AttendantResponse(a.id.value, a.name, a.phone)))
       },
-      confirmedWithoutMonitor = view.confirmedWithoutMonitor
+      confirmedWithoutMonitor = view.confirmedWithoutMonitor,
+      createdAt               = base.createdAt
     )
 
   private def toBookingListResponse(view: DashboardBookingView): BookingListResponse =
@@ -206,7 +210,8 @@ object DashboardBookingRoutes:
       status          = toKebab(view.status.toString),
       totalAmount     = view.totalAmount.amount,
       createdBy       = view.createdBy.toString.toLowerCase,
-      bookingCode     = view.bookingCode.value
+      bookingCode     = view.bookingCode.value,
+      createdAt       = view.createdAt.toString
     )
 
   private val listE = securedBase.get

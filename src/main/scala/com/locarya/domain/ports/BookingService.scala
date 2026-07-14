@@ -1,7 +1,7 @@
 package com.locarya.domain.ports
 
 import com.locarya.domain.models.*
-import java.time.LocalDate
+import java.time.{Instant, LocalDate}
 import com.locarya.domain.models.BookingLineRef
 
 /** A customer's contact details as collected by the Storefront booking form. The
@@ -51,7 +51,8 @@ final case class DashboardBookingView(
   status:           BookingStatus,
   totalAmount:      Money,
   createdBy:        BookingCreator,
-  bookingCode:      BookingCode
+  bookingCode:      BookingCode,
+  createdAt:        Instant
 )
 
 final case class DashboardCustomerView(
@@ -82,7 +83,8 @@ final case class DashboardBookingDetailView(
   createdBy:              BookingCreator,
   bookingCode:            BookingCode,
   assignedAttendants:     List[BookingLineAttendants],
-  confirmedWithoutMonitor: Boolean = false
+  confirmedWithoutMonitor: Boolean = false,
+  createdAt:              Instant
 )
 
 trait BookingService[F[_]]:

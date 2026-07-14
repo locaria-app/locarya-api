@@ -2,17 +2,17 @@ package com.locarya.domain.models
 
 class PaymentMethodSpec extends munit.FunSuite:
 
-  test("PixManual encodes to pix_manual"):
-    assertEquals(PaymentMethod.encode(PaymentMethod.PixManual), "pix_manual")
+  test("PixManual encodes to PIX_MANUAL"):
+    assertEquals(PaymentMethod.encode(PaymentMethod.PixManual), "PIX_MANUAL")
 
-  test("PixAsaas encodes to pix_asaas"):
-    assertEquals(PaymentMethod.encode(PaymentMethod.PixAsaas), "pix_asaas")
+  test("PixAsaas encodes to PIX_ASAAS"):
+    assertEquals(PaymentMethod.encode(PaymentMethod.PixAsaas), "PIX_ASAAS")
 
-  test("pix_manual decodes to PixManual"):
-    assertEquals(PaymentMethod.decode("pix_manual"), Right(PaymentMethod.PixManual))
+  test("PIX_MANUAL decodes to PixManual"):
+    assertEquals(PaymentMethod.decode("PIX_MANUAL"), Right(PaymentMethod.PixManual))
 
-  test("pix_asaas decodes to PixAsaas"):
-    assertEquals(PaymentMethod.decode("pix_asaas"), Right(PaymentMethod.PixAsaas))
+  test("PIX_ASAAS decodes to PixAsaas"):
+    assertEquals(PaymentMethod.decode("PIX_ASAAS"), Right(PaymentMethod.PixAsaas))
 
   test("unknown string decodes to Left(InvalidPayment)"):
     val result = PaymentMethod.decode("credit_card")

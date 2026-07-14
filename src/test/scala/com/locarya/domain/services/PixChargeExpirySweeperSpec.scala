@@ -139,7 +139,8 @@ class PixChargeExpirySweeperSpec extends CatsEffectSuite:
       items       = List(BookedIndividualItem(ItemId.generate, 1)),
       startDate   = date,
       endDate     = date,
-      totalAmount = money
+      totalAmount = money,
+      createdAt   = java.time.Instant.EPOCH,
     ).toOption.get
     val chargeForBooking = BookingCharge.fromDb(
       id         = BookingChargeId.generate,

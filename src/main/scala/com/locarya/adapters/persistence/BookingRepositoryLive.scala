@@ -12,7 +12,7 @@ import io.circe.{Decoder, Encoder}
 import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import io.circe.parser.decode as circeDecoder
 import io.circe.syntax.*
-import java.time.LocalDate
+import java.time.{LocalDate, LocalDateTime, ZoneOffset}
 import java.util.UUID
 
 final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
@@ -39,7 +39,8 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
     deliveryComplement:     Option[String],
     bookingCode:            String,
     partyProfile:           Option[String],
-    confirmedWithoutMonitor: Boolean
+    confirmedWithoutMonitor: Boolean,
+    createdAt:              LocalDateTime
   ) derives Read
 
   private case class BookingItemRow(
@@ -54,7 +55,8 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
   private val selectBase = fr"""
     SELECT id, provider_id, customer_id, start_date, end_date, total_amount, status, created_by,
            delivery_street, delivery_number, delivery_neighborhood, delivery_city, delivery_state,
-           delivery_cep, delivery_complement, booking_code, party_profile::text, confirmed_without_monitor
+           delivery_cep, delivery_complement, booking_code, party_profile::text, confirmed_without_monitor,
+           created_at
     FROM bookings
   """
 
@@ -125,7 +127,7 @@ final class BookingRepositoryLive[F[_]: Async] private (xa: Transactor[F])
       creator      <- parseCreator(row.createdBy)
       code         <- BookingCode.fromString(row.bookingCode)
       b            <- Booking.create(id, pid, cid, bookingItems, row.startDate, row.endDate,
-                        totalAmt, status, deliverAddr, creator, code, partyProfileOpt)
+                        totalAmt, row.createdAt.toInstant(ZoneOffset.UTC), status, deliverAddr, creator, code, partyProfileOpt)
       booking       = if row.confirmedWithoutMonitor then b.markConfirmedWithoutMonitor else b
     yield booking).fold(
       err => Async[F].raiseError(new RuntimeException(s"DB→domain mapping failed: $err")),

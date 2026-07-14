@@ -96,6 +96,7 @@ class AvailabilityRoutesSpec extends CatsEffectSuite:
       startDate   = date,
       endDate     = date,
       totalAmount = price,
+      createdAt   = java.time.Instant.EPOCH,
       status      = BookingStatus.Confirmed
     ).toOption.get
     ctx.bookingRepo.create(booking).void
@@ -260,6 +261,7 @@ class AvailabilityRoutesSpec extends CatsEffectSuite:
                      startDate   = date,
                      endDate     = date,
                      totalAmount = price,
+                     createdAt   = java.time.Instant.EPOCH,
                      status      = BookingStatus.Confirmed
                    ).toOption.get
       _         <- ctx.bookingRepo.create(booking)

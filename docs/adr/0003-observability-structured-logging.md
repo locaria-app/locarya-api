@@ -188,7 +188,7 @@ Estruturado vence nos critérios críticos. Complexidade extra no MVP é aceitá
 - `BookingAvailabilityCheckFailed` — tentou criar Booking mas Item indisponível (pode indicar race condition)
 
 **Payments:**
-- `PaymentRecorded` — incluir `bookingId`, `paymentId`, `amount`, `method` (asaas_split | pix_manual)
+- `PaymentRecorded` — incluir `bookingId`, `paymentId`, `amount`, `method` (asaas_split | PIX_MANUAL)
 - `PaymentConfirmed` — payment status mudou para confirmed
 - `PaymentRefunded` — incluir `refundAmount`, `reason`
 
@@ -251,7 +251,7 @@ object BookingService {
     repo: BookingRepo[F],
     availability: AvailabilityService[F]
   ): BookingService[F] = new BookingService[F] {
-    
+
     def create(req: CreateBookingRequest): F[Booking] = for {
       // Check availability
       avail <- availability.check(req.items, req.date)
@@ -265,7 +265,7 @@ object BookingService {
         )
       )
       _ <- Async[F].raiseError(UnavailableError).whenA(!avail.isAvailable)
-      
+
       // Create booking
       booking <- repo.create(req.toBooking)
       _ <- Logger[F].info(

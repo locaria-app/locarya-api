@@ -7,12 +7,12 @@ enum PaymentMethod:
 
 object PaymentMethod:
   def encode(m: PaymentMethod): String = m match
-    case PixManual => "pix_manual"
-    case PixAsaas  => "pix_asaas"
+    case PixManual => "PIX_MANUAL"
+    case PixAsaas  => "PIX_ASAAS"
 
   def decode(s: String): Either[InvalidPayment, PaymentMethod] = s match
-    case "pix_manual" => Right(PixManual)
-    case "pix_asaas"  => Right(PixAsaas)
+    case "PIX_MANUAL" => Right(PixManual)
+    case "PIX_ASAAS"  => Right(PixAsaas)
     case other        => Left(InvalidPayment(s"Unknown payment method: $other"))
 
 enum PaymentStatus:

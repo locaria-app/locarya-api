@@ -83,6 +83,7 @@ class BookingChargeServiceSpec extends CatsEffectSuite:
                         startDate   = date,
                         endDate     = date,
                         totalAmount = totalMoney,
+                        createdAt   = java.time.Instant.EPOCH,
                         status      = BookingStatus.Pending
                       ).toOption.get
       _            <- bookingRepo.create(booking)

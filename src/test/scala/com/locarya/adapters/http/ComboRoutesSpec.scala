@@ -290,7 +290,8 @@ class ComboRoutesSpec extends CatsEffectSuite:
                      items       = List(BookedCombo(cid, 1)),
                      startDate   = java.time.LocalDate.of(2026, 10, 1),
                      endDate     = java.time.LocalDate.of(2026, 10, 3),
-                     totalAmount = Money.fromAmount(BigDecimal("300")).toOption.get
+                     totalAmount = Money.fromAmount(BigDecimal("300")).toOption.get,
+                     createdAt   = java.time.Instant.EPOCH,
                    ).toOption.get
       _         <- ctx.bookingRepo.create(booking)
       updateBody = s"""{"name":"Kit","description":"D","dailyRate":300.00,"itemCompositions":[{"itemId":"$itemId","quantity":5}],"imageUrls":["https://example.com/combo.jpg"]}"""

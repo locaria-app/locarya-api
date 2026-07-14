@@ -32,6 +32,7 @@ class BookingServiceImpl[F[_]: Sync: Logger](
       lines     <- request.items.traverse(resolveLine)
       total     <- totalAmount(lines)
       code       = BookingCode.generate
+      now       <- Sync[F].delay(Instant.now())
       booking   <- liftValidation(
                      Booking.create(
                        id              = BookingId.generate,
@@ -41,6 +42,7 @@ class BookingServiceImpl[F[_]: Sync: Logger](
                        startDate       = request.date,
                        endDate         = request.date,
                        totalAmount     = total,
+                       createdAt       = now,
                        status          = BookingStatus.Pending,
                        deliveryAddress = Some(request.deliveryAddress),
                        createdBy       = BookingCreator.Customer,
@@ -60,6 +62,7 @@ class BookingServiceImpl[F[_]: Sync: Logger](
       lines     <- request.items.traverse(resolveLine)
       total     <- totalAmount(lines)
       code       = BookingCode.generate
+      now       <- Sync[F].delay(Instant.now())
       booking   <- liftValidation(
                      Booking.create(
                        id              = BookingId.generate,
@@ -69,6 +72,7 @@ class BookingServiceImpl[F[_]: Sync: Logger](
                        startDate       = request.date,
                        endDate         = request.date,
                        totalAmount     = total,
+                       createdAt       = now,
                        status          = BookingStatus.Confirmed,
                        deliveryAddress = Some(request.deliveryAddress),
                        createdBy       = BookingCreator.Provider,
@@ -159,7 +163,8 @@ class BookingServiceImpl[F[_]: Sync: Logger](
       createdBy               = booking.createdBy,
       bookingCode             = booking.bookingCode,
       assignedAttendants      = lineAttendants,
-      confirmedWithoutMonitor = booking.confirmedWithoutMonitor
+      confirmedWithoutMonitor = booking.confirmedWithoutMonitor,
+      createdAt               = booking.createdAt
     )
 
   def listBookings(providerId: ProviderId, status: Option[BookingStatus], dateFrom: Option[LocalDate], dateTo: Option[LocalDate]): F[List[DashboardBookingView]] =
@@ -183,7 +188,8 @@ class BookingServiceImpl[F[_]: Sync: Logger](
           status          = booking.status,
           totalAmount     = booking.totalAmount,
           createdBy       = booking.createdBy,
-          bookingCode     = booking.bookingCode
+          bookingCode     = booking.bookingCode,
+          createdAt       = booking.createdAt
         ).pure[F]
       case None =>
         BookingError.InvalidInput(InvalidBooking("Customer not found")).raiseError[F, DashboardBookingView]
