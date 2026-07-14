@@ -1,6 +1,5 @@
 package com.locarya.adapters.persistence
 
-import cats.data.NonEmptyList
 import cats.effect.Async
 import cats.syntax.all.*
 import com.locarya.domain.models.*
@@ -10,23 +9,9 @@ import doobie.implicits.*
 import doobie.postgres.implicits.*
 import java.time.{Instant, LocalDateTime, ZoneOffset}
 import java.util.UUID
-import org.postgresql.util.PGobject
 
 final class NotificationEventRepositoryLive[F[_]: Async] private (xa: Transactor[F])
     extends NotificationEventRepository[F]:
-
-  private given Put[String] = Put.Advanced
-    .other[PGobject](NonEmptyList.of("jsonb"))
-    .tcontramap[String] { s =>
-      val obj = new PGobject
-      obj.setType("jsonb")
-      obj.setValue(s)
-      obj
-    }
-
-  private given Get[String] = Get.Advanced
-    .other[PGobject](NonEmptyList.of("jsonb"))
-    .tmap(_.getValue)
 
   private case class EventRow(
     id:          UUID,
@@ -71,15 +56,12 @@ final class NotificationEventRepositoryLive[F[_]: Async] private (xa: Transactor
 
   override def create(event: NotificationEvent): F[NotificationEvent] =
     val createdAtLdt = event.createdAt.atZone(ZoneOffset.UTC).toLocalDateTime
-    sql"""INSERT INTO notification_events
+    val payloadFr    = fr"${event.payload}::jsonb"
+    (fr"""INSERT INTO notification_events
             (id, event_type, payload, status, retry_count, created_at)
-          VALUES
-            (${UUID.fromString(event.id.value)},
-             ${event.eventType},
-             ${event.payload},
-             ${encodeStatus(event.status)},
-             ${event.retryCount},
-             $createdAtLdt)"""
+          VALUES (${UUID.fromString(event.id.value)}, ${event.eventType},""" ++
+      payloadFr ++
+      fr""", ${encodeStatus(event.status)}, ${event.retryCount}, $createdAtLdt)""")
       .update.run.transact(xa) >> event.pure[F]
 
   override def findById(id: NotificationEventId): F[Option[NotificationEvent]] =
